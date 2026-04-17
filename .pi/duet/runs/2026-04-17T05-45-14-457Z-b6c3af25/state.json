@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "phase": "planning",
+  "updatedAt": "2026-04-17T05:45:18.464Z",
+  "runId": "2026-04-17T05-45-14-457Z-b6c3af25",
+  "goal": "Import plan from docs/mvp_duet.md",
+  "planSourcePath": "docs/mvp_duet.md",
+  "round": 0,
+  "resumeAction": "planning",
+  "handoffMode": "none",
+  "postPlanMode": "autorun",
+  "activeConfig": {
+    "sideA": {
+      "label": "GPT-5.4",
+      "model": "openai-codex/gpt-5.4",
+      "thinking": "xhigh"
+    },
+    "sideB": {
+      "label": "GPT-5.4",
+      "model": "openai-codex/gpt-5.4",
+      "thinking": "xhigh"
+    },
+    "planner": {
+      "label": "GPT-5.4",
+      "model": "openai-codex/gpt-5.4",
+      "thinking": "xhigh"
+    },
+    "critic": {
+      "label": "GPT-5.4",
+      "model": "openai-codex/gpt-5.4",
+      "thinking": "xhigh"
+    },
+    "implementer": {
+      "label": "GPT-5.4",
+      "model": "openai-codex/gpt-5.4",
+      "thinking": "high"
+    },
+    "reviewer": {
+      "label": "GPT-5.4",
+      "model": "openai-codex/gpt-5.4",
+      "thinking": "xhigh"
+    },
+    "executionMode": "relay",
+    "startImplementer": "A",
+    "maxPlanRounds": 10,
+    "maxExecutionRounds": 10,
+    "alternateByStep": true,
+    "checks": {
+      "noop": {
+        "cmd": "true",
+        "timeoutSec": 10,
+        "description": "No auto-detected checks yet. Run /duet-setup or edit .pi/duet/config.json.",
+        "kind": "custom",
+        "source": "default",
+        "confidence": 0
+      }
+    },
+    "repo": {
+      "requireGit": true,
+      "requireCleanStart": false,
+      "enforceCleanAfterStep": false,
+      "captureDiffCheck": true,
+      "commitPerStep": true
+    },
+    "persistSessionAcrossSteps": true,
+    "samplingRuns": 2
+  },
+  "deepResearchEnabled": false,
+  "activeSummary": {
+    "stepTitle": "mvp_duet.md",
+    "implementer": "A",
+    "reviewer": "B",
+    "roleLabels": {
+      "sideA": "Planner",
+      "sideB": "Critic"
+    }
+  }
+}

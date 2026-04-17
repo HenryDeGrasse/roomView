@@ -1,0 +1,56 @@
+{
+  "sideA": {
+    "label": "GPT-5.4",
+    "model": "openai-codex/gpt-5.4",
+    "thinking": "xhigh"
+  },
+  "sideB": {
+    "label": "GPT-5.4",
+    "model": "openai-codex/gpt-5.4",
+    "thinking": "xhigh"
+  },
+  "planner": {
+    "label": "GPT-5.4",
+    "model": "openai-codex/gpt-5.4",
+    "thinking": "xhigh"
+  },
+  "critic": {
+    "label": "GPT-5.4",
+    "model": "openai-codex/gpt-5.4",
+    "thinking": "xhigh"
+  },
+  "implementer": {
+    "label": "GPT-5.4",
+    "model": "openai-codex/gpt-5.4",
+    "thinking": "high"
+  },
+  "reviewer": {
+    "label": "GPT-5.4",
+    "model": "openai-codex/gpt-5.4",
+    "thinking": "xhigh"
+  },
+  "executionMode": "relay",
+  "startImplementer": "A",
+  "maxPlanRounds": 10,
+  "maxExecutionRounds": 10,
+  "alternateByStep": true,
+  "checks": {
+    "noop": {
+      "cmd": "true",
+      "timeoutSec": 10,
+      "description": "No auto-detected checks yet. Run /duet-setup or edit .pi/duet/config.json.",
+      "kind": "custom",
+      "source": "default",
+      "confidence": 0
+    }
+  },
+  "repo": {
+    "requireGit": true,
+    "requireCleanStart": false,
+    "enforceCleanAfterStep": false,
+    "captureDiffCheck": true,
+    "commitPerStep": true
+  },
+  "persistSessionAcrossSteps": true,
+  "samplingRuns": 2
+}
