@@ -7,4 +7,6 @@ Key bootstrap assets:
 - `src/index.ts`
 - `src/roomplan-ingest.ts`
 - `src/roomplan-persistence.ts`
+- `src/quick-render.ts`
+- `src/server.ts` with authenticated scene reads, curated asset manifest, and quick-render routes
 - `../../fixtures/manifest.json`

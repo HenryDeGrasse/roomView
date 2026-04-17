@@ -1,0 +1,23 @@
+Reviewed the step-7 diff across:
+- `packages/contracts/src/{render.ts,api.ts,index.ts}`
+- `apps/api/src/{quick-render.ts,server.ts,index.ts}`
+- `apps/web/src/server.ts`
+- `scripts/verify-quick-render.mts`
+
+Verified:
+- curated asset manifest exists and is exposed via `GET /assets/manifest`
+- deterministic quick-render mapping is shared between backend and web
+- authenticated `GET /scenes/{scene_id}/quick-render` works
+- proxy fallback is applied and fallback misses are logged on the API path
+- quick-render payload stays version/snapshot synchronized with the canonical scene
+- fixture-backed web quick-render route works
+
+Checks run:
+- `npm run check` ✅
+- `cd ios/RoomViewCapture && swift test` ✅
+- API smoke test for manifest + authenticated quick-render ✅
+- Web smoke test for fixture quick-render route ✅
+
+I found no material defects in the current diff.
+
+Verdict: approve

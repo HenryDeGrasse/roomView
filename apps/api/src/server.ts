@@ -9,6 +9,10 @@ import type {
 } from "@roomview/contracts";
 
 import {
+  createAssetManifestResponse,
+  createQuickRenderResponse,
+} from "./quick-render";
+import {
   RoomPlanCaptureError,
   RoomPlanCaptureService,
   type RoomPlanCaptureServiceOptions,
@@ -90,12 +94,21 @@ async function handleRequest(
       return;
     }
 
+    if (request.method === "GET" && requestUrl.pathname === "/assets/manifest") {
+      sendJson(response, 200, createAssetManifestResponse());
+      return;
+    }
+
     const sceneId = extractSceneId(requestUrl.pathname);
     if (request.method === "GET" && sceneId) {
       requireAuthenticatedSceneSession(request, sceneId, context);
       const scene = context.service.getScene(sceneId);
       if (!scene) {
         throw new RoomPlanCaptureError("TARGET_NOT_FOUND", `Scene ${sceneId} was not found.`);
+      }
+      if (requestUrl.pathname.endsWith("/quick-render")) {
+        sendJson(response, 200, createQuickRenderResponse(scene));
+        return;
       }
       const readResponse: SceneReadResponse = { scene };
       sendJson(response, 200, readResponse);
@@ -171,8 +184,12 @@ function requireAuthenticatedSceneSession(
 }
 
 function extractSceneId(pathname: string): string | null {
-  const match = pathname.match(/^\/scenes\/([^/]+)$/);
-  return match ? decodeURIComponent(match[1]) : null;
+  const exactMatch = pathname.match(/^\/scenes\/([^/]+)$/);
+  if (exactMatch) {
+    return decodeURIComponent(exactMatch[1]);
+  }
+  const quickRenderMatch = pathname.match(/^\/scenes\/([^/]+)\/quick-render$/);
+  return quickRenderMatch ? decodeURIComponent(quickRenderMatch[1]) : null;
 }
 
 function readSessionId(request: IncomingMessage): string | null {

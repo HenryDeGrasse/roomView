@@ -10,6 +10,7 @@
     "fixtures:update": "npx --yes tsx ./scripts/update-roomplan-fixtures.mts",
     "verify:fixtures": "node ./scripts/verify-fixtures.mjs",
     "verify:replays": "npx --yes tsx ./scripts/verify-roomplan-replays.mts",
-    "check": "npm run verify:fixtures && npm run verify:replays"
+    "verify:quick-render": "npx --yes tsx ./scripts/verify-quick-render.mts",
+    "check": "npm run verify:fixtures && npm run verify:replays && npm run verify:quick-render"
   }
 }

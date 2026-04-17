@@ -30,6 +30,10 @@ export {
   createRoomPlanApiServer,
   DEFAULT_ROOMPLAN_CAPTURE_STORAGE_DIRECTORY,
 } from "./server";
+export {
+  createAssetManifestResponse,
+  createQuickRenderResponse,
+} from "./quick-render";
 export type {
   BuildInitialSceneOptions,
   IngestedCaptureArtifacts,

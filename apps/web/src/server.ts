@@ -3,7 +3,11 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import type { FixtureManifest, FixtureDescriptor, SceneReadResponse } from "@roomview/contracts";
+import type { FixtureManifest, FixtureDescriptor, QuickRenderResponse, SceneReadResponse } from "../../../packages/contracts/src/index.ts";
+import {
+  buildDeterministicQuickRender,
+  CURATED_ASSET_MANIFEST,
+} from "../../../packages/contracts/src/index.ts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const DEFAULT_FIXTURE_SCENE_ID = "fixture-bedroom-primary";
@@ -17,6 +21,7 @@ export interface EditorFixtureSource {
 
 interface EditorFixtureRecord extends EditorFixtureSource {
   scene_response: SceneReadResponse;
+  quick_render_response: QuickRenderResponse;
 }
 
 export interface RoomViewEditorServerOptions {
@@ -48,6 +53,10 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
         sendJson(response, 404, { message: `Fixture ${fixtureId} was not found.` });
         return;
       }
+      if (requestUrl.pathname.endsWith("/quick-render")) {
+        sendJson(response, 200, fixture.quick_render_response);
+        return;
+      }
       sendJson(response, 200, fixture.scene_response);
       return;
     }
@@ -57,21 +66,31 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
 }
 
 function extractFixtureId(pathname: string): string | null {
-  const match = pathname.match(/^\/dev\/fixtures\/([^/]+)$/);
-  return match ? decodeURIComponent(match[1]) : null;
+  const exactMatch = pathname.match(/^\/dev\/fixtures\/([^/]+)$/);
+  if (exactMatch) {
+    return decodeURIComponent(exactMatch[1]);
+  }
+  const quickRenderMatch = pathname.match(/^\/dev\/fixtures\/([^/]+)\/quick-render$/);
+  return quickRenderMatch ? decodeURIComponent(quickRenderMatch[1]) : null;
 }
 
 function loadFixtureScenes(): EditorFixtureRecord[] {
   const manifestPath = resolve(repoRoot, DEFAULT_FIXTURE_MANIFEST_PATH);
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as FixtureManifest;
 
-  return manifest.fixtures.map((fixture) => ({
-    fixture_id: fixture.fixture_id,
-    notes: fixture.notes,
-    scene_response: {
-      scene: readFixtureScene(fixture),
-    },
-  }));
+  return manifest.fixtures.map((fixture) => {
+    const scene = readFixtureScene(fixture);
+    return {
+      fixture_id: fixture.fixture_id,
+      notes: fixture.notes,
+      scene_response: {
+        scene,
+      },
+      quick_render_response: {
+        render_scene: buildDeterministicQuickRender(scene, CURATED_ASSET_MANIFEST),
+      },
+    };
+  });
 }
 
 function readFixtureScene(fixture: FixtureDescriptor): SceneReadResponse["scene"] {
@@ -274,6 +293,7 @@ function renderEditorShellHtml(input: {
       const state = {
         apiBaseUrl: bootstrap.defaultApiBaseUrl,
         scene: null,
+        quickRender: null,
         sceneId: null,
         sessionId: null,
         selectionId: null,
@@ -334,6 +354,7 @@ function renderEditorShellHtml(input: {
           state.sessionId = null;
           state.selectionId = firstSelectableEntityId(state.scene);
           state.loadedFrom = "fixture";
+          state.quickRender = await loadFixtureQuickRender(fixtureSelect.value);
           renderScene();
           setStatus("Loaded fixture " + fixtureSelect.value + ".");
         } catch (error) {
@@ -379,8 +400,31 @@ function renderEditorShellHtml(input: {
         }
         state.scene = payload.scene;
         state.selectionId = firstSelectableEntityId(state.scene);
+        state.quickRender = await loadLiveQuickRender();
         renderScene();
         setStatus("Loaded live scene " + state.scene.head.scene_id + " via authenticated read.");
+      }
+
+      async function loadLiveQuickRender() {
+        const response = await fetch(new URL("/scenes/" + encodeURIComponent(state.sceneId) + "/quick-render", state.apiBaseUrl).toString(), {
+          headers: {
+            Authorization: "Bearer " + state.sessionId,
+          },
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.message || payload.reason_code || "Quick render read failed.");
+        }
+        return payload.render_scene;
+      }
+
+      async function loadFixtureQuickRender(fixtureId) {
+        const response = await fetch("/dev/fixtures/" + encodeURIComponent(fixtureId) + "/quick-render");
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.message || "Fixture quick render failed.");
+        }
+        return payload.render_scene;
       }
 
       async function postJson(url, body) {
@@ -429,7 +473,7 @@ function renderEditorShellHtml(input: {
         }
         scanPane.innerHTML = renderScanPane(state.scene);
         layoutPane.innerHTML = renderLayoutPane(state.scene, state.selectionId);
-        renderPane.innerHTML = renderRenderPane(state.scene, state.selectionId, state.loadedFrom);
+        renderPane.innerHTML = renderRenderPane(state.scene, state.quickRender, state.selectionId, state.loadedFrom);
       }
 
       function renderEmptyState() {
@@ -500,24 +544,36 @@ function renderEditorShellHtml(input: {
         return '<pre>' + escapeHtml(JSON.stringify(selected, null, 2)) + '</pre>';
       }
 
-      function renderRenderPane(scene, selectionId, loadedFrom) {
+      function renderRenderPane(scene, quickRender, selectionId, loadedFrom) {
         const selection = findSelectedEntity(scene, selectionId);
+        const selectedBinding = quickRender
+          ? quickRender.asset_bindings.find((binding) => binding.bound_to === selectionId) || null
+          : null;
+        const versionSynchronized = quickRender
+          ? quickRender.scene_version === scene.head.current_scene_version && quickRender.scene_snapshot_id === scene.snapshot.snapshot_id
+          : false;
         const details = {
           loaded_from: loadedFrom,
+          layout_scene_version: scene.head.current_scene_version,
+          quick_render_scene_version: quickRender?.scene_version ?? null,
+          quick_render_snapshot_id: quickRender?.scene_snapshot_id ?? null,
+          version_synchronized: versionSynchronized,
           style_tags: scene.snapshot.state.style_tags,
           bookmark_ids: scene.bookmarks.map((bookmark) => bookmark.bookmark_id),
           editing_asset_refs: scene.snapshot.editing_asset_refs,
-          hard_violations: scene.derived_state_cache?.hard_violations || [],
-          soft_scores: scene.derived_state_cache?.soft_scores || {},
           selected_entity_id: selectionId,
           selected_entity: selection,
+          selected_asset_binding: selectedBinding,
+          quick_render_diagnostics: quickRender?.diagnostics ?? null,
+          quick_render_objects: quickRender?.objects ?? [],
         };
         return [
-          '<div class="badge">Canonical render inputs</div>',
+          '<div class="badge">Deterministic quick render</div>',
           '<dl>',
           '<div><dt>Bookmarks</dt><dd>' + escapeHtml(String(scene.bookmarks.length)) + '</dd></div>',
           '<div><dt>Asset refs</dt><dd>' + escapeHtml(String(scene.snapshot.editing_asset_refs.length)) + '</dd></div>',
-          '<div><dt>Splat</dt><dd>' + escapeHtml(scene.splat ? scene.splat.status : 'not requested') + '</dd></div>',
+          '<div><dt>Fallback misses</dt><dd>' + escapeHtml(String(quickRender?.diagnostics.proxy_fallback_count ?? 0)) + '</dd></div>',
+          '<div><dt>Version sync</dt><dd>' + escapeHtml(versionSynchronized ? 'synchronized' : 'mismatch') + '</dd></div>',
           '</dl>',
           '<div style="margin-top:12px"><pre>' + escapeHtml(JSON.stringify(details, null, 2)) + '</pre></div>'
         ].join('');

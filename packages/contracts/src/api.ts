@@ -14,6 +14,7 @@ import type {
 } from "./primitives";
 import type { MaterialState } from "./primitives";
 import type { CameraBookmark, EditableObjectClass, Scene } from "./scene";
+import type { CuratedAssetManifest, QuickRenderScene } from "./render";
 
 export const COMMAND_KIND_VALUES = ["generate_photoreal", "undo_last_change"] as const;
 export type CommandKind = (typeof COMMAND_KIND_VALUES)[number];
@@ -279,6 +280,14 @@ export type SceneEditOperation =
 
 export interface SceneReadResponse {
   scene: Scene;
+}
+
+export interface AssetManifestResponse {
+  manifest: CuratedAssetManifest;
+}
+
+export interface QuickRenderResponse {
+  render_scene: QuickRenderScene;
 }
 
 export interface SceneApplyResponse {
