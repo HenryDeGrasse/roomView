@@ -1,0 +1,23 @@
+Reviewed `docs/mvp_duet.md` sections for capture/editor flow, architecture, typed operation contract, APIs, and non-functional requirements.
+
+What I changed:
+- Replaced the insecure “open with `scene_id`” flow with a private one-time handoff URL / QR redemption flow into an authenticated scene-scoped web session
+- Added an `Access Service` and explicit no-public-URL/session-scoping language
+- Made the backend API server-authoritative:
+  - `/plan` now returns `operation_plan_preview` or `command_request`
+  - added `apply_token`, `canonical_plan_hash`, preview expiry, and idempotency data
+  - added `ApplyPlanRequest`
+  - stated the client may only accept/reject previews, not edit ops
+- Split scene-edit ops from dedicated command endpoints:
+  - scene edits remain in `/plan` + `/apply`
+  - `generate_photoreal` and `undo_last_change` are routed to dedicated endpoints
+- Defined conflict/error/retry behavior for handoff redeem, apply, undo, photoreal, delete, and idempotent retries
+- Added relevant reason codes and updated privacy/reliability requirements
+
+Checks:
+- `noop` ✅
+
+Assessment:
+- Step 3 is now concretely specified with a private MVP handoff model and a server-authoritative API contract aligned to step 2’s snapshot/head model.
+
+Verdict: changes_made

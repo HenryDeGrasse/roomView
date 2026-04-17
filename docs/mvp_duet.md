@@ -116,7 +116,7 @@ A designer or technically inclined user using the room as a structured starting 
   * object/surface selection
   * single-step undo
   * photoreal gallery
-* Typed edit operations:
+* Typed scene-edit operations:
 
   * `move_object`
   * `rotate_object`
@@ -127,6 +127,8 @@ A designer or technically inclined user using the room as a structured starting 
   * `unlock_entity`
   * `repaint_surface`
   * `swap_flooring`
+* Dedicated command endpoints for:
+
   * `generate_photoreal`
   * `undo_last_change`
 * Five hard constraints
@@ -158,18 +160,25 @@ A designer or technically inclined user using the room as a structured starting 
    * RoomPlan scene payload
    * metadata
    * optional raw video for splat training
-5. Backend creates canonical scene and returns `scene_id`.
-6. User opens web editor on laptop with that `scene_id`.
+5. Backend creates the canonical scene, issues a short-lived one-time handoff grant, and returns:
+
+   * `scene_id`
+   * `handoff_url`
+   * QR payload encoding the same one-time grant
+   * `expires_at`
+6. User opens the web editor on a laptop by redeeming the handoff URL or QR payload into an authenticated web session scoped to that `scene_id`.
 
 **Acceptance criteria**
 
-* A valid RoomPlan scan produces a canonical scene without manual intervention.
+* A valid RoomPlan scan produces a canonical scene and a private handoff grant without manual intervention.
+* Raw `scene_id` possession alone is insufficient to open the web editor in MVP.
+* Handoff grants are short-lived, one-time use, and scene-scoped.
 * Scene becomes editable before splat is ready.
 * If splat never completes, the editor still functions.
 
 ### 7.2 Editor load flow
 
-1. Web app loads scene JSON.
+1. Web app redeems a valid handoff grant, or resumes an authenticated scene-scoped session, and requests the current scene read model.
 2. Scan pane shows RoomPlan parametric preview.
 3. Layout pane shows top-down shell, openings, and object OBBs.
 4. Render pane shows Quick render using retrieved assets.
@@ -177,6 +186,7 @@ A designer or technically inclined user using the room as a structured starting 
 
 **Acceptance criteria**
 
+* Editor access requires an authenticated session scoped to the scene; there are no public scene URLs in MVP.
 * Editor loads a usable scene from canonical JSON only.
 * Scan pane is read-only and never used for validation or mutation.
 * Quick render and layout always reflect current committed scene version.
@@ -184,11 +194,16 @@ A designer or technically inclined user using the room as a structured starting 
 ### 7.3 Edit flow
 
 1. User selects an object/surface or types in chat.
-2. LLM planner converts prompt into an operation plan.
-3. Validator simulates the plan on a scene copy.
-4. If valid, backend commits the plan atomically.
+2. Backend planning resolves the request into one of:
+
+   * a clarification request
+   * a rejection with reason code
+   * a canonical scene-edit plan preview with server-issued apply credentials
+   * a dedicated command request (`photoreal` or `undo`) routed to its own endpoint
+3. For scene-edit previews, the client may only accept or reject the preview; it may not edit the returned ops.
+4. If the user accepts a valid scene-edit preview before expiry, backend validates against the current head and commits atomically.
 5. UI updates layout and quick render.
-6. If invalid, UI shows a reason and optional suggested next action.
+6. If invalid or stale, UI shows a reason and optional suggested next action.
 
 **Acceptance criteria**
 
@@ -196,8 +211,10 @@ A designer or technically inclined user using the room as a structured starting 
 
   * one atomic committed plan, or
   * one clarification request, or
-  * one rejection with reason code
+  * one rejection with reason code, or
+  * one dedicated command execution routed through its own endpoint
 * No partial commit on failed plan validation.
+* The client never submits user-edited ops for apply.
 
 ### 7.4 Photoreal flow
 
@@ -310,18 +327,24 @@ Requirements:
 
 * stores scene heads, immutable snapshots, and sidecars
 * manages versions
-* exposes scene read/write APIs
+* exposes server-authoritative scene read/write APIs
+
+**Access Service**
+
+* issues short-lived one-time handoff grants for newly created scenes
+* redeems handoff grants into authenticated web sessions scoped to a single scene
+* rejects expired, reused, or cross-scene access attempts
 
 **Planner Service**
 
 * calls LLM with scene summary, selection context, and asset manifest
-* returns typed operation plan or clarification
+* returns a canonical scene-edit plan preview, dedicated command request, clarification, or rejection
 
 **Validation Service**
 
-* simulates operation plans
+* simulates canonical scene-edit plan previews
 * runs hard and soft constraints
-* commits or rejects
+* commits or rejects accepted previews
 
 **Asset Service**
 
@@ -773,6 +796,7 @@ If RoomPlan or the supplementary detector finds an object outside the editable s
 ```json
 OperationPlanRequest {
   request_id: string,
+  idempotency_key: string,
   scene_id: string,
   expected_scene_version: integer,
   selection_context: {
@@ -787,18 +811,45 @@ OperationPlanRequest {
 One of:
 
 * `clarification_request`
-* `operation_plan`
+* `operation_plan_preview`
+* `command_request`
 * `rejection`
 
 ```json
-OperationPlan {
+OperationPlanPreview {
   request_id: string,
-  ops: Operation[],
-  explanation: string
+  preview_id: string,
+  based_on_scene_version: integer,
+  ops: SceneEditOperation[],
+  explanation: string,
+  canonical_plan_hash: string,
+  apply_token: string,
+  apply_token_expires_at: timestamp,
+  idempotency_key: string
 }
 ```
 
-### 12.3 Supported operations
+```json
+CommandRequest {
+  request_id: string,
+  command_kind: "generate_photoreal" | "undo_last_change",
+  endpoint: string,
+  explanation: string,
+  idempotency_key: string
+}
+```
+
+```json
+ApplyPlanRequest {
+  preview_id: string,
+  apply_token: string,
+  canonical_plan_hash: string,
+  expected_scene_version: integer,
+  idempotency_key: string
+}
+```
+
+### 12.3 Supported scene-edit operations
 
 `move_object`
 
@@ -846,33 +897,47 @@ OperationPlan {
 * target: floor `surface_id`
 * params: material selection
 
+### 12.4 Dedicated command endpoints
+
 `generate_photoreal`
 
 * params: bookmark id or current camera, optional prompt modifiers
-* non-mutating sidecar job
+* routed to `POST /scenes/{scene_id}/photoreal`
+* non-mutating sidecar job; never appears inside `OperationPlanPreview.ops`
 
 `undo_last_change`
 
-* no params
-* creates a new head snapshot whose editable state matches the prior undoable committed snapshot
+* no params beyond endpoint metadata (`expected_scene_version`, `idempotency_key`)
+* routed to `POST /scenes/{scene_id}/undo`
+* creates a new head snapshot whose editable state matches the prior undoable committed snapshot; never appears inside `OperationPlanPreview.ops`
 
-### 12.4 Transaction rules
+### 12.5 Transaction and authority rules
 
-* Max 5 operations per user turn
+* Max 5 scene-edit operations per user turn
+* `/plan` returns canonical scene-edit ops plus server-issued apply credentials; the client may accept or reject the preview, but may not edit the returned ops
+* `/apply` accepts only `ApplyPlanRequest`; submitting user-modified ops directly is invalid
+* Plan previews are single-use, short-lived, and scoped to one scene version
 * Entire plan is simulated before commit
 * Entire plan commits atomically or fails atomically
 * One successful plan that mutates editable state creates a new immutable `SceneSnapshot` and increments `scene_version` by 1
 * `generate_photoreal` and bookmark changes are sidecar-only updates and do not create scene snapshots
 
-### 12.5 Reason codes
+### 12.6 Reason codes
 
-The validator must return machine-readable reason codes.
+The validator/API must return machine-readable reason codes.
 
 Required MVP codes:
 
+* `AUTH_REQUIRED`
+* `SCENE_ACCESS_DENIED`
+* `HANDOFF_EXPIRED`
+* `HANDOFF_ALREADY_USED`
 * `AMBIGUOUS_TARGET`
 * `TARGET_NOT_FOUND`
 * `VERSION_CONFLICT`
+* `APPLY_TOKEN_INVALID`
+* `APPLY_TOKEN_EXPIRED`
+* `IDEMPOTENCY_CONFLICT`
 * `ENTITY_LOCKED`
 * `OBJECT_OVERLAP`
 * `OUT_OF_BOUNDS`
@@ -882,6 +947,8 @@ Required MVP codes:
 * `UNSUPPORTED_CLASS`
 * `ASSET_NOT_AVAILABLE`
 * `PARENT_MOVE_VIOLATION`
+* `UNDO_NOT_AVAILABLE`
+* `SCENE_DELETED`
 * `PHOTOREAL_PROVIDER_ERROR`
 
 ## 13. Planner behavior
@@ -891,10 +958,11 @@ The LLM planner is not allowed to mutate scene state directly.
 It must:
 
 1. read compact scene summary + relevant entities + selection context
-2. emit only supported operation schema
+2. emit only supported scene-edit operation schema, or request a dedicated command route for `generate_photoreal` / `undo_last_change`
 3. ask for clarification if target is not unique
 4. prefer deterministic edits over stylistic guessing
 5. keep plans short and atomic
+6. never let the client author or rewrite canonical ops after planning
 
 Examples:
 
@@ -1024,42 +1092,88 @@ Minimal backend contract:
 `POST /captures/roomplan`
 
 * upload RoomPlan payload
-* returns `scene_id`
+* returns `scene_id` plus a one-time handoff payload:
+
+  * `handoff_url`
+  * `qr_payload`
+  * `expires_at`
+
+`POST /handoffs/redeem`
+
+* input: one-time handoff token from the URL or QR payload
+* redeems the grant into an authenticated web session scoped to exactly one `scene_id`
+* fails with `HANDOFF_EXPIRED`, `HANDOFF_ALREADY_USED`, or `SCENE_ACCESS_DENIED` if invalid
 
 `POST /captures/{scene_id}/video`
 
 * upload optional raw video for splat job
+* requires authenticated access to that scene
 
 `GET /scenes/{scene_id}`
 
+* requires an authenticated session scoped to `{scene_id}`
 * returns the current scene read model: head, current snapshot, derived cache, and related sidecars
 
 `POST /scenes/{scene_id}/plan`
 
+* requires authenticated access to that scene
 * input: `OperationPlanRequest`
-* returns clarification or operation plan preview
+* returns one of:
+
+  * `clarification_request`
+  * `operation_plan_preview`
+  * `command_request`
+  * `rejection`
 
 `POST /scenes/{scene_id}/apply`
 
-* input: approved operation plan
+* requires authenticated access to that scene
+* input: `ApplyPlanRequest`
+* accepts only a server-issued preview via `preview_id` + `apply_token` + `canonical_plan_hash`; raw client-edited ops are rejected
 * returns updated scene and validation summary
 
 `POST /scenes/{scene_id}/photoreal`
 
-* input: bookmark or current camera + modifiers
-* returns job id
+* requires authenticated access to that scene
+* dedicated command endpoint
+* input: `scene_snapshot_id`, bookmark or current camera + modifiers, `idempotency_key`
+* returns `job_id`
 
 `GET /jobs/{job_id}`
 
+* requires authenticated access to the owning scene
 * returns job state for photoreal or splat
 
 `POST /scenes/{scene_id}/undo`
 
+* requires authenticated access to that scene
+* dedicated command endpoint
+* input: `expected_scene_version`, `idempotency_key`
 * creates a new head snapshot that restores the last undoable committed editable state
 
 `DELETE /scenes/{scene_id}`
 
+* requires authenticated access to that scene
+* input: `idempotency_key`
 * deletes scene and attached assets
+
+### 17.1 Conflict and retry behavior
+
+* All mutating endpoints (`/apply`, `/photoreal`, `/undo`, `/delete`) require an `idempotency_key`.
+* Retrying the same request with the same `idempotency_key` and identical body must return the original terminal response instead of duplicating work.
+* Reusing an `idempotency_key` with a different request body returns `IDEMPOTENCY_CONFLICT`.
+* `/apply` returns:
+
+  * `VERSION_CONFLICT` if `expected_scene_version` is stale
+  * `APPLY_TOKEN_INVALID` if `preview_id`, token, or plan hash does not match the server preview
+  * `APPLY_TOKEN_EXPIRED` if the preview expired before acceptance
+* `/undo` returns:
+
+  * `VERSION_CONFLICT` if the caller is stale
+  * `UNDO_NOT_AVAILABLE` if there is no undoable base snapshot
+* `/photoreal` never mutates scene state. Safe retry with the same `idempotency_key` returns the same `job_id`.
+* `DELETE /scenes/{scene_id}` is idempotent. After deletion, subsequent scene commands return `SCENE_DELETED`.
+* Any scene endpoint called without a valid scene-scoped session returns `AUTH_REQUIRED` or `SCENE_ACCESS_DENIED`.
 
 ## 18. Non-functional requirements
 
@@ -1075,10 +1189,13 @@ Minimal backend contract:
 
 * stale-tab updates must fail with `VERSION_CONFLICT`
 * no silent partial commits
+* mutating request retries must be safe via `idempotency_key`
 * scene must reload from backend state after refresh
 
 ### Privacy
 
+* scene access requires a redeemed handoff or existing authenticated scene-scoped session
+* raw `scene_id` is not a shareable credential in MVP
 * deleting a scene deletes:
 
   * canonical scene
