@@ -1,0 +1,16 @@
+Fixed one remaining auth inconsistency in `docs/mvp_duet.md`.
+
+What I changed:
+- Updated the Privacy section to exempt the companion app’s one-time `video_upload_token` path for `POST /captures/{scene_id}/video` from the general “scene access requires a redeemed handoff or authenticated scene-scoped session” rule.
+
+Why:
+- The previous round correctly exempted the video upload path in `17.1`, but the Privacy section still stated a blanket session/handoff requirement.
+- That contradicted the step-4 mobile capture flow, where optional video upload happens post-ingest via `video_upload_token` before any web session exists.
+
+Check:
+- `noop` ✅
+
+Assessment:
+- This resolves the remaining inconsistency in the secure post-ingest video upload path while preserving the rest of the step-4 ingest model.
+
+Verdict: changes_made

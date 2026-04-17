@@ -1,0 +1,17 @@
+Reviewed the `docs/mvp_duet.md` diff for the new capture/ingest pipeline, ingest service duties, and capture APIs.
+
+I found one material inconsistency and fixed it:
+- The capture flow said the app uploads optional raw video **before** scene creation, but the API contract requires `scene_id` for `POST /captures/{scene_id}/video`.
+- I updated the flow so:
+  - `/captures/roomplan` uploads RoomPlan + metadata first
+  - backend creates the initial scene and returns `scene_id`
+  - optional raw video uploads afterward against that `scene_id`
+  - video upload is explicitly non-blocking for initial editability
+
+Assessment:
+- With that sequencing fix, the step now coherently defines initial scene creation, stable ID assignment, `generic_obstacle` fallback handling, initial `derived_state_cache`, sidecar persistence, and editable-before-splat behavior.
+
+Checks:
+- `noop` ✅
+
+Verdict: changes_made

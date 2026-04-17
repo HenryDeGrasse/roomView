@@ -1,0 +1,16 @@
+{
+  "fixtures": [
+    {
+      "fixture_id": "fixture-bedroom-primary",
+      "request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "scene_path": "fixtures/roomplan/bedroom-primary/scene.json",
+      "notes": "Supported-object bedroom ingest with queued splat sidecar and empty gallery."
+    },
+    {
+      "fixture_id": "fixture-bedroom-obstacle",
+      "request_path": "fixtures/roomplan/bedroom-obstacle/capture-request.json",
+      "scene_path": "fixtures/roomplan/bedroom-obstacle/scene.json",
+      "notes": "Bedroom ingest that preserves an unsupported supplementary detection as a generic_obstacle."
+    }
+  ]
+}

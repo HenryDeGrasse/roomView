@@ -1,0 +1,20 @@
+Reviewed the step-4 bootstrap diff across the new workspace surfaces, shared contracts, initial SQL migration, fixtures, and the fixture verification script.
+
+What I changed:
+- Fixed `scripts/verify-fixtures.mjs` so it resolves the repo root from the script location (`import.meta.url`) instead of `process.cwd()`.
+
+Why:
+- `npm --workspace @roomview/api run verify:fixtures` was failing because workspace scripts run with `apps/api` as the cwd, so the script looked for `apps/api/fixtures/manifest.json` instead of the repo-level `fixtures/manifest.json`.
+
+What I verified:
+- `npm run check`
+- `node ./scripts/verify-fixtures.mjs`
+- `npm --workspace @roomview/api run verify:fixtures`
+- `cd ios/RoomViewCapture && swift package dump-package`
+- `true`
+
+Assessment:
+- After the fix, the workspace bootstrap is in good shape for step 4: the repo now has the required implementation surfaces, PRD-aligned shared contracts, initial persistence migration scaffolding, and fixture-first RoomPlan/golden scene assets.
+- No other material defects stood out in the reviewed diff.
+
+Verdict: changes_made

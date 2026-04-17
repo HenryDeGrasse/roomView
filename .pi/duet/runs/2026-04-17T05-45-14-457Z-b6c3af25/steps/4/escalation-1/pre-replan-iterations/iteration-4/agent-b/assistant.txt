@@ -1,0 +1,17 @@
+Fixed one concrete security gap in `docs/mvp_duet.md`.
+
+What I changed:
+- Clarified that `video_upload_token` is **short-lived**, **scene-scoped**, and valid only for the companion app’s video upload path.
+- Clarified that `POST /captures/{scene_id}/video` must validate the token against `{scene_id}`, expire it quickly, and reject it after a successful upload.
+
+Why:
+- The previous round introduced a mobile-only upload token, but left its security semantics under-specified.
+- Without explicit scope/expiry/one-use behavior, the token could function as an indefinite bearer credential for attaching data to a scene.
+
+Check:
+- `noop` ✅
+
+Assessment:
+- This keeps the post-ingest video flow usable from mobile while making the upload path concrete and secure enough for the MVP contract.
+
+Verdict: changes_made

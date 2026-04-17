@@ -1,0 +1,509 @@
+{
+  "request_id": "req-bedroom-primary",
+  "client_capture_id": "capture-bedroom-primary",
+  "roomplan_payload": {
+    "schema_version": "roomplan-fixture-v1",
+    "room_type": "bedroom",
+    "coordinate_frame": {
+      "origin": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "x_axis": {
+        "x": 1,
+        "y": 0,
+        "z": 0
+      },
+      "y_axis": {
+        "x": 0,
+        "y": 1,
+        "z": 0
+      },
+      "z_axis": {
+        "x": 0,
+        "y": 0,
+        "z": 1
+      },
+      "north_source": "scan_forward"
+    },
+    "dimensions": {
+      "width_m": 4.0,
+      "length_m": 3.5,
+      "ceiling_height_m": 2.6
+    },
+    "surfaces": [
+      {
+        "id": "rp-floor-1",
+        "category": "floor",
+        "polygon": {
+          "vertices": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 4.0,
+              "y": 0
+            },
+            {
+              "x": 4.0,
+              "y": 3.5
+            },
+            {
+              "x": 0,
+              "y": 3.5
+            }
+          ]
+        },
+        "frame": null
+      },
+      {
+        "id": "rp-ceiling-1",
+        "category": "ceiling",
+        "polygon": {
+          "vertices": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 4.0,
+              "y": 0
+            },
+            {
+              "x": 4.0,
+              "y": 3.5
+            },
+            {
+              "x": 0,
+              "y": 3.5
+            }
+          ]
+        },
+        "frame": {
+          "origin": {
+            "x": 0,
+            "y": 0,
+            "z": 2.6
+          },
+          "u_axis": {
+            "x": 1,
+            "y": 0,
+            "z": 0
+          },
+          "v_axis": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          },
+          "normal": {
+            "x": 0,
+            "y": 0,
+            "z": -1
+          }
+        }
+      },
+      {
+        "id": "rp-wall-north",
+        "category": "wall",
+        "polygon": {
+          "vertices": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 4.0,
+              "y": 0
+            },
+            {
+              "x": 4.0,
+              "y": 2.6
+            },
+            {
+              "x": 0,
+              "y": 2.6
+            }
+          ]
+        },
+        "frame": {
+          "origin": {
+            "x": 0,
+            "y": 3.5,
+            "z": 0
+          },
+          "u_axis": {
+            "x": 1,
+            "y": 0,
+            "z": 0
+          },
+          "v_axis": {
+            "x": 0,
+            "y": 0,
+            "z": 1
+          },
+          "normal": {
+            "x": 0,
+            "y": -1,
+            "z": 0
+          }
+        }
+      },
+      {
+        "id": "rp-wall-east",
+        "category": "wall",
+        "polygon": {
+          "vertices": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 3.5,
+              "y": 0
+            },
+            {
+              "x": 3.5,
+              "y": 2.6
+            },
+            {
+              "x": 0,
+              "y": 2.6
+            }
+          ]
+        },
+        "frame": {
+          "origin": {
+            "x": 4.0,
+            "y": 3.5,
+            "z": 0
+          },
+          "u_axis": {
+            "x": 0,
+            "y": -1,
+            "z": 0
+          },
+          "v_axis": {
+            "x": 0,
+            "y": 0,
+            "z": 1
+          },
+          "normal": {
+            "x": -1,
+            "y": 0,
+            "z": 0
+          }
+        }
+      },
+      {
+        "id": "rp-wall-south",
+        "category": "wall",
+        "polygon": {
+          "vertices": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 4.0,
+              "y": 0
+            },
+            {
+              "x": 4.0,
+              "y": 2.6
+            },
+            {
+              "x": 0,
+              "y": 2.6
+            }
+          ]
+        },
+        "frame": {
+          "origin": {
+            "x": 4.0,
+            "y": 0,
+            "z": 0
+          },
+          "u_axis": {
+            "x": -1,
+            "y": 0,
+            "z": 0
+          },
+          "v_axis": {
+            "x": 0,
+            "y": 0,
+            "z": 1
+          },
+          "normal": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          }
+        }
+      },
+      {
+        "id": "rp-wall-west",
+        "category": "wall",
+        "polygon": {
+          "vertices": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 3.5,
+              "y": 0
+            },
+            {
+              "x": 3.5,
+              "y": 2.6
+            },
+            {
+              "x": 0,
+              "y": 2.6
+            }
+          ]
+        },
+        "frame": {
+          "origin": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "u_axis": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          },
+          "v_axis": {
+            "x": 0,
+            "y": 0,
+            "z": 1
+          },
+          "normal": {
+            "x": 1,
+            "y": 0,
+            "z": 0
+          }
+        }
+      }
+    ],
+    "openings": [
+      {
+        "id": "rp-opening-door-1",
+        "category": "door",
+        "host_surface_id": "rp-wall-south",
+        "rect": {
+          "min_u": 2.9,
+          "min_v": 0.0,
+          "width": 0.9,
+          "height": 2.1
+        }
+      },
+      {
+        "id": "rp-opening-window-1",
+        "category": "window",
+        "host_surface_id": "rp-wall-north",
+        "rect": {
+          "min_u": 2.45,
+          "min_v": 0.85,
+          "width": 1.2,
+          "height": 1.1
+        }
+      }
+    ],
+    "objects": [
+      {
+        "id": "rp-bed-1",
+        "category": "bed",
+        "pose": {
+          "position": {
+            "x": 1.15,
+            "y": 2.65,
+            "z": 0.0
+          },
+          "yaw_degrees": 180
+        },
+        "obb": {
+          "center": {
+            "x": 1.15,
+            "y": 2.65,
+            "z": 0.3
+          },
+          "size_x": 2.0,
+          "size_y": 1.6,
+          "size_z": 0.6,
+          "yaw_degrees": 180
+        },
+        "attributes": [
+          "queen"
+        ]
+      },
+      {
+        "id": "rp-nightstand-1",
+        "category": "nightstand",
+        "pose": {
+          "position": {
+            "x": 0.35,
+            "y": 2.95,
+            "z": 0.0
+          },
+          "yaw_degrees": 180
+        },
+        "obb": {
+          "center": {
+            "x": 0.35,
+            "y": 2.95,
+            "z": 0.3
+          },
+          "size_x": 0.5,
+          "size_y": 0.5,
+          "size_z": 0.6,
+          "yaw_degrees": 180
+        },
+        "attributes": [
+          "left_of_bed"
+        ]
+      },
+      {
+        "id": "rp-desk-1",
+        "category": "desk",
+        "pose": {
+          "position": {
+            "x": 3.1,
+            "y": 3.0,
+            "z": 0.0
+          },
+          "yaw_degrees": 180
+        },
+        "obb": {
+          "center": {
+            "x": 3.1,
+            "y": 3.0,
+            "z": 0.37
+          },
+          "size_x": 1.2,
+          "size_y": 0.6,
+          "size_z": 0.74,
+          "yaw_degrees": 180
+        },
+        "attributes": [
+          "under_window"
+        ]
+      },
+      {
+        "id": "rp-chair-1",
+        "category": "chair",
+        "pose": {
+          "position": {
+            "x": 3.1,
+            "y": 2.3,
+            "z": 0.0
+          },
+          "yaw_degrees": 0
+        },
+        "obb": {
+          "center": {
+            "x": 3.1,
+            "y": 2.3,
+            "z": 0.45
+          },
+          "size_x": 0.55,
+          "size_y": 0.55,
+          "size_z": 0.9,
+          "yaw_degrees": 0
+        },
+        "attributes": [
+          "desk_chair"
+        ]
+      },
+      {
+        "id": "rp-dresser-1",
+        "category": "dresser",
+        "pose": {
+          "position": {
+            "x": 0.45,
+            "y": 1.0,
+            "z": 0.0
+          },
+          "yaw_degrees": 90
+        },
+        "obb": {
+          "center": {
+            "x": 0.45,
+            "y": 1.0,
+            "z": 0.45
+          },
+          "size_x": 1.2,
+          "size_y": 0.5,
+          "size_z": 0.9,
+          "yaw_degrees": 90
+        },
+        "attributes": [
+          "six_drawer"
+        ]
+      },
+      {
+        "id": "rp-rug-1",
+        "category": "rug",
+        "pose": {
+          "position": {
+            "x": 2.05,
+            "y": 1.8,
+            "z": 0.0
+          },
+          "yaw_degrees": 0
+        },
+        "obb": {
+          "center": {
+            "x": 2.05,
+            "y": 1.8,
+            "z": 0.01
+          },
+          "size_x": 2.4,
+          "size_y": 1.6,
+          "size_z": 0.02,
+          "yaw_degrees": 0
+        },
+        "attributes": [
+          "area_rug"
+        ]
+      },
+      {
+        "id": "rp-lamp-1",
+        "category": "lamp",
+        "pose": {
+          "position": {
+            "x": 0.35,
+            "y": 2.95,
+            "z": 0.62
+          },
+          "yaw_degrees": 180
+        },
+        "obb": {
+          "center": {
+            "x": 0.35,
+            "y": 2.95,
+            "z": 0.82
+          },
+          "size_x": 0.2,
+          "size_y": 0.2,
+          "size_z": 0.4,
+          "yaw_degrees": 180
+        },
+        "attributes": [
+          "table_lamp"
+        ]
+      }
+    ]
+  },
+  "capture_metadata": {
+    "room_type_hint": "bedroom",
+    "units": "m",
+    "device_model": "iPhone16,2",
+    "captured_at": "2026-04-16T18:11:00Z",
+    "video_expected": true
+  },
+  "supplementary_detections": null
+}

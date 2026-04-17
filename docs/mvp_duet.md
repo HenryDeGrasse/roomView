@@ -155,25 +155,28 @@ A designer or technically inclined user using the room as a structured starting 
 1. User opens iOS companion app.
 2. User scans a bedroom with RoomPlan.
 3. App serializes RoomPlan output into capture payload.
-4. App uploads:
-
-   * RoomPlan scene payload
-   * metadata
-   * optional raw video for splat training
+4. App uploads the RoomPlan scene payload and metadata.
 5. Backend creates the canonical scene, issues a short-lived one-time handoff grant, and returns:
 
    * `scene_id`
    * `handoff_url`
    * QR payload encoding the same one-time grant
    * `expires_at`
-6. User opens the web editor on a laptop by redeeming the handoff URL or QR payload into an authenticated web session scoped to that `scene_id`.
+   * `video_upload_token` for optional post-ingest capture upload; it is short-lived, scene-scoped, and valid only for the companion app video upload path
+6. If available, the app uploads optional raw video for splat training against that `scene_id` using `video_upload_token`, without blocking scene editability.
+7. User opens the web editor on a laptop by redeeming the handoff URL or QR payload into an authenticated web session scoped to that `scene_id`.
 
 **Acceptance criteria**
 
 * A valid RoomPlan scan produces a canonical scene and a private handoff grant without manual intervention.
+* Ingest creates the first immutable scene snapshot plus scene head before any splat work is required.
+* Stable IDs are assigned during ingest and reused on subsequent reads of that scene state.
+* Unsupported detections are preserved as `generic_obstacle` objects with provenance instead of being silently dropped.
+* Initial `derived_state_cache` is available as part of the first editable scene read.
 * Raw `scene_id` possession alone is insufficient to open the web editor in MVP.
 * Handoff grants are short-lived, one-time use, and scene-scoped.
 * Scene becomes editable before splat is ready.
+* Optional raw video upload is attached after `scene_id` creation and never blocks the initial editable scene.
 * If splat never completes, the editor still functions.
 
 ### 7.2 Editor load flow
@@ -320,8 +323,10 @@ Requirements:
 **Scene Ingest Service**
 
 * maps RoomPlan output into canonical scene JSON
-* assigns stable IDs
-* stores the initial immutable scene snapshot and scene head
+* assigns stable IDs deterministically during ingest
+* creates fallback `generic_obstacle` objects for unsupported detections
+* computes and stores the initial immutable scene snapshot, scene head, and initial derived-state cache
+* persists the secure handoff artifact and any initial sidecar job records needed for optional splat processing
 
 **Scene Service**
 
@@ -383,6 +388,52 @@ The following may be stored alongside the scene but are never authoritative for 
 * photoreal outputs and photoreal job state
 * camera bookmark sidecars
 * RoomPlan preview meshes
+
+### 9.3 Capture payload and ingest pipeline
+
+```json
+RoomPlanCaptureRequest {
+  request_id: string,
+  client_capture_id: string,
+  roomplan_payload: object,
+  capture_metadata: {
+    room_type_hint: "bedroom",
+    units: "m",
+    device_model: string,
+    captured_at: timestamp,
+    video_expected: boolean
+  },
+  supplementary_detections: Array<{
+    detection_id: string,
+    label: string,
+    obb: OBB3D,
+    confidence: number
+  }> | null
+}
+```
+
+Initial ingest is synchronous and must complete the following before `POST /captures/roomplan` returns success:
+
+1. validate that the capture is a single supported bedroom scan
+2. map RoomPlan shell/openings/surfaces into canonical room-local geometry
+3. assign stable IDs for room, surfaces, openings, fixed elements, and objects
+4. create editable objects for supported classes and fallback `generic_obstacle` objects for unsupported RoomPlan or supplementary detections
+5. attach initial edit-participating asset refs for supported editable objects, using proxy assets when exact matches are unavailable
+6. compute the initial `derived_state_cache`
+7. persist:
+
+   * `SceneSnapshot(scene_version = 1, mutation_kind = "initial_ingest")`
+   * `SceneHead(current_scene_version = 1, current_snapshot_id = <initial_snapshot_id>, undo_base_snapshot_id = null)`
+   * initial `derived_state_cache`
+   * secure handoff artifact
+   * `SplatAssetRecord(status = "queued")` only if optional video upload is expected or has already been attached
+8. return the scene handoff response without waiting for any splat job to finish
+
+Stable-ID ingest rules:
+
+* IDs are generated exactly once during initial ingest and then persisted; later reads never recompute them from display order.
+* If the same physical unsupported item is carried through ingest, it must still receive a stable object ID and be stored as `class = "generic_obstacle"`.
+* Objects omitted by RoomPlan and by supplementary detections are not synthesized into editable state during ingest.
 
 ## 10. Canonical scene model
 
@@ -1091,12 +1142,17 @@ Minimal backend contract:
 
 `POST /captures/roomplan`
 
-* upload RoomPlan payload
-* returns `scene_id` plus a one-time handoff payload:
+* upload `RoomPlanCaptureRequest`
+* synchronously creates the initial scene snapshot, scene head, initial derived-state cache, and secure handoff artifact
+* returns:
 
+  * `scene_id`
+  * `scene_version = 1`
+  * `scene_snapshot_id`
   * `handoff_url`
   * `qr_payload`
   * `expires_at`
+  * `video_upload_token`
 
 `POST /handoffs/redeem`
 
@@ -1107,7 +1163,8 @@ Minimal backend contract:
 `POST /captures/{scene_id}/video`
 
 * upload optional raw video for splat job
-* requires authenticated access to that scene
+* requires the server-issued `video_upload_token` returned by `POST /captures/roomplan`; the token must match `{scene_id}`, expire quickly, and be rejected after a successful upload
+* creates or updates the `SplatAssetRecord` sidecar to `queued`/`processing` and returns `job_id`
 
 `GET /scenes/{scene_id}`
 
@@ -1173,7 +1230,7 @@ Minimal backend contract:
   * `UNDO_NOT_AVAILABLE` if there is no undoable base snapshot
 * `/photoreal` never mutates scene state. Safe retry with the same `idempotency_key` returns the same `job_id`.
 * `DELETE /scenes/{scene_id}` is idempotent. After deletion, subsequent scene commands return `SCENE_DELETED`.
-* Any scene endpoint called without a valid scene-scoped session returns `AUTH_REQUIRED` or `SCENE_ACCESS_DENIED`.
+* Any scene endpoint that uses web-session auth returns `AUTH_REQUIRED` or `SCENE_ACCESS_DENIED` when called without a valid scene-scoped session. `POST /captures/{scene_id}/video` instead validates `video_upload_token`.
 
 ## 18. Non-functional requirements
 
@@ -1194,7 +1251,7 @@ Minimal backend contract:
 
 ### Privacy
 
-* scene access requires a redeemed handoff or existing authenticated scene-scoped session
+* scene access requires a redeemed handoff or existing authenticated scene-scoped session, except for the companion app's one-time `video_upload_token` path for `POST /captures/{scene_id}/video`
 * raw `scene_id` is not a shareable credential in MVP
 * deleting a scene deletes:
 

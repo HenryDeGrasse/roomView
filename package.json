@@ -1,0 +1,13 @@
+{
+  "name": "roomview-mvp-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "verify:fixtures": "node ./scripts/verify-fixtures.mjs",
+    "check": "npm run verify:fixtures"
+  }
+}

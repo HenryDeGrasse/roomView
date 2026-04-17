@@ -1,0 +1,29 @@
+Reviewed the step-4-relevant parts of `docs/mvp_duet.md`: capture flow, ingest architecture, source-of-truth/persistence boundaries, and capture APIs.
+
+What I changed:
+- Added concrete ingest requirements to the capture flow acceptance criteria:
+  - first immutable snapshot + scene head created during ingest
+  - stable IDs assigned and reused
+  - unsupported detections preserved as `generic_obstacle`
+  - initial `derived_state_cache` available on first editable read
+- Expanded `Scene Ingest Service` responsibilities to cover:
+  - deterministic stable ID assignment
+  - `generic_obstacle` fallback creation
+  - initial snapshot/head/derived-state creation
+  - handoff artifact + initial sidecar persistence
+- Added a new `9.3 Capture payload and ingest pipeline` section defining:
+  - `RoomPlanCaptureRequest`
+  - synchronous ingest steps
+  - initial persistence behavior
+  - stable-ID ingest rules
+- Updated capture APIs:
+  - `POST /captures/roomplan` now explicitly creates the initial snapshot/head/cache and returns `scene_version = 1` and `scene_snapshot_id`
+  - `POST /captures/{scene_id}/video` now updates/creates the splat sidecar and returns `job_id`
+
+Checks:
+- `noop` ✅
+
+Assessment:
+- Step 4 is now concretely specified in the PRD for initial scene creation and editable-before-splat ingest behavior.
+
+Verdict: changes_made

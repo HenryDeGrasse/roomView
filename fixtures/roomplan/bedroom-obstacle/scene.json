@@ -1,0 +1,1106 @@
+{
+  "head": {
+    "scene_id": "scene-bedroom-obstacle",
+    "source": "scanned",
+    "units": "m",
+    "current_snapshot_id": "snapshot-bedroom-obstacle-v1",
+    "current_scene_version": 1,
+    "undo_base_snapshot_id": null,
+    "updated_at": "2026-04-16T18:28:06Z"
+  },
+  "snapshot": {
+    "snapshot_id": "snapshot-bedroom-obstacle-v1",
+    "scene_id": "scene-bedroom-obstacle",
+    "scene_version": 1,
+    "based_on_snapshot_id": null,
+    "mutation_kind": "initial_ingest",
+    "state": {
+      "style_tags": [
+        "minimal",
+        "light_wood"
+      ],
+      "room": {
+        "room_id": "room-bedroom-obstacle",
+        "room_type": "bedroom",
+        "coordinate_frame": {
+          "origin": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "x_axis": {
+            "x": 1,
+            "y": 0,
+            "z": 0
+          },
+          "y_axis": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          },
+          "z_axis": {
+            "x": 0,
+            "y": 0,
+            "z": 1
+          },
+          "north_source": "scan_forward"
+        },
+        "shell": {
+          "floor_polygon": {
+            "vertices": [
+              {
+                "x": 0,
+                "y": 0
+              },
+              {
+                "x": 4.2,
+                "y": 0
+              },
+              {
+                "x": 4.2,
+                "y": 3.8
+              },
+              {
+                "x": 0,
+                "y": 3.8
+              }
+            ]
+          },
+          "ceiling_height": 2.7,
+          "surfaces": [
+            {
+              "surface_id": "surface2-floor-1",
+              "type": "floor",
+              "geometry_ref": "rp2-floor-1",
+              "boundary": {
+                "vertices": [
+                  {
+                    "x": 0,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.2,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.2,
+                    "y": 3.8
+                  },
+                  {
+                    "x": 0,
+                    "y": 3.8
+                  }
+                ]
+              },
+              "surface_frame": null,
+              "named_wall_ref_id": null,
+              "material_state": {
+                "category": "flooring",
+                "color": "oak",
+                "finish": "matte",
+                "pattern": "plank",
+                "reference_asset_id": "asset-floor-oak-01"
+              },
+              "user_locked": false,
+              "provenance": {
+                "source_kind": "measured",
+                "confidence": 0.98,
+                "source_ref": "roomplan:rp2-floor-1",
+                "updated_at": "2026-04-16T18:28:06Z"
+              }
+            },
+            {
+              "surface_id": "surface2-ceiling-1",
+              "type": "ceiling",
+              "geometry_ref": "rp2-ceiling-1",
+              "boundary": {
+                "vertices": [
+                  {
+                    "x": 0,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.2,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.2,
+                    "y": 3.8
+                  },
+                  {
+                    "x": 0,
+                    "y": 3.8
+                  }
+                ]
+              },
+              "surface_frame": {
+                "origin": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 2.7
+                },
+                "u_axis": {
+                  "x": 1,
+                  "y": 0,
+                  "z": 0
+                },
+                "v_axis": {
+                  "x": 0,
+                  "y": 1,
+                  "z": 0
+                },
+                "normal": {
+                  "x": 0,
+                  "y": 0,
+                  "z": -1
+                }
+              },
+              "named_wall_ref_id": null,
+              "material_state": {
+                "category": "paint",
+                "color": "soft_white",
+                "finish": "flat",
+                "pattern": null,
+                "reference_asset_id": null
+              },
+              "user_locked": false,
+              "provenance": {
+                "source_kind": "measured",
+                "confidence": 0.97,
+                "source_ref": "roomplan:rp2-ceiling-1",
+                "updated_at": "2026-04-16T18:28:06Z"
+              }
+            },
+            {
+              "surface_id": "surface2-wall-north-1",
+              "type": "wall",
+              "geometry_ref": "rp2-wall-north",
+              "boundary": {
+                "vertices": [
+                  {
+                    "x": 0,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.2,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.2,
+                    "y": 2.7
+                  },
+                  {
+                    "x": 0,
+                    "y": 2.7
+                  }
+                ]
+              },
+              "surface_frame": {
+                "origin": {
+                  "x": 0,
+                  "y": 3.8,
+                  "z": 0
+                },
+                "u_axis": {
+                  "x": 1,
+                  "y": 0,
+                  "z": 0
+                },
+                "v_axis": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 1
+                },
+                "normal": {
+                  "x": 0,
+                  "y": -1,
+                  "z": 0
+                }
+              },
+              "named_wall_ref_id": "wall2-ref-north",
+              "material_state": {
+                "category": "paint",
+                "color": "soft_gray",
+                "finish": "eggshell",
+                "pattern": null,
+                "reference_asset_id": null
+              },
+              "user_locked": false,
+              "provenance": {
+                "source_kind": "measured",
+                "confidence": 0.98,
+                "source_ref": "roomplan:rp2-wall-north",
+                "updated_at": "2026-04-16T18:28:06Z"
+              }
+            },
+            {
+              "surface_id": "surface2-wall-east-1",
+              "type": "wall",
+              "geometry_ref": "rp2-wall-east",
+              "boundary": {
+                "vertices": [
+                  {
+                    "x": 0,
+                    "y": 0
+                  },
+                  {
+                    "x": 3.8,
+                    "y": 0
+                  },
+                  {
+                    "x": 3.8,
+                    "y": 2.7
+                  },
+                  {
+                    "x": 0,
+                    "y": 2.7
+                  }
+                ]
+              },
+              "surface_frame": {
+                "origin": {
+                  "x": 4.2,
+                  "y": 3.8,
+                  "z": 0
+                },
+                "u_axis": {
+                  "x": 0,
+                  "y": -1,
+                  "z": 0
+                },
+                "v_axis": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 1
+                },
+                "normal": {
+                  "x": -1,
+                  "y": 0,
+                  "z": 0
+                }
+              },
+              "named_wall_ref_id": "wall2-ref-east",
+              "material_state": {
+                "category": "paint",
+                "color": "soft_gray",
+                "finish": "eggshell",
+                "pattern": null,
+                "reference_asset_id": null
+              },
+              "user_locked": false,
+              "provenance": {
+                "source_kind": "measured",
+                "confidence": 0.98,
+                "source_ref": "roomplan:rp2-wall-east",
+                "updated_at": "2026-04-16T18:28:06Z"
+              }
+            },
+            {
+              "surface_id": "surface2-wall-south-1",
+              "type": "wall",
+              "geometry_ref": "rp2-wall-south",
+              "boundary": {
+                "vertices": [
+                  {
+                    "x": 0,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.2,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.2,
+                    "y": 2.7
+                  },
+                  {
+                    "x": 0,
+                    "y": 2.7
+                  }
+                ]
+              },
+              "surface_frame": {
+                "origin": {
+                  "x": 4.2,
+                  "y": 0,
+                  "z": 0
+                },
+                "u_axis": {
+                  "x": -1,
+                  "y": 0,
+                  "z": 0
+                },
+                "v_axis": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 1
+                },
+                "normal": {
+                  "x": 0,
+                  "y": 1,
+                  "z": 0
+                }
+              },
+              "named_wall_ref_id": "wall2-ref-south",
+              "material_state": {
+                "category": "paint",
+                "color": "soft_gray",
+                "finish": "eggshell",
+                "pattern": null,
+                "reference_asset_id": null
+              },
+              "user_locked": false,
+              "provenance": {
+                "source_kind": "measured",
+                "confidence": 0.98,
+                "source_ref": "roomplan:rp2-wall-south",
+                "updated_at": "2026-04-16T18:28:06Z"
+              }
+            },
+            {
+              "surface_id": "surface2-wall-west-1",
+              "type": "wall",
+              "geometry_ref": "rp2-wall-west",
+              "boundary": {
+                "vertices": [
+                  {
+                    "x": 0,
+                    "y": 0
+                  },
+                  {
+                    "x": 3.8,
+                    "y": 0
+                  },
+                  {
+                    "x": 3.8,
+                    "y": 2.7
+                  },
+                  {
+                    "x": 0,
+                    "y": 2.7
+                  }
+                ]
+              },
+              "surface_frame": {
+                "origin": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                },
+                "u_axis": {
+                  "x": 0,
+                  "y": 1,
+                  "z": 0
+                },
+                "v_axis": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 1
+                },
+                "normal": {
+                  "x": 1,
+                  "y": 0,
+                  "z": 0
+                }
+              },
+              "named_wall_ref_id": "wall2-ref-west",
+              "material_state": {
+                "category": "paint",
+                "color": "soft_gray",
+                "finish": "eggshell",
+                "pattern": null,
+                "reference_asset_id": null
+              },
+              "user_locked": false,
+              "provenance": {
+                "source_kind": "measured",
+                "confidence": 0.98,
+                "source_ref": "roomplan:rp2-wall-west",
+                "updated_at": "2026-04-16T18:28:06Z"
+              }
+            }
+          ],
+          "named_wall_refs": [
+            {
+              "wall_ref_id": "wall2-ref-north",
+              "name": "north wall",
+              "surface_ids": [
+                "surface2-wall-north-1"
+              ],
+              "azimuth_degrees": 0,
+              "inward_normal_xy": {
+                "x": 0,
+                "y": -1
+              }
+            },
+            {
+              "wall_ref_id": "wall2-ref-east",
+              "name": "east wall",
+              "surface_ids": [
+                "surface2-wall-east-1"
+              ],
+              "azimuth_degrees": 90,
+              "inward_normal_xy": {
+                "x": -1,
+                "y": 0
+              }
+            },
+            {
+              "wall_ref_id": "wall2-ref-south",
+              "name": "south wall",
+              "surface_ids": [
+                "surface2-wall-south-1"
+              ],
+              "azimuth_degrees": 180,
+              "inward_normal_xy": {
+                "x": 0,
+                "y": 1
+              }
+            },
+            {
+              "wall_ref_id": "wall2-ref-west",
+              "name": "west wall",
+              "surface_ids": [
+                "surface2-wall-west-1"
+              ],
+              "azimuth_degrees": 270,
+              "inward_normal_xy": {
+                "x": 1,
+                "y": 0
+              }
+            }
+          ],
+          "openings": [
+            {
+              "opening_id": "opening2-door-1",
+              "host_surface_id": "surface2-wall-east-1",
+              "type": "door",
+              "rect": {
+                "min_u": 2.4,
+                "min_v": 0.0,
+                "width": 0.85,
+                "height": 2.1
+              },
+              "swing_zone": {
+                "vertices": [
+                  {
+                    "x": 3.35,
+                    "y": 0.55
+                  },
+                  {
+                    "x": 4.2,
+                    "y": 0.55
+                  },
+                  {
+                    "x": 4.2,
+                    "y": 1.4
+                  },
+                  {
+                    "x": 3.35,
+                    "y": 1.4
+                  }
+                ]
+              },
+              "keepout_zone": {
+                "vertices": [
+                  {
+                    "x": 3.25,
+                    "y": 0.45
+                  },
+                  {
+                    "x": 4.2,
+                    "y": 0.45
+                  },
+                  {
+                    "x": 4.2,
+                    "y": 1.5
+                  },
+                  {
+                    "x": 3.25,
+                    "y": 1.5
+                  }
+                ]
+              },
+              "connects_to_room_id": null,
+              "provenance": {
+                "source_kind": "measured",
+                "confidence": 0.99,
+                "source_ref": "roomplan:rp2-opening-door-1",
+                "updated_at": "2026-04-16T18:28:06Z"
+              }
+            },
+            {
+              "opening_id": "opening2-window-1",
+              "host_surface_id": "surface2-wall-west-1",
+              "type": "window",
+              "rect": {
+                "min_u": 1.6,
+                "min_v": 0.8,
+                "width": 1.3,
+                "height": 1.0
+              },
+              "swing_zone": null,
+              "keepout_zone": {
+                "vertices": [
+                  {
+                    "x": 0.0,
+                    "y": 1.45
+                  },
+                  {
+                    "x": 0.45,
+                    "y": 1.45
+                  },
+                  {
+                    "x": 0.45,
+                    "y": 3.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 3.0
+                  }
+                ]
+              },
+              "connects_to_room_id": null,
+              "provenance": {
+                "source_kind": "measured",
+                "confidence": 0.97,
+                "source_ref": "roomplan:rp2-opening-window-1",
+                "updated_at": "2026-04-16T18:28:06Z"
+              }
+            }
+          ],
+          "fixed_elements": []
+        },
+        "objects": [
+          {
+            "object_id": "object2-bed-1",
+            "class": "bed",
+            "attributes": [
+              "queen"
+            ],
+            "parent_id": null,
+            "child_movement_policy": "independent",
+            "pose": {
+              "position": {
+                "x": 2.85,
+                "y": 2.95,
+                "z": 0.0
+              },
+              "yaw_degrees": 180
+            },
+            "obb": {
+              "center": {
+                "x": 2.85,
+                "y": 2.95,
+                "z": 0.3
+              },
+              "size_x": 2.0,
+              "size_y": 1.6,
+              "size_z": 0.6,
+              "yaw_degrees": 180
+            },
+            "mobility": "movable",
+            "host": {
+              "relation_type": "flush_to_wall",
+              "host_surface_id": "surface2-wall-north-1",
+              "anchor_rect": null
+            },
+            "support": {
+              "support_kind": "floor",
+              "support_entity_id": "surface2-floor-1",
+              "contact_patch": {
+                "vertices": [
+                  {
+                    "x": 1.85,
+                    "y": 2.15
+                  },
+                  {
+                    "x": 3.85,
+                    "y": 2.15
+                  },
+                  {
+                    "x": 3.85,
+                    "y": 3.75
+                  },
+                  {
+                    "x": 1.85,
+                    "y": 3.75
+                  }
+                ]
+              }
+            },
+            "asset_ref": "asset-bed-queen-walnut-01",
+            "style_tags": [
+              "minimal",
+              "dark_wood"
+            ],
+            "material_state": {
+              "category": "fabric",
+              "color": "mist_gray",
+              "finish": "woven",
+              "pattern": null,
+              "reference_asset_id": null
+            },
+            "user_locked": false,
+            "provenance": {
+              "source_kind": "measured",
+              "confidence": 0.93,
+              "source_ref": "roomplan:rp2-bed-1",
+              "updated_at": "2026-04-16T18:28:06Z"
+            }
+          },
+          {
+            "object_id": "object2-nightstand-1",
+            "class": "nightstand",
+            "attributes": [
+              "right_of_bed"
+            ],
+            "parent_id": null,
+            "child_movement_policy": "independent",
+            "pose": {
+              "position": {
+                "x": 3.75,
+                "y": 2.95,
+                "z": 0.0
+              },
+              "yaw_degrees": 180
+            },
+            "obb": {
+              "center": {
+                "x": 3.75,
+                "y": 2.95,
+                "z": 0.3
+              },
+              "size_x": 0.45,
+              "size_y": 0.45,
+              "size_z": 0.6,
+              "yaw_degrees": 180
+            },
+            "mobility": "movable",
+            "host": {
+              "relation_type": "flush_to_wall",
+              "host_surface_id": "surface2-wall-north-1",
+              "anchor_rect": null
+            },
+            "support": {
+              "support_kind": "floor",
+              "support_entity_id": "surface2-floor-1",
+              "contact_patch": {
+                "vertices": [
+                  {
+                    "x": 3.53,
+                    "y": 2.73
+                  },
+                  {
+                    "x": 3.98,
+                    "y": 2.73
+                  },
+                  {
+                    "x": 3.98,
+                    "y": 3.18
+                  },
+                  {
+                    "x": 3.53,
+                    "y": 3.18
+                  }
+                ]
+              }
+            },
+            "asset_ref": "asset-nightstand-walnut-01",
+            "style_tags": [
+              "minimal",
+              "dark_wood"
+            ],
+            "material_state": {
+              "category": "wood",
+              "color": "walnut",
+              "finish": "satin",
+              "pattern": null,
+              "reference_asset_id": null
+            },
+            "user_locked": false,
+            "provenance": {
+              "source_kind": "measured",
+              "confidence": 0.88,
+              "source_ref": "roomplan:rp2-nightstand-1",
+              "updated_at": "2026-04-16T18:28:06Z"
+            }
+          },
+          {
+            "object_id": "object2-desk-1",
+            "class": "desk",
+            "attributes": [
+              "near_window"
+            ],
+            "parent_id": null,
+            "child_movement_policy": "independent",
+            "pose": {
+              "position": {
+                "x": 0.55,
+                "y": 2.25,
+                "z": 0.0
+              },
+              "yaw_degrees": 90
+            },
+            "obb": {
+              "center": {
+                "x": 0.55,
+                "y": 2.25,
+                "z": 0.37
+              },
+              "size_x": 1.1,
+              "size_y": 0.6,
+              "size_z": 0.74,
+              "yaw_degrees": 90
+            },
+            "mobility": "movable",
+            "host": {
+              "relation_type": "flush_to_wall",
+              "host_surface_id": "surface2-wall-west-1",
+              "anchor_rect": null
+            },
+            "support": {
+              "support_kind": "floor",
+              "support_entity_id": "surface2-floor-1",
+              "contact_patch": {
+                "vertices": [
+                  {
+                    "x": 0.25,
+                    "y": 1.7
+                  },
+                  {
+                    "x": 0.85,
+                    "y": 1.7
+                  },
+                  {
+                    "x": 0.85,
+                    "y": 2.8
+                  },
+                  {
+                    "x": 0.25,
+                    "y": 2.8
+                  }
+                ]
+              }
+            },
+            "asset_ref": "asset-desk-proxy-01",
+            "style_tags": [
+              "minimal",
+              "workspace"
+            ],
+            "material_state": {
+              "category": "wood",
+              "color": "ash",
+              "finish": "matte",
+              "pattern": null,
+              "reference_asset_id": null
+            },
+            "user_locked": false,
+            "provenance": {
+              "source_kind": "measured",
+              "confidence": 0.84,
+              "source_ref": "roomplan:rp2-desk-1",
+              "updated_at": "2026-04-16T18:28:06Z"
+            }
+          },
+          {
+            "object_id": "object2-obstacle-1",
+            "class": "generic_obstacle",
+            "attributes": [
+              "exercise_bike",
+              "supplementary_detection"
+            ],
+            "parent_id": null,
+            "child_movement_policy": "independent",
+            "pose": {
+              "position": {
+                "x": 2.0,
+                "y": 1.55,
+                "z": 0.0
+              },
+              "yaw_degrees": 45
+            },
+            "obb": {
+              "center": {
+                "x": 2.0,
+                "y": 1.55,
+                "z": 0.7
+              },
+              "size_x": 1.1,
+              "size_y": 0.7,
+              "size_z": 1.4,
+              "yaw_degrees": 45
+            },
+            "mobility": "fixed",
+            "host": null,
+            "support": {
+              "support_kind": "floor",
+              "support_entity_id": "surface2-floor-1",
+              "contact_patch": {
+                "vertices": [
+                  {
+                    "x": 1.45,
+                    "y": 1.2
+                  },
+                  {
+                    "x": 2.55,
+                    "y": 1.2
+                  },
+                  {
+                    "x": 2.55,
+                    "y": 1.9
+                  },
+                  {
+                    "x": 1.45,
+                    "y": 1.9
+                  }
+                ]
+              }
+            },
+            "asset_ref": null,
+            "style_tags": [],
+            "material_state": null,
+            "user_locked": false,
+            "provenance": {
+              "source_kind": "generated",
+              "confidence": 0.67,
+              "source_ref": "supplementary:supp-exercise-bike-1",
+              "updated_at": "2026-04-16T18:28:06Z"
+            }
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "constraint2-opening-1",
+            "kind": "opening_preserved",
+            "severity": "hard",
+            "target_entity_ids": [
+              "opening2-door-1",
+              "opening2-window-1"
+            ],
+            "params": {
+              "min_keepout_m": 0.0
+            },
+            "reason_code_on_fail": "OPENING_BLOCKED"
+          },
+          {
+            "constraint_id": "constraint2-walkway-1",
+            "kind": "walkway_clearance",
+            "severity": "hard",
+            "target_entity_ids": [
+              "opening2-door-1",
+              "object2-bed-1",
+              "object2-desk-1"
+            ],
+            "params": {
+              "minimum_width_m": 0.76
+            },
+            "reason_code_on_fail": "CLEARANCE_VIOLATION"
+          },
+          {
+            "constraint_id": "constraint2-overlap-1",
+            "kind": "no_overlap_in_bounds",
+            "severity": "hard",
+            "target_entity_ids": [
+              "object2-bed-1",
+              "object2-nightstand-1",
+              "object2-desk-1",
+              "object2-obstacle-1"
+            ],
+            "params": {
+              "tolerance_m": 0.02
+            },
+            "reason_code_on_fail": "OBJECT_OVERLAP"
+          },
+          {
+            "constraint_id": "constraint2-anchor-1",
+            "kind": "anchor_integrity",
+            "severity": "hard",
+            "target_entity_ids": [
+              "object2-bed-1",
+              "object2-nightstand-1",
+              "object2-desk-1"
+            ],
+            "params": {},
+            "reason_code_on_fail": "ANCHOR_VIOLATION"
+          },
+          {
+            "constraint_id": "constraint2-clearance-bed-1",
+            "kind": "class_specific_clearance",
+            "severity": "hard",
+            "target_entity_ids": [
+              "object2-bed-1"
+            ],
+            "params": {
+              "minimum_access_side_m": 0.6
+            },
+            "reason_code_on_fail": "CLEARANCE_VIOLATION"
+          },
+          {
+            "constraint_id": "constraint2-soft-desk-window-1",
+            "kind": "desk_near_window",
+            "severity": "soft",
+            "target_entity_ids": [
+              "object2-desk-1",
+              "opening2-window-1"
+            ],
+            "params": {
+              "target_distance_m": 0.8
+            },
+            "reason_code_on_fail": null
+          }
+        ],
+        "focal_elements": [
+          {
+            "entity_id": "opening2-window-1",
+            "entity_type": "opening",
+            "role": "primary",
+            "reason": "task-light source for desk placement"
+          }
+        ],
+        "section_hints": [
+          "sleep_zone",
+          "work_zone",
+          "obstacle_zone"
+        ]
+      }
+    },
+    "editing_asset_refs": [
+      {
+        "asset_id": "asset-bed-queen-walnut-01",
+        "kind": "gltf",
+        "uri": "asset://furniture/bed/queen-walnut-01.glb",
+        "bound_to": "object2-bed-1"
+      },
+      {
+        "asset_id": "asset-nightstand-walnut-01",
+        "kind": "gltf",
+        "uri": "asset://furniture/nightstand/walnut-01.glb",
+        "bound_to": "object2-nightstand-1"
+      },
+      {
+        "asset_id": "asset-desk-proxy-01",
+        "kind": "proxy_gltf",
+        "uri": "asset://proxies/desk/simple-rect.glb",
+        "bound_to": "object2-desk-1"
+      }
+    ],
+    "created_at": "2026-04-16T18:28:06Z"
+  },
+  "derived_state_cache": {
+    "zones": [
+      {
+        "zone_id": "zone2-bed-access-1",
+        "kind": "bed_access",
+        "entity_id": "object2-bed-1",
+        "polygon": {
+          "vertices": [
+            {
+              "x": 0.95,
+              "y": 2.2
+            },
+            {
+              "x": 1.8,
+              "y": 2.2
+            },
+            {
+              "x": 1.8,
+              "y": 3.55
+            },
+            {
+              "x": 0.95,
+              "y": 3.55
+            }
+          ]
+        }
+      },
+      {
+        "zone_id": "zone2-obstacle-buffer-1",
+        "kind": "obstacle_buffer",
+        "entity_id": "object2-obstacle-1",
+        "polygon": {
+          "vertices": [
+            {
+              "x": 1.3,
+              "y": 1.0
+            },
+            {
+              "x": 2.7,
+              "y": 1.0
+            },
+            {
+              "x": 2.7,
+              "y": 2.1
+            },
+            {
+              "x": 1.3,
+              "y": 2.1
+            }
+          ]
+        }
+      }
+    ],
+    "clearance_paths": [
+      {
+        "path_id": "path2-door-to-bed",
+        "width_m": 0.79,
+        "waypoints": [
+          {
+            "x": 3.75,
+            "y": 1.0
+          },
+          {
+            "x": 3.0,
+            "y": 1.7
+          },
+          {
+            "x": 2.1,
+            "y": 2.3
+          }
+        ]
+      },
+      {
+        "path_id": "path2-door-to-desk",
+        "width_m": 0.81,
+        "waypoints": [
+          {
+            "x": 3.75,
+            "y": 1.0
+          },
+          {
+            "x": 2.7,
+            "y": 1.0
+          },
+          {
+            "x": 1.2,
+            "y": 1.9
+          }
+        ]
+      }
+    ],
+    "soft_scores": {
+      "desk_near_window": 0.88
+    },
+    "hard_violations": [],
+    "selection_context_summary": "Unsupported exercise bike preserved as generic obstacle and kept in validation geometry."
+  },
+  "bookmarks": [
+    {
+      "bookmark_id": "bookmark2-entry-view",
+      "name": "Entry view",
+      "camera_pose": {
+        "position": {
+          "x": 5.2,
+          "y": 1.7,
+          "z": 1.65
+        },
+        "yaw_degrees": 270
+      },
+      "fov": 60,
+      "created_at": "2026-04-16T18:28:06Z",
+      "updated_at": "2026-04-16T18:28:06Z"
+    }
+  ],
+  "photoreal_gallery": [],
+  "splat": null
+}

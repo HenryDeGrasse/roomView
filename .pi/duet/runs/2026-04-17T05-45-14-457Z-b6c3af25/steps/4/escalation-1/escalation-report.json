@@ -1,0 +1,5 @@
+{
+  "stepId": "step-4",
+  "reason": "Step 4 assumes existing implementation surfaces for iOS capture and backend ingest, but the repository currently contains only docs.",
+  "category": "other"
+}
