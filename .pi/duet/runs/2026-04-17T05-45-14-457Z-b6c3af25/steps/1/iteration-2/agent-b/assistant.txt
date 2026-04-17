@@ -1,0 +1,20 @@
+Reviewed the `docs/mvp_duet.md` diff and re-ran the required check.
+
+What I changed:
+- Fixed one material schema ambiguity in `docs/mvp_duet.md`:
+  - `HostRelation` previously allowed two encodings for “no host” (`host = null` and `relation_type = "none"`), which breaks canonical authoritative state.
+  - I removed `"none"` from `HostRelation.relation_type`, made `host_surface_id` required when a `HostRelation` exists, and clarified that canonical absence is represented only by `host = null`.
+
+Assessment:
+- The step requirements are otherwise covered:
+  - canonical editable state is separated from derived/cache data via `Scene.state` and `derived_state_cache`
+  - missing core types are defined
+  - room-local axes and named wall refs, including `north wall`, are specified
+  - focal-element annotations are canonicalized
+  - host/support semantics are defined
+  - parent/child and `include_children` movement rules are explicit
+
+Checks:
+- `noop` ✅
+
+Verdict: changes_made

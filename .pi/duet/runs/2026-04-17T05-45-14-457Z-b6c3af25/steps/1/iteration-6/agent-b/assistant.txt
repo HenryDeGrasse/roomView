@@ -1,0 +1,5 @@
+No further concrete defect identified; the room-local vs. surface-frame geometry semantics are now internally consistent, and the step requirements appear satisfied.
+
+`noop` ✅
+
+Verdict: approve

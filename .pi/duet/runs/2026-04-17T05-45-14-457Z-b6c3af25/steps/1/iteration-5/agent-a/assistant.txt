@@ -1,0 +1,15 @@
+Fixed the remaining schema contradiction in `docs/mvp_duet.md`.
+
+What I changed:
+- Corrected `RoomCoordinateFrame` semantics so it no longer wrongly claims every `Polygon2D` is in room-local coordinates.
+- Corrected the invariant that said all geometry is in the room-local frame; it now matches the schema and allows geometry to be either:
+  - room-local, or
+  - in an explicit `SurfaceFrame` relative to room-local space.
+
+Why:
+- The prior wording still contradicted `Surface.boundary` and `RectOnSurface`, which are intentionally surface-local.
+
+Check:
+- `noop` ✅
+
+Verdict: changes_made

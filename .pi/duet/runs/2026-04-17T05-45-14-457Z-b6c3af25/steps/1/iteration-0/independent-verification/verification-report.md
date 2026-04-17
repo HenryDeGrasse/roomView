@@ -1,0 +1,19 @@
+Scope note: `find . '**/*.ts'` returned no code/schema files, so the substantive Step 1 implementation on disk is the schema/spec update in `docs/mvp_duet.md`.
+
+PASS: Canonical editable state is explicitly separated from derived/cache/artifact data — `docs/mvp_duet.md:352-356` says `Scene.state` is the only logical source of truth and lists `derived_state_cache` plus renders/assets as non-authoritative; `:368-370` partitions the scene into `state`, `derived_state_cache`, and output/artifact refs; `:378-379` encodes that split in `Scene`; `:687-689` says only `Scene.state` mutations bump `scene_version` and `derived_state_cache` is recomputable.
+
+PASS: All missing core types named in the step are now defined — `docs/mvp_duet.md:475-483` defines `FixedElement`; `:515-541` defines `Polygon2D`, `RectOnSurface`, `Pose3D`, and `OBB3D`; `:591-596` defines `ConstraintSpec`. They are also wired into core entities at `:403` (`ConstraintSpec[]`), `:416` (`FixedElement[]`), `:444` (`RectOnSurface`), and `:461-462` (`Pose3D`, `OBB3D`).
+
+PASS: Room-local axes and named wall references, including `north wall`, are explicitly modeled — `docs/mvp_duet.md:400` adds `Room.coordinate_frame`; `:414` adds `Shell.named_wall_refs`; `:543-550` defines `RoomCoordinateFrame` with axes and `north_source`; `:560-567` defines `NamedWallRef` and reserves `north wall`, `south wall`, `east wall`, `west wall`; `:653-655` requires stable named-wall resolution and defines how `north wall` resolves even when true north is unavailable.
+
+PASS: Geometry frame semantics are coherent between room-local and surface-local coordinates — `docs/mvp_duet.md:436-437` states `Surface.boundary` is room-local for floors but surface-frame-local for walls/ceilings; `:520-526` defines `RectOnSurface` in `surface_frame`; `:652` says all geometry is anchored either directly to room-local coordinates or via `SurfaceFrame`; `:656` requires a matching `surface_frame`; `:692` restates the invariant that geometry is either room-local or in an explicit `SurfaceFrame`.
+
+PASS: Focal-element annotations are first-class canonical state, not inferred cache — `docs/mvp_duet.md:404` places `focal_elements: FocalElementRef[]` on `Room`; `:583-589` defines `FocalElementRef`; `:660-662` says `Room.focal_elements` is explicit canonical state and that `SC-2 Sofa faces focal element` evaluates only against those annotations; `:901-902` shows that soft rule exists later in the spec.
+
+PASS: Host/support relationships for anchored or fixed items are modeled and semantically constrained — `docs/mvp_duet.md:463-465` adds `mobility`, `host`, and `support` to `Object`; `:475-482` gives `FixedElement` the same `host`/`support` structure; `:569-581` defines `HostRelation` and `SupportRelation`; `:666-673` explains anchored/fixed semantics and examples; `:884-885` adds later validation via `HC-4 Anchor integrity`.
+
+PASS: Parent/child movement rules for `parent_id` and `include_children` are explicit — `docs/mvp_duet.md:459-460` adds `parent_id` and `child_movement_policy` to `Object`; `:677-682` defines acyclic parent graphs, says child coordinates remain room-local, defines `include_children` default/behavior, and requires `PARENT_MOVE_VIOLATION` on invalid detached moves; `:754-762` propagates those rules into `move_object` and `rotate_object`; `:832` lists `PARENT_MOVE_VIOLATION` as an explicit error code.
+
+PASS: The new semantics are actually connected to later flows that depend on them — `docs/mvp_duet.md:754-755` lets `move_object` target a `NamedWallRef` and use `include_children`; `:762` does the same for `rotate_object`; `:884-885` uses host/support semantics in anchor validation; `:901-902` uses focal-element annotations in scoring; `:1155` uses `north wall` in an acceptance scenario.
+
+Assessment: CONVERGED — implementation matches requirements with no material gaps

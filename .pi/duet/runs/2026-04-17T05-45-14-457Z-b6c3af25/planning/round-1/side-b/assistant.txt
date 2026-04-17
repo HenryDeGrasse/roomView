@@ -1,0 +1,79 @@
+Independent expectations before reading the plan
+
+Given the repo currently only contains `docs/mvp_duet.md`, I’d expect this goal to touch or create roughly these areas:
+
+1. `docs/mvp_duet.md`
+   - Still the authoritative product contract to align implementation against.
+2. `ios/` or similar native app directory
+   - For RoomPlan capture, payload packaging, upload, and handoff.
+3. `web/` or similar frontend directory
+   - For the three-pane editor, chat, selection, gallery, and bookmarks.
+4. `backend/` or `api/` services
+   - For ingest, scene storage/versioning, planner/apply, validation, photoreal, splat jobs.
+5. `shared/` or `packages/schema/`
+   - For canonical scene types, operation schemas, reason codes, and versioning contracts.
+
+Existing patterns/conventions a plan should follow
+
+From `docs/mvp_duet.md`, a workable plan should preserve these conventions:
+
+- Canonical scene JSON is the only source of truth.
+- Scan/splat/photoreal outputs are non-authoritative views or side artifacts.
+- Edits are typed, atomic, and validated before commit.
+- Scene versions are immutable and monotonic.
+- No partial commits; stale clients must fail cleanly.
+- Scan pane is read-only; layout/render reflect committed scene state.
+- MVP stays narrowly scoped: one room, iPhone capture, single-step undo, optional splat.
+
+Minimum viable set of steps
+
+At minimum, I’d expect the plan to cover:
+
+1. Finalize schema + operation contracts.
+2. Define persistence/versioning/undo semantics.
+3. Build RoomPlan ingest and initial scene creation.
+4. Stand up scene read APIs and the basic web editor.
+5. Add asset retrieval + quick render.
+6. Implement validation + atomic apply + locking + undo.
+7. Add chat/planner integration.
+8. Add photoreal generation tied to scene versions.
+9. Add optional splat as non-blocking enhancement.
+10. Add eval/observability/demo hardening.
+
+Comparison against the actual plan
+
+Overall: the plan matches my expectations very well.
+
+What aligns well
+
+- It starts with schema and semantic-model work before downstream services.
+- It defines versioning/undo before apply logic, which is the right dependency order.
+- It keeps scan ingest separate from editor and render concerns.
+- It treats validation as deterministic and server-authoritative.
+- It keeps photoreal and splat non-authoritative and linked to committed scene state.
+- It follows the PRD’s milestone order closely enough to be implementable.
+
+Notable discrepancies
+
+None of these are blocking, but they are the main differences from my baseline expectations:
+
+- The plan adds a stronger secure handoff/auth story than the PRD explicitly specifies.
+  - That is a good addition, not a problem.
+- The plan introduces snapshot/head/sidecar modeling for versions, gallery, and jobs.
+  - That is more explicit than the PRD, but consistent with it.
+- The plan leans toward routing photoreal/undo through dedicated command endpoints instead of treating them like normal scene-edit ops.
+  - The PRD has some ambiguity here because it lists them both as supported operations and as dedicated APIs. This should be clarified during implementation, but it does not make the plan unworkable.
+- Because the repo has no implementation code yet, the plan is architecture-level rather than file-level.
+  - That’s expected in this repo state.
+
+Non-blocking suggestions
+
+- Clarify whether `GET /scenes/{scene_id}` returns an assembled scene document that includes sidecar-backed bookmarks/gallery metadata, so the “load from canonical JSON only” requirement stays crisp.
+- Clarify whether `generate_photoreal` and `undo_last_change` remain in the planner’s typed intent vocabulary for chat classification, even if execution routes to dedicated endpoints.
+- If this moves to implementation soon, add concrete repo/module boundaries so the work can be split cleanly across iOS, web, backend, and shared schema.
+
+I do not see any contradiction with the current codebase state or with `docs/mvp_duet.md` that would make implementation impossible or dangerous.
+
+Verdict: approve
+Blocking issues:
+- none

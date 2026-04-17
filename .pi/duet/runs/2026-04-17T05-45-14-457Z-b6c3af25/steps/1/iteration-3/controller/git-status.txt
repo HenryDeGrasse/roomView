@@ -1,0 +1,10 @@
+ M .pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/state.json
+ M docs/mvp_duet.md
+?? .pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/cost.json
+?? .pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/draft-plan.json
+?? .pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/gap-analysis/
+?? .pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/plan.json
+?? .pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/planning/
+?? .pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/premortem/
+?? .pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/sessions/
+?? .pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/steps/

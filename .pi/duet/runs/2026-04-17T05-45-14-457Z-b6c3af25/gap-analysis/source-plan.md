@@ -349,25 +349,18 @@ Requirements:
 
 ### 9.2 Source of truth
 
-The only logical source of truth is `Scene.state`, the canonical editable scene state.
+The only logical source of truth is the canonical scene JSON.
 
-The following may be stored alongside the scene document but are never authoritative and may be regenerated or replaced from `Scene.state`:
+The following are never sources of truth:
 
-* `derived_state_cache`
-* splat assets
-* quick renders
+* splat
+* quick render
 * photoreal outputs
 * RoomPlan preview meshes
 
 ## 10. Canonical scene model
 
-### 10.1 Authoritative state partitions
-
-The scene document is partitioned into three kinds of data:
-
-* `state`: canonical, user-editable, validator-authoritative scene data. This is the only part that edit plans mutate.
-* `derived_state_cache`: deterministic, recomputable data derived from `state` for UI and validation explainability.
-* output/artifact references: asset pointers, photoreal gallery entries, and splat readiness. These are attached to scene versions but do not redefine room geometry.
+### 10.1 Core entities
 
 ```json
 Scene {
@@ -375,33 +368,23 @@ Scene {
   scene_version: integer,
   source: "scanned",
   units: "m",
-  state: SceneState,
-  derived_state_cache: DerivedState | null,
+  style_tags: string[],
+  room: Room,
   assets: AssetRef[],
+  camera_bookmarks: CameraBookmark[],
   photoreal_gallery: PhotorealEntry[],
+  derived_state: DerivedState,
   last_operation: OperationSummary | null
 }
 ```
 
 ```json
-SceneState {
-  style_tags: string[],
-  room: Room,
-  camera_bookmarks: CameraBookmark[]
-}
-```
-
-### 10.2 Core entities
-
-```json
 Room {
   room_id: string,
   room_type: "bedroom",
-  coordinate_frame: RoomCoordinateFrame,
   shell: Shell,
   objects: Object[],
   constraints: ConstraintSpec[],
-  focal_elements: FocalElementRef[],
   section_hints: string[]
 }
 ```
@@ -409,9 +392,8 @@ Room {
 ```json
 Shell {
   floor_polygon: Polygon2D,
-  ceiling_height: number,
   surfaces: Surface[],
-  named_wall_refs: NamedWallRef[],
+  ceiling_height: number,
   openings: Opening[],
   fixed_elements: FixedElement[]
 }
@@ -422,19 +404,11 @@ Surface {
   surface_id: string,
   type: "wall" | "floor" | "ceiling",
   geometry_ref: string,
-  boundary: Polygon2D,
-  surface_frame: SurfaceFrame | null,
-  named_wall_ref_id: string | null,
   material_state: MaterialState,
   user_locked: boolean,
   provenance: Provenance
 }
 ```
-
-`Surface.boundary` semantics:
-
-* for `type = "floor"`, `boundary` is expressed in the room-local floor plane
-* for `type = "wall"` or `"ceiling"`, `boundary` is expressed in the local 2D coordinates of `surface_frame`
 
 ```json
 Opening {
@@ -443,13 +417,10 @@ Opening {
   type: "door" | "window" | "closet_door",
   rect: RectOnSurface,
   swing_zone: Polygon2D | null,
-  keepout_zone: Polygon2D | null,
   connects_to_room_id: string | null,
   provenance: Provenance
 }
 ```
-
-`Opening.swing_zone` and `Opening.keepout_zone` are expressed in the room-local floor plane.
 
 ```json
 Object {
@@ -457,29 +428,13 @@ Object {
   class: string,
   attributes: string[],
   parent_id: string | null,
-  child_movement_policy: "move_with_parent" | "independent",
   pose: Pose3D,
   obb: OBB3D,
   mobility: "movable" | "anchored" | "fixed",
-  host: HostRelation | null,
-  support: SupportRelation,
   asset_ref: string | null,
   style_tags: string[],
   material_state: MaterialState | null,
   user_locked: boolean,
-  provenance: Provenance
-}
-```
-
-```json
-FixedElement {
-  fixed_element_id: string,
-  class: string,
-  pose: Pose3D,
-  obb: OBB3D,
-  host: HostRelation | null,
-  support: SupportRelation,
-  keepout_zone: Polygon2D | null,
   provenance: Provenance
 }
 ```
@@ -493,110 +448,7 @@ AssetRef {
 }
 ```
 
-### 10.3 Supporting types
-
-`Point2D`
-
-* `x`
-* `y`
-
-`Point3D`
-
-* `x`
-* `y`
-* `z`
-
-`Vector3D`
-
-* `x`
-* `y`
-* `z`
-
-`Polygon2D`
-
-* `vertices: Point2D[]`
-* semantics: non-self-intersecting polygon in the local 2D frame implied by the containing field; first vertex is not repeated at the end; clockwise/counter-clockwise winding must be consistent within a scene.
-
-`RectOnSurface`
-
-* `min_u`
-* `min_v`
-* `width`
-* `height`
-* semantics: axis-aligned rectangle in the host surface's `surface_frame`; `u` runs horizontally across the surface and `v` runs upward within the surface plane.
-
-`Pose3D`
-
-* `position: Point3D`
-* `yaw_degrees`
-* semantics: all poses are expressed in the room-local frame; objects remain upright in MVP, so pitch and roll are implicitly `0`.
-
-`OBB3D`
-
-* `center: Point3D`
-* `size_x`
-* `size_y`
-* `size_z`
-* `yaw_degrees`
-* semantics: oriented bounding box expressed in the room-local frame; `size_x/size_y` project to the floor plane for overlap and clearance checks.
-
-`RoomCoordinateFrame`
-
-* `origin: Point3D`
-* `x_axis: Vector3D`
-* `y_axis: Vector3D`
-* `z_axis: Vector3D`
-* `north_source: "true_north" | "scan_forward"`
-* semantics: right-handed room-local frame used by every `Pose3D`, `OBB3D`, and every `SurfaceFrame`; `+z` is up, `+y` is scene north, and `+x` is scene east.
-
-`SurfaceFrame`
-
-* `origin: Point3D`
-* `u_axis: Vector3D`
-* `v_axis: Vector3D`
-* `normal: Vector3D`
-* semantics: local frame for wall/floor/ceiling surfaces. `RectOnSurface` coordinates resolve only through this frame.
-
-`NamedWallRef`
-
-* `wall_ref_id`
-* `name`
-* `surface_ids: string[]`
-* `azimuth_degrees`
-* `inward_normal_xy: Point2D`
-* semantics: groups one or more wall surfaces into a stable planner-facing reference. Reserved MVP names are `north wall`, `south wall`, `east wall`, and `west wall`.
-
-`HostRelation`
-
-* `relation_type: "flush_to_wall" | "mounted_to_wall" | "embedded_in_wall" | "ceiling_mounted"`
-* `host_surface_id: string`
-* `anchor_rect: RectOnSurface | null`
-* semantics: describes the surface an anchored/fixed item must stay attached to. Canonical absence of a host is represented by `host = null`; when a `HostRelation` is present, `host_surface_id` must resolve to a compatible wall or ceiling `Surface`.
-
-`SupportRelation`
-
-* `support_kind: "floor" | "wall" | "ceiling" | "object"`
-* `support_entity_id: string`
-* `contact_patch: Polygon2D | RectOnSurface | null`
-* semantics: describes the entity bearing weight or physically supporting the item.
-
-`FocalElementRef`
-
-* `entity_id`
-* `entity_type: "object" | "opening" | "fixed_element" | "surface"`
-* `role: "primary" | "secondary"`
-* `reason`
-* semantics: explicit annotation used by layout scoring and targeting. The validator never infers focal elements on the fly.
-
-`ConstraintSpec`
-
-* `constraint_id`
-* `kind: "opening_preserved" | "walkway_clearance" | "no_overlap_in_bounds" | "anchor_integrity" | "class_specific_clearance" | "desk_near_window" | "sofa_faces_focal_element" | "primary_path_not_serpentine"`
-* `severity: "hard" | "soft"`
-* `target_entity_ids: string[]`
-* `params`
-* `reason_code_on_fail: string | null`
-* semantics: canonical declaration of an applicable rule instance. Hard constraints reject a plan; soft constraints feed scoring only.
+### 10.2 Supporting types
 
 `Provenance`
 
@@ -645,51 +497,14 @@ AssetRef {
 * `timestamp`
 * `user_message`
 
-### 10.4 Semantic rules
-
-#### Room-local axes and named wall resolution
-
-* Every geometric field is anchored to the room-local frame defined by `Room.coordinate_frame`: fields are stored either directly in room-local coordinates or in an explicit local surface frame (`SurfaceFrame`) defined relative to that room-local frame.
-* `Shell.named_wall_refs` must provide stable planner-facing wall names for the room, including reserved cardinal names `north wall`, `south wall`, `east wall`, and `west wall`.
-* A named wall may span multiple contiguous wall surfaces; each contributing `Surface` points back to the grouping via `named_wall_ref_id`.
-* If capture cannot determine true compass north, ingest still assigns a stable scene north using `north_source = "scan_forward"`. All later references to `north wall` resolve against that stored frame, not against a recomputed heading.
-* `RectOnSurface` coordinates are valid only when `host_surface_id` resolves to a `Surface` with a matching `surface_frame`.
-
-#### Focal-element annotations
-
-* `Room.focal_elements` is explicit canonical state, not derived cache.
-* A focal element may reference a window, TV, architectural feature, or other intentionally named target used by soft constraints and chat grounding.
-* Soft rule `SC-2 Sofa faces focal element` evaluates only against these annotations.
-
-#### Host/support relationships
-
-* `host` answers “what surface is this attached to?” while `support` answers “what physically carries this item?”
-* `mobility = "anchored"` or `mobility = "fixed"` requires a valid `support` relation and, when applicable, a valid `host` relation.
-* Examples:
-
-  * wall-mounted TV: `host.relation_type = "mounted_to_wall"`, `support.support_kind = "wall"`
-  * bed against a wall: `host.relation_type = "flush_to_wall"`, `support.support_kind = "floor"`
-  * table lamp on a nightstand: `support.support_kind = "object"` with `support_entity_id = "nightstand_id"`
-* `FixedElement` uses the same `host`/`support` semantics as `Object` but is never directly editable in MVP.
-
-#### Parent/child and `include_children` movement rules
-
-* `parent_id` may only reference another `Object` in the same room; the resulting graph must be acyclic.
-* `parent_id` is a semantic relationship, not a coordinate frame switch. Child `pose` and `obb` remain stored in room-local coordinates.
-* `child_movement_policy = "move_with_parent"` means the child is expected to inherit a parent transform when a parent move/rotate is applied with `include_children = true`.
-* `include_children` defaults to `false`. When `true`, the exact parent transform delta is applied to all descendants whose `child_movement_policy` is `move_with_parent`, unless blocked by a lock or anchor/support rule.
-* If `include_children = false`, descendants remain fixed in room coordinates. The validator must reject the operation with `PARENT_MOVE_VIOLATION` when that would detach a supported child, violate an anchor, or break an expected parent-child grouping.
-* A child supported by another object (`support.support_kind = "object"`) must either move with that supporting object or be explicitly re-supported within the same atomic plan.
-
-### 10.5 Model invariants
+### 10.3 Model invariants
 
 * IDs are stable across scene versions unless an entity is removed.
-* `scene_version` increments once per committed edit plan that mutates `Scene.state`.
-* `generate_photoreal` and recomputation of `derived_state_cache` do not increment `scene_version`.
-* `derived_state_cache` is recomputed after every committed plan and may be dropped and rebuilt without schema migration.
+* `scene_version` increments once per committed edit plan.
+* `generate_photoreal` does not increment `scene_version`.
+* `derived_state` is recomputed after every committed plan.
 * Unsupported captured items may exist as `generic_obstacle` objects. They participate in constraints even if not directly editable.
 * Splat assets are optional and attached by reference only.
-* All geometry uses meters and is expressed either directly in the room-local frame stored on the room or in an explicit `SurfaceFrame` defined relative to that frame.
 
 ## 11. Supported object classes
 
@@ -751,15 +566,13 @@ OperationPlan {
 `move_object`
 
 * target: `object_id`
-* params: target position in room-local coordinates, optional target `NamedWallRef`/window relation, optional `include_children`
-* semantics: `include_children` defaults to `false` and follows the parent/child rules in section 10.4
+* params: target position, optional target wall/window relation, optional `include_children`
 * MVP note: translation on floor plane only
 
 `rotate_object`
 
 * target: `object_id`
-* params: yaw degrees, optional `include_children`
-* semantics: parent rotation uses the same `include_children` rules as `move_object`
+* params: yaw degrees
 
 `replace_object`
 
