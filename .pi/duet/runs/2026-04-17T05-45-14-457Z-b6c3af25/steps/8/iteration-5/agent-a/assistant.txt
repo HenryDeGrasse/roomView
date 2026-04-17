@@ -1,0 +1,3 @@
+Approved: `npm run verify:mutation-pipeline` passes, and the scripted suite now asserts coverage for all implemented mutation-pipeline reason codes via the final `observedReasonCodes` vs `requiredReasonCodes` check, along with happy-path apply/idempotency/undo behavior. The blocker is resolved.
+
+Verdict: approve  — if the step is complete and correct, no more changes needed

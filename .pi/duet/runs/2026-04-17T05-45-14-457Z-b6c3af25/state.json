@@ -1,7 +1,7 @@
 {
   "version": 1,
   "phase": "plan_approved",
-  "updatedAt": "2026-04-17T20:04:49.285Z",
+  "updatedAt": "2026-04-17T20:53:07.514Z",
   "runId": "2026-04-17T05-45-14-457Z-b6c3af25",
   "goal": "Deliver the one-room MVP that securely turns a RoomPlan bedroom scan into a canonical, versioned, constraint-aware scene with phone-to-web handoff, a three-pane web editor, typed conversational edits, deterministic validation, quick render, photoreal output tied to immutable scene state, single-step undo, and optional non-blocking splat preview.",
   "planSourcePath": "docs/mvp_duet.md",
@@ -174,10 +174,10 @@
       }
     ]
   },
-  "stepIndex": 7,
+  "stepIndex": 8,
   "activeSummary": {
-    "stepId": "step-7",
-    "stepTitle": "Add asset retrieval, proxy fallback, and deterministic quick rendering",
+    "stepId": "step-8",
+    "stepTitle": "Implement the deterministic mutation pipeline: preview/apply, validation, locking, and undo",
     "gateResults": [
       {
         "id": "noop",
@@ -193,5 +193,5 @@
     "controllerStatus": "approved",
     "controllerStatusLevel": "success"
   },
-  "round": 2
+  "round": 5
 }

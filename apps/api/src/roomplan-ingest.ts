@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import type {
+  ApplyPlanRequest,
   AssetRef,
   CameraBookmark,
   ConstraintSpec,
@@ -10,11 +11,13 @@ import type {
   HandoffGrantRecord,
   HandoffRedeemRequest,
   HandoffRedeemResponse,
+  IdempotencyRecord,
   JobRecord,
   MaterialState,
   NamedWallRef,
   ObjectClass,
   Opening,
+  OperationPlanPreview,
   Point2D,
   Point3D,
   Polygon2D,
@@ -30,12 +33,17 @@ import type {
   RoomPlanPayload,
   RoomPlanSurfaceSeed,
   Scene,
+  SceneApplyResponse,
   SceneObject,
+  ScenePreviewRequest,
+  ScenePreviewResponse,
+  SceneSnapshot,
   SupportRelation,
   Surface,
   SurfaceFrame,
   SplatAssetRecord,
   SupplementaryDetection,
+  UndoLastChangeRequest,
   VideoUploadTokenRecord,
   VideoUploadRequest,
   VideoUploadResponse,
@@ -45,11 +53,24 @@ import {
   decomposeIngestedCaptureForStorage,
   hydrateSceneFromStoredRecords,
 } from "./roomplan-persistence";
-import type { PersistedInitialSceneRecords } from "./roomplan-persistence";
+import type {
+  PersistedDerivedStateCacheRecord,
+  PersistedInitialSceneRecords,
+} from "./roomplan-persistence";
+import {
+  createCanonicalPlanHash,
+  createPreviewResponse,
+  SceneMutationError,
+  simulateScenePreview,
+} from "./mutation-engine";
 import {
   FileSystemRoomPlanCaptureRecordStore,
 } from "./roomplan-store";
-import type { PersistedRoomPlanCaptureRecord } from "./roomplan-store";
+import type {
+  PersistedPreviewRecord,
+  PersistedRoomPlanCaptureRecord,
+  PersistedStoredIdempotencyRecord,
+} from "./roomplan-store";
 
 const EDITABLE_OBJECT_CLASSES = new Set<EditableObjectClass>([
   "bed",
@@ -368,6 +389,10 @@ interface StoredSceneRecord {
   client_capture_id: string;
   scene: Scene;
   persisted_records: PersistedInitialSceneRecords;
+  snapshots: Map<string, SceneSnapshot>;
+  derived_state_caches: Map<string, PersistedDerivedStateCacheRecord>;
+  preview_records: Map<string, PersistedPreviewRecord>;
+  idempotency_records: Map<string, PersistedStoredIdempotencyRecord>;
   handoff_grant: HandoffGrantRecord;
   handoff_token: string;
   video_upload_token_record: VideoUploadTokenRecord | null;
@@ -729,6 +754,14 @@ export class RoomPlanCaptureService {
       client_capture_id: request.client_capture_id,
       scene: ingested.scene,
       persisted_records: persistedRecords,
+      snapshots: new Map([[persistedRecords.scene_snapshot.snapshot_id, structuredClone(persistedRecords.scene_snapshot)]]),
+      derived_state_caches: new Map(
+        persistedRecords.derived_state_cache
+          ? [[persistedRecords.derived_state_cache.snapshot_id, structuredClone(persistedRecords.derived_state_cache)]]
+          : []
+      ),
+      preview_records: new Map(),
+      idempotency_records: new Map(),
       handoff_grant: persistedRecords.handoff_grant,
       handoff_token: handoffToken,
       video_upload_token_record: persistedRecords.video_upload_token_record,
@@ -753,6 +786,179 @@ export class RoomPlanCaptureService {
   public getPersistedInitialSceneRecords(scene_id: string): PersistedInitialSceneRecords | null {
     const records = this.scenesById.get(scene_id)?.persisted_records;
     return records ? structuredClone(records) : null;
+  }
+
+  public createScenePreview(scene_id: string, request: ScenePreviewRequest): ScenePreviewResponse {
+    const stored = this.mustGetStoredScene(scene_id);
+    const existing = this.getIdempotentResponse<ScenePreviewResponse>(stored, `preview:${scene_id}`, request.idempotency_key, request as Record<string, unknown>);
+    if (existing) {
+      return existing;
+    }
+
+    const now = this.nowIso();
+    try {
+      const preview_id = makeStableId(
+        "preview",
+        `${scene_id}:${request.request_id}:${request.idempotency_key}:${stored.scene.head.current_scene_version}`
+      );
+      const apply_token = createOpaqueToken(
+        "apply",
+        `${scene_id}:${preview_id}:${stored.scene.head.current_scene_version}`,
+        this.tokenSecret
+      );
+      const apply_token_expires_at = addMilliseconds(now, this.handoffTtlMs);
+      const response = createPreviewResponse(stored.scene, request, now, preview_id, apply_token, apply_token_expires_at);
+      const previewRecord: PersistedPreviewRecord = {
+        preview_id,
+        scene_id,
+        based_on_scene_version: stored.scene.head.current_scene_version,
+        ops: structuredClone(request.ops),
+        explanation: request.explanation,
+        canonical_plan_hash: response.preview.canonical_plan_hash,
+        apply_token_hash: hashOpaqueToken(this.tokenSecret, apply_token),
+        apply_token_expires_at,
+        idempotency_key: request.idempotency_key,
+        created_at: now,
+        consumed_at: null,
+      };
+      stored.preview_records.set(preview_id, previewRecord);
+      this.persistStoredScene(stored);
+      this.recordIdempotentResponse(stored, `preview:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 200, response, now);
+      return response;
+    } catch (error) {
+      if (error instanceof SceneMutationError) {
+        const responseBody = {
+          reason_code: error.reason_code,
+          message: error.message,
+          validation_summary: error.validation_summary,
+        };
+        this.recordIdempotentResponse(stored, `preview:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 409, responseBody, now);
+        throw new RoomPlanCaptureError(error.reason_code, error.message);
+      }
+      throw error;
+    }
+  }
+
+  public applyScenePreview(scene_id: string, request: ApplyPlanRequest): SceneApplyResponse {
+    const stored = this.mustGetStoredScene(scene_id);
+    const existing = this.getIdempotentResponse<SceneApplyResponse>(stored, `apply:${scene_id}`, request.idempotency_key, request as Record<string, unknown>);
+    if (existing) {
+      return existing;
+    }
+
+    const now = this.nowIso();
+    try {
+      if (request.expected_scene_version !== stored.scene.head.current_scene_version) {
+        throw new SceneMutationError(
+          "VERSION_CONFLICT",
+          `Expected scene version ${request.expected_scene_version} does not match current version ${stored.scene.head.current_scene_version}.`
+        );
+      }
+      const preview = stored.preview_records.get(request.preview_id);
+      if (!preview) {
+        throw new SceneMutationError("APPLY_TOKEN_INVALID", `Preview ${request.preview_id} was not found.`);
+      }
+      if (preview.consumed_at) {
+        throw new SceneMutationError("APPLY_TOKEN_INVALID", `Preview ${request.preview_id} has already been used.`);
+      }
+      if (isExpired(preview.apply_token_expires_at, now)) {
+        throw new SceneMutationError("APPLY_TOKEN_EXPIRED", `Preview ${request.preview_id} has expired.`);
+      }
+      if (preview.based_on_scene_version !== stored.scene.head.current_scene_version) {
+        throw new SceneMutationError(
+          "VERSION_CONFLICT",
+          `Preview ${request.preview_id} was created for scene version ${preview.based_on_scene_version}.`
+        );
+      }
+      if (preview.canonical_plan_hash !== request.canonical_plan_hash) {
+        throw new SceneMutationError("APPLY_TOKEN_INVALID", `Preview ${request.preview_id} has a mismatched plan hash.`);
+      }
+      if (preview.apply_token_hash !== hashOpaqueToken(this.tokenSecret, request.apply_token)) {
+        throw new SceneMutationError("APPLY_TOKEN_INVALID", `Preview ${request.preview_id} has an invalid apply token.`);
+      }
+
+      const simulation = simulateScenePreview(
+        stored.scene,
+        {
+          request_id: request.preview_id,
+          idempotency_key: request.idempotency_key,
+          expected_scene_version: request.expected_scene_version,
+          ops: preview.ops,
+          explanation: preview.explanation,
+        },
+        now
+      );
+      preview.consumed_at = now;
+      const response = this.commitSimulatedScene(stored, simulation, "edit_plan", now);
+      this.recordIdempotentResponse(stored, `apply:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 200, response, now);
+      return response;
+    } catch (error) {
+      if (error instanceof SceneMutationError) {
+        const responseBody = {
+          reason_code: error.reason_code,
+          message: error.message,
+          validation_summary: error.validation_summary,
+        };
+        this.recordIdempotentResponse(stored, `apply:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 409, responseBody, now);
+        throw new RoomPlanCaptureError(error.reason_code, error.message);
+      }
+      throw error;
+    }
+  }
+
+  public undoLastChange(scene_id: string, request: UndoLastChangeRequest): SceneApplyResponse {
+    const stored = this.mustGetStoredScene(scene_id);
+    const existing = this.getIdempotentResponse<SceneApplyResponse>(stored, `undo:${scene_id}`, request.idempotency_key, request as Record<string, unknown>);
+    if (existing) {
+      return existing;
+    }
+
+    const now = this.nowIso();
+    try {
+      if (request.expected_scene_version !== stored.scene.head.current_scene_version) {
+        throw new SceneMutationError(
+          "VERSION_CONFLICT",
+          `Expected scene version ${request.expected_scene_version} does not match current version ${stored.scene.head.current_scene_version}.`
+        );
+      }
+      const undoBaseSnapshotId = stored.scene.head.undo_base_snapshot_id;
+      if (!undoBaseSnapshotId) {
+        throw new SceneMutationError("UNDO_NOT_AVAILABLE", `Scene ${scene_id} has no undoable snapshot.`);
+      }
+      const baseSnapshot = stored.snapshots.get(undoBaseSnapshotId);
+      if (!baseSnapshot) {
+        throw new SceneMutationError("UNDO_NOT_AVAILABLE", `Undo snapshot ${undoBaseSnapshotId} was not found.`);
+      }
+      const baseDerived = stored.derived_state_caches.get(undoBaseSnapshotId) ?? null;
+      const simulatedScene = structuredClone(stored.scene);
+      simulatedScene.snapshot = structuredClone(baseSnapshot);
+      simulatedScene.derived_state_cache = baseDerived ? structuredClone(baseDerived.derived_state) : simulatedScene.derived_state_cache;
+      const response = this.commitSimulatedScene(
+        stored,
+        {
+          simulated_scene: simulatedScene,
+          validation_summary: {
+            hard_violations: simulatedScene.derived_state_cache?.hard_violations ?? [],
+            soft_scores: simulatedScene.derived_state_cache?.soft_scores ?? {},
+          },
+        },
+        "undo_restore",
+        now
+      );
+      this.recordIdempotentResponse(stored, `undo:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 200, response, now);
+      return response;
+    } catch (error) {
+      if (error instanceof SceneMutationError) {
+        const responseBody = {
+          reason_code: error.reason_code,
+          message: error.message,
+          validation_summary: error.validation_summary,
+        };
+        this.recordIdempotentResponse(stored, `undo:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 409, responseBody, now);
+        throw new RoomPlanCaptureError(error.reason_code, error.message);
+      }
+      throw error;
+    }
   }
 
   public redeemHandoff(request: HandoffRedeemRequest): HandoffRedeemResponse {
@@ -851,6 +1057,131 @@ export class RoomPlanCaptureService {
     return this.jobsById.get(job_id) ?? null;
   }
 
+  private getIdempotentResponse<T>(
+    stored: StoredSceneRecord,
+    scope: string,
+    idempotencyKey: string,
+    requestBody: Record<string, unknown>
+  ): T | null {
+    const key = `${scope}:${idempotencyKey}`;
+    const record = stored.idempotency_records.get(key);
+    if (!record) {
+      return null;
+    }
+    const requestHash = hashString(JSON.stringify(requestBody));
+    if (record.request_hash !== requestHash) {
+      throw new RoomPlanCaptureError(
+        "IDEMPOTENCY_CONFLICT",
+        `Idempotency key ${idempotencyKey} has already been used for a different request.`
+      );
+    }
+    if (record.response_status_code >= 400) {
+      const reasonCode = (record.response_body.reason_code as ReasonCode | undefined) ?? "INVALID_CAPTURE";
+      throw new RoomPlanCaptureError(reasonCode, String(record.response_body.message ?? "Request failed."));
+    }
+    return structuredClone(record.response_body) as T;
+  }
+
+  private recordIdempotentResponse(
+    stored: StoredSceneRecord,
+    scope: string,
+    idempotencyKey: string,
+    requestBody: Record<string, unknown>,
+    statusCode: number,
+    responseBody: Record<string, unknown>,
+    now: string
+  ): void {
+    const key = `${scope}:${idempotencyKey}`;
+    const existing = stored.idempotency_records.get(key);
+    const requestHash = hashString(JSON.stringify(requestBody));
+    if (existing && existing.request_hash !== requestHash) {
+      throw new RoomPlanCaptureError(
+        "IDEMPOTENCY_CONFLICT",
+        `Idempotency key ${idempotencyKey} has already been used for a different request.`
+      );
+    }
+    const createdAt = existing?.created_at ?? now;
+    const record: PersistedStoredIdempotencyRecord = {
+      scope,
+      idempotency_key: idempotencyKey,
+      request_hash: requestHash,
+      request_body: structuredClone(requestBody),
+      response_status_code: statusCode,
+      response_body: structuredClone(responseBody),
+      scene_id: stored.scene.head.scene_id,
+      created_at: createdAt,
+      updated_at: now,
+    };
+    stored.idempotency_records.set(key, record);
+    this.persistStoredScene(stored);
+  }
+
+  private commitSimulatedScene(
+    stored: StoredSceneRecord,
+    simulation: { simulated_scene: Scene; validation_summary: SceneApplyResponse["validation_summary"] },
+    mutationKind: SceneSnapshot["mutation_kind"],
+    now: string
+  ): SceneApplyResponse {
+    const previousSnapshotId = stored.scene.snapshot.snapshot_id;
+    const nextSceneVersion = stored.scene.head.current_scene_version + 1;
+    const newSnapshotId = makeStableId(
+      "snapshot",
+      `${stored.scene.head.scene_id}:v${nextSceneVersion}:${mutationKind}:${now}`
+    );
+    const newSnapshot: SceneSnapshot = {
+      snapshot_id: newSnapshotId,
+      scene_id: stored.scene.head.scene_id,
+      scene_version: nextSceneVersion,
+      based_on_snapshot_id: previousSnapshotId,
+      mutation_kind: mutationKind,
+      state: structuredClone(simulation.simulated_scene.snapshot.state),
+      editing_asset_refs: structuredClone(simulation.simulated_scene.snapshot.editing_asset_refs),
+      created_at: now,
+    };
+    const committedScene: Scene = {
+      ...structuredClone(stored.scene),
+      head: {
+        ...structuredClone(stored.scene.head),
+        current_snapshot_id: newSnapshotId,
+        current_scene_version: nextSceneVersion,
+        undo_base_snapshot_id: mutationKind === "edit_plan" ? previousSnapshotId : null,
+        updated_at: now,
+      },
+      snapshot: newSnapshot,
+      derived_state_cache: structuredClone(simulation.simulated_scene.derived_state_cache),
+    };
+
+    stored.scene = committedScene;
+    stored.persisted_records.scene_head = {
+      ...structuredClone(committedScene.head),
+      created_at: stored.persisted_records.scene_head.created_at,
+      deleted_at: stored.persisted_records.scene_head.deleted_at,
+    };
+    stored.persisted_records.scene_snapshot = structuredClone(newSnapshot);
+    stored.persisted_records.derived_state_cache = committedScene.derived_state_cache
+      ? {
+          snapshot_id: newSnapshotId,
+          scene_id: committedScene.head.scene_id,
+          scene_version: nextSceneVersion,
+          derived_state: structuredClone(committedScene.derived_state_cache),
+          created_at: now,
+          updated_at: now,
+        }
+      : null;
+    stored.snapshots.set(newSnapshotId, structuredClone(newSnapshot));
+    if (stored.persisted_records.derived_state_cache) {
+      stored.derived_state_caches.set(newSnapshotId, structuredClone(stored.persisted_records.derived_state_cache));
+    }
+    this.persistStoredScene(stored);
+
+    return {
+      scene: structuredClone(committedScene),
+      applied_snapshot_id: newSnapshotId,
+      applied_scene_version: nextSceneVersion,
+      validation_summary: structuredClone(simulation.validation_summary),
+    };
+  }
+
   private hydrateStoredScene(record: PersistedRoomPlanCaptureRecord): void {
     const persistedRecords = structuredClone(record.persisted_records);
     const scene = hydrateSceneFromStoredRecords(persistedRecords);
@@ -860,6 +1191,23 @@ export class RoomPlanCaptureService {
       client_capture_id: record.client_capture_id,
       scene,
       persisted_records: persistedRecords,
+      snapshots: new Map(
+        (record.snapshots ?? [persistedRecords.scene_snapshot]).map((snapshot) => [snapshot.snapshot_id, structuredClone(snapshot)])
+      ),
+      derived_state_caches: new Map(
+        (record.derived_state_caches ?? (persistedRecords.derived_state_cache ? [persistedRecords.derived_state_cache] : [])).map(
+          (derivedStateCache) => [derivedStateCache.snapshot_id, structuredClone(derivedStateCache)]
+        )
+      ),
+      preview_records: new Map(
+        (record.preview_records ?? []).map((previewRecord) => [previewRecord.preview_id, structuredClone(previewRecord)])
+      ),
+      idempotency_records: new Map(
+        (record.idempotency_records ?? []).map((idempotencyRecord) => [
+          `${idempotencyRecord.scope}:${idempotencyRecord.idempotency_key}`,
+          structuredClone(idempotencyRecord),
+        ])
+      ),
       handoff_grant: persistedRecords.handoff_grant,
       handoff_token: extractTokenFromQrPayload(persistedRecords.handoff_grant.qr_payload),
       video_upload_token_record: persistedRecords.video_upload_token_record,
@@ -880,6 +1228,10 @@ export class RoomPlanCaptureService {
       request_id: stored.request_id,
       client_capture_id: stored.client_capture_id,
       persisted_records: structuredClone(stored.persisted_records),
+      snapshots: Array.from(stored.snapshots.values()).map((snapshot) => structuredClone(snapshot)),
+      derived_state_caches: Array.from(stored.derived_state_caches.values()).map((cache) => structuredClone(cache)),
+      preview_records: Array.from(stored.preview_records.values()).map((preview) => structuredClone(preview)),
+      idempotency_records: Array.from(stored.idempotency_records.values()).map((record) => structuredClone(record)),
     });
   }
 

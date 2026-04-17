@@ -1,0 +1,41 @@
+Reviewed the scene API/contracts, durable store, and current server flow for step 8.
+
+What I changed:
+- Added pure mutation engine: `apps/api/src/mutation-engine.ts`
+  - deterministic typed-op simulation
+  - lock enforcement
+  - hard/soft validation
+  - canonical plan hashing
+- Extended contracts in `packages/contracts/src/api.ts`
+  - `ScenePreviewRequest`
+  - `ScenePreviewResponse`
+- Extended durable scene storage in `apps/api/src/roomplan-store.ts`
+  - snapshot history
+  - derived-state history
+  - persisted preview records
+  - persisted idempotency records
+- Extended `RoomPlanCaptureService` in `apps/api/src/roomplan-ingest.ts`
+  - preview persistence
+  - single-use apply tokens
+  - idempotent preview/apply/undo
+  - atomic snapshot commits
+  - one-step undo with new head snapshots
+- Added authenticated server endpoints in `apps/api/src/server.ts`
+  - `POST /scenes/:scene_id/preview`
+  - `POST /scenes/:scene_id/apply`
+  - `POST /scenes/:scene_id/undo`
+- Added scripted invalid-case fixtures + verification:
+  - `fixtures/mutations/step-8-cases.json`
+  - `scripts/verify-mutation-pipeline.mts`
+- Exported mutation helpers from `apps/api/src/index.ts`
+- Updated docs/scripts in `README.md`, `apps/api/README.md`, `package.json`
+
+Verification:
+- `npm run check`
+- API import smoke test
+- authenticated preview/apply/undo API probe
+
+Assessment:
+Step 8 now has a server-authoritative deterministic mutation pipeline with preview/apply persistence, idempotency, validation, locking, and one-step undo.
+
+Verdict: changes_made

@@ -1,0 +1,4 @@
+{"t":418,"type":"message_end","role":"user"}
+{"t":1509,"type":"message_end","role":"assistant","stopReason":"stop","textLength":16,"textPreview":"Verdict: approve"}
+{"t":1563,"type":"turn_end","toolCount":0,"thinkingLength":0,"textLength":16}
+{"t":1563,"type":"agent_end","messageCount":2,"toolCount":0,"thinkingLength":0,"textLength":16}

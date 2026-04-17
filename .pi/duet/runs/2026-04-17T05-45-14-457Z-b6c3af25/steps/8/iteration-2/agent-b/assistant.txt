@@ -1,0 +1,15 @@
+Reviewed the step-8 diff, ran `npm run check`, and exercised the mutation HTTP routes.
+
+I found one material defect in `apps/api/src/server.ts`: `GET /scenes/{scene_id}/preview`, `/apply`, and `/undo` were incorrectly matching the generic scene-read route and returning the full scene instead of 404. That was caused by using one broad `extractSceneId()` for both readable and mutation-only paths.
+
+I fixed it by splitting route parsing into:
+- `extractReadableSceneId()` for `/scenes/{id}` and `/scenes/{id}/quick-render`
+- `extractMutationSceneId()` for `/preview`, `/apply`, and `/undo`
+
+Then I re-ran:
+- `npm run check` ✅
+- route smoke test confirming `GET /scenes/{id}/preview` now returns 404 ✅
+
+Assessment: the mutation pipeline implementation otherwise looks correct and passes its verification script.
+
+Verdict: changes_made

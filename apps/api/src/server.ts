@@ -3,9 +3,12 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type {
+  ApplyPlanRequest,
   HandoffRedeemRequest,
   RoomPlanCaptureRequest,
+  ScenePreviewRequest,
   SceneReadResponse,
+  UndoLastChangeRequest,
 } from "@roomview/contracts";
 
 import {
@@ -99,12 +102,37 @@ async function handleRequest(
       return;
     }
 
-    const sceneId = extractSceneId(requestUrl.pathname);
-    if (request.method === "GET" && sceneId) {
-      requireAuthenticatedSceneSession(request, sceneId, context);
-      const scene = context.service.getScene(sceneId);
+    const mutationSceneId = extractMutationSceneId(requestUrl.pathname);
+    if (request.method === "POST" && mutationSceneId && requestUrl.pathname.endsWith("/preview")) {
+      requireAuthenticatedSceneSession(request, mutationSceneId, context);
+      const previewRequest = await readJsonBody<ScenePreviewRequest>(request);
+      const previewResponse = context.service.createScenePreview(mutationSceneId, previewRequest);
+      sendJson(response, 200, previewResponse);
+      return;
+    }
+
+    if (request.method === "POST" && mutationSceneId && requestUrl.pathname.endsWith("/apply")) {
+      requireAuthenticatedSceneSession(request, mutationSceneId, context);
+      const applyRequest = await readJsonBody<ApplyPlanRequest>(request);
+      const applyResponse = context.service.applyScenePreview(mutationSceneId, applyRequest);
+      sendJson(response, 200, applyResponse);
+      return;
+    }
+
+    if (request.method === "POST" && mutationSceneId && requestUrl.pathname.endsWith("/undo")) {
+      requireAuthenticatedSceneSession(request, mutationSceneId, context);
+      const undoRequest = await readJsonBody<UndoLastChangeRequest>(request);
+      const undoResponse = context.service.undoLastChange(mutationSceneId, undoRequest);
+      sendJson(response, 200, undoResponse);
+      return;
+    }
+
+    const readableSceneId = extractReadableSceneId(requestUrl.pathname);
+    if (request.method === "GET" && readableSceneId) {
+      requireAuthenticatedSceneSession(request, readableSceneId, context);
+      const scene = context.service.getScene(readableSceneId);
       if (!scene) {
-        throw new RoomPlanCaptureError("TARGET_NOT_FOUND", `Scene ${sceneId} was not found.`);
+        throw new RoomPlanCaptureError("TARGET_NOT_FOUND", `Scene ${readableSceneId} was not found.`);
       }
       if (requestUrl.pathname.endsWith("/quick-render")) {
         sendJson(response, 200, createQuickRenderResponse(scene));
@@ -183,13 +211,33 @@ function requireAuthenticatedSceneSession(
   return hydratedSession;
 }
 
-function extractSceneId(pathname: string): string | null {
-  const exactMatch = pathname.match(/^\/scenes\/([^/]+)$/);
-  if (exactMatch) {
-    return decodeURIComponent(exactMatch[1]);
+function extractReadableSceneId(pathname: string): string | null {
+  const patterns = [
+    /^\/scenes\/([^/]+)$/,
+    /^\/scenes\/([^/]+)\/quick-render$/,
+  ];
+  for (const pattern of patterns) {
+    const match = pathname.match(pattern);
+    if (match) {
+      return decodeURIComponent(match[1]);
+    }
   }
-  const quickRenderMatch = pathname.match(/^\/scenes\/([^/]+)\/quick-render$/);
-  return quickRenderMatch ? decodeURIComponent(quickRenderMatch[1]) : null;
+  return null;
+}
+
+function extractMutationSceneId(pathname: string): string | null {
+  const patterns = [
+    /^\/scenes\/([^/]+)\/preview$/,
+    /^\/scenes\/([^/]+)\/apply$/,
+    /^\/scenes\/([^/]+)\/undo$/,
+  ];
+  for (const pattern of patterns) {
+    const match = pathname.match(pattern);
+    if (match) {
+      return decodeURIComponent(match[1]);
+    }
+  }
+  return null;
 }
 
 function readSessionId(request: IncomingMessage): string | null {

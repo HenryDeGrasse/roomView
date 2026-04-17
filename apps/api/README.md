@@ -7,6 +7,8 @@ Key bootstrap assets:
 - `src/index.ts`
 - `src/roomplan-ingest.ts`
 - `src/roomplan-persistence.ts`
+- `src/mutation-engine.ts`
 - `src/quick-render.ts`
-- `src/server.ts` with authenticated scene reads, curated asset manifest, and quick-render routes
+- `src/server.ts` with authenticated scene reads, quick-render routes, and preview/apply/undo mutation endpoints
 - `../../fixtures/manifest.json`
+- `../../fixtures/mutations/step-8-cases.json`

@@ -160,6 +160,14 @@ export interface CommandRequest {
   idempotency_key: string;
 }
 
+export interface ScenePreviewRequest {
+  request_id: string;
+  idempotency_key: string;
+  expected_scene_version: number;
+  ops: SceneEditOperation[];
+  explanation: string;
+}
+
 export interface ApplyPlanRequest {
   preview_id: string;
   apply_token: string;
@@ -288,6 +296,15 @@ export interface AssetManifestResponse {
 
 export interface QuickRenderResponse {
   render_scene: QuickRenderScene;
+}
+
+export interface ScenePreviewResponse {
+  preview: OperationPlanPreview;
+  simulated_scene: Scene;
+  validation_summary: {
+    hard_violations: Array<Record<string, unknown>>;
+    soft_scores: Record<string, number>;
+  };
 }
 
 export interface SceneApplyResponse {

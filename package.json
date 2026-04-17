@@ -11,6 +11,7 @@
     "verify:fixtures": "node ./scripts/verify-fixtures.mjs",
     "verify:replays": "npx --yes tsx ./scripts/verify-roomplan-replays.mts",
     "verify:quick-render": "npx --yes tsx ./scripts/verify-quick-render.mts",
-    "check": "npm run verify:fixtures && npm run verify:replays && npm run verify:quick-render"
+    "verify:mutation-pipeline": "npx --yes tsx ./scripts/verify-mutation-pipeline.mts",
+    "check": "npm run verify:fixtures && npm run verify:replays && npm run verify:quick-render && npm run verify:mutation-pipeline"
   }
 }

@@ -34,6 +34,12 @@ export {
   createAssetManifestResponse,
   createQuickRenderResponse,
 } from "./quick-render";
+export {
+  createCanonicalPlanHash,
+  createPreviewResponse,
+  SceneMutationError,
+  simulateScenePreview,
+} from "./mutation-engine";
 export type {
   BuildInitialSceneOptions,
   IngestedCaptureArtifacts,

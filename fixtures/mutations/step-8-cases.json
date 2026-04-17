@@ -1,0 +1,24 @@
+{
+  "cases": [
+    {
+      "case_id": "preview-apply-undo-happy-path",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "notes": "Create a persisted preview, apply it after service reload, then undo it in a new head snapshot."
+    },
+    {
+      "case_id": "locked-entity-rejection",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "notes": "Lock an object, then verify later scripted previews reject edits with ENTITY_LOCKED."
+    },
+    {
+      "case_id": "conflict-and-token-paths",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "notes": "Exercise VERSION_CONFLICT, IDEMPOTENCY_CONFLICT, APPLY_TOKEN_INVALID, and APPLY_TOKEN_EXPIRED."
+    },
+    {
+      "case_id": "validation-reason-codes",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "notes": "Exercise deterministic OBJECT_OVERLAP, OUT_OF_BOUNDS, OPENING_BLOCKED, PARENT_MOVE_VIOLATION, and UNDO_NOT_AVAILABLE paths."
+    }
+  ]
+}
