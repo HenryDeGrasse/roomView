@@ -5,9 +5,13 @@ import type {
   AssetRef,
   CameraBookmark,
   ConstraintSpec,
+  CreateBookmarkRequest,
+  CreateBookmarkResponse,
   DerivedState,
   EditableObjectClass,
   FixedElement,
+  GeneratePhotorealRequest,
+  GeneratePhotorealResponse,
   HandoffGrantRecord,
   HandoffRedeemRequest,
   HandoffRedeemResponse,
@@ -18,6 +22,7 @@ import type {
   ObjectClass,
   Opening,
   OperationPlanRequest,
+  PhotorealEntry,
   PlannerResponse,
   Point2D,
   Point3D,
@@ -49,6 +54,10 @@ import type {
   VideoUploadRequest,
   VideoUploadResponse,
 } from "@roomview/contracts";
+import {
+  buildDeterministicQuickRender,
+  CURATED_ASSET_MANIFEST,
+} from "../../../packages/contracts/src/index.ts";
 
 import {
   decomposeIngestedCaptureForStorage,
@@ -790,6 +799,155 @@ export class RoomPlanCaptureService {
     return records ? structuredClone(records) : null;
   }
 
+  public createBookmark(scene_id: string, request: CreateBookmarkRequest): CreateBookmarkResponse {
+    const stored = this.mustGetStoredScene(scene_id);
+    const name = request.name.trim();
+    if (!name) {
+      throw new RoomPlanCaptureError("INVALID_CAPTURE", "Bookmark name is required.");
+    }
+    if (!Number.isFinite(request.fov) || request.fov <= 0 || request.fov > 180) {
+      throw new RoomPlanCaptureError("INVALID_CAPTURE", "Bookmark fov must be between 0 and 180 degrees.");
+    }
+
+    const now = this.nowIso();
+    const bookmarkId = makeStableId(
+      "bookmark",
+      `${scene_id}:${name}:${JSON.stringify(request.camera_pose)}:${roundNumber(request.fov)}`
+    );
+    const existing = stored.scene.bookmarks.find((bookmark) => bookmark.bookmark_id === bookmarkId) ?? null;
+    if (existing) {
+      return {
+        bookmark: structuredClone(existing),
+        scene: structuredClone(stored.scene),
+      };
+    }
+
+    const bookmark: CameraBookmark = {
+      bookmark_id: bookmarkId,
+      name,
+      camera_pose: structuredClone(request.camera_pose),
+      fov: roundNumber(request.fov),
+      created_at: now,
+      updated_at: now,
+    };
+    stored.scene.bookmarks = [...stored.scene.bookmarks, bookmark].sort((left, right) => left.created_at.localeCompare(right.created_at));
+    stored.persisted_records.camera_bookmarks = stored.scene.bookmarks.map((entry) => ({
+      ...structuredClone(entry),
+      scene_id,
+    }));
+    this.persistStoredScene(stored);
+
+    return {
+      bookmark: structuredClone(bookmark),
+      scene: structuredClone(stored.scene),
+    };
+  }
+
+  public generatePhotoreal(scene_id: string, request: GeneratePhotorealRequest): GeneratePhotorealResponse {
+    const stored = this.mustGetStoredScene(scene_id);
+    const existing = this.getIdempotentResponse<GeneratePhotorealResponse>(
+      stored,
+      `photoreal:${scene_id}`,
+      request.idempotency_key,
+      request as Record<string, unknown>
+    );
+    if (existing) {
+      return existing;
+    }
+
+    const now = this.nowIso();
+    try {
+      const snapshot = stored.snapshots.get(request.scene_snapshot_id);
+      if (!snapshot) {
+        throw new SceneMutationError("TARGET_NOT_FOUND", `Scene snapshot ${request.scene_snapshot_id} was not found.`);
+      }
+      const historicalScene = this.materializeSceneAtSnapshot(stored, snapshot.snapshot_id);
+      const resolvedCamera = this.resolvePhotorealCamera(historicalScene, request);
+      const conditioning = buildDeterministicQuickRender(historicalScene, CURATED_ASSET_MANIFEST);
+      const entrySeed = JSON.stringify({
+        scene_id,
+        scene_snapshot_id: snapshot.snapshot_id,
+        scene_version: snapshot.scene_version,
+        bookmark_id: resolvedCamera.bookmark_id,
+        camera_pose: resolvedCamera.camera_pose,
+        fov: resolvedCamera.fov,
+        prompt_modifiers: request.prompt_modifiers,
+      });
+      const entry_id = makeStableId("photoreal", entrySeed);
+      const asset_id = makeStableId("asset-photoreal", entrySeed);
+      const photorealEntry: PhotorealEntry = {
+        entry_id,
+        asset_id,
+        scene_version: snapshot.scene_version,
+        scene_snapshot_id: snapshot.snapshot_id,
+        bookmark_id: resolvedCamera.bookmark_id,
+        camera_pose: structuredClone(resolvedCamera.camera_pose),
+        fov: resolvedCamera.fov,
+        prompt_modifiers: [...request.prompt_modifiers],
+        provider_metadata: {
+          provider: "deterministic_stub",
+          uri: `asset://photoreal/${encodeURIComponent(scene_id)}/${encodeURIComponent(snapshot.snapshot_id)}/${encodeURIComponent(entry_id)}.png`,
+          conditioning_scene_version: conditioning.scene_version,
+          conditioning_snapshot_id: conditioning.scene_snapshot_id,
+          conditioning_asset_binding_count: conditioning.asset_bindings.length,
+          conditioning_surface_count: conditioning.surfaces.length,
+          conditioning_object_count: conditioning.objects.length,
+        },
+        created_at: now,
+      };
+      if (!stored.scene.photoreal_gallery.some((entry) => entry.entry_id === entry_id)) {
+        stored.scene.photoreal_gallery = [...stored.scene.photoreal_gallery, photorealEntry].sort((left, right) =>
+          left.created_at.localeCompare(right.created_at)
+        );
+        stored.persisted_records.photoreal_entries = stored.scene.photoreal_gallery.map((entry) => ({
+          ...structuredClone(entry),
+          scene_id,
+        }));
+      }
+
+      const job_id = makeStableId("job", `photoreal:${scene_id}:${request.idempotency_key}`);
+      const job: JobRecord = {
+        job_id,
+        scene_id,
+        job_kind: "photoreal",
+        status: "ready",
+        source_scene_version: snapshot.scene_version,
+        scene_snapshot_id: snapshot.snapshot_id,
+        created_at: now,
+        updated_at: now,
+        output_asset_id: asset_id,
+        error_code: null,
+      };
+      this.jobsById.set(job_id, structuredClone(job));
+      this.persistStoredScene(stored);
+
+      const response: GeneratePhotorealResponse = {
+        job_id,
+        photoreal_entry: structuredClone(stored.scene.photoreal_gallery.find((entry) => entry.entry_id === entry_id) ?? photorealEntry),
+      };
+      this.recordIdempotentResponse(
+        stored,
+        `photoreal:${scene_id}`,
+        request.idempotency_key,
+        request as Record<string, unknown>,
+        200,
+        response,
+        now
+      );
+      return response;
+    } catch (error) {
+      if (error instanceof SceneMutationError) {
+        const responseBody = {
+          reason_code: error.reason_code,
+          message: error.message,
+        };
+        this.recordIdempotentResponse(stored, `photoreal:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 409, responseBody, now);
+        throw new RoomPlanCaptureError(error.reason_code, error.message);
+      }
+      throw error;
+    }
+  }
+
   public planSceneOperation(scene_id: string, request: OperationPlanRequest): PlannerResponse {
     const stored = this.mustGetStoredScene(scene_id);
     const existing = this.getIdempotentResponse<PlannerResponse>(stored, `plan:${scene_id}`, request.idempotency_key, request as Record<string, unknown>);
@@ -1093,7 +1251,62 @@ export class RoomPlanCaptureService {
   }
 
   public getJob(job_id: string): JobRecord | null {
-    return this.jobsById.get(job_id) ?? null;
+    const job = this.jobsById.get(job_id);
+    return job ? structuredClone(job) : null;
+  }
+
+  private materializeSceneAtSnapshot(stored: StoredSceneRecord, snapshotId: string): Scene {
+    const snapshot = stored.snapshots.get(snapshotId);
+    if (!snapshot) {
+      throw new SceneMutationError("TARGET_NOT_FOUND", `Scene snapshot ${snapshotId} was not found.`);
+    }
+    const derivedState = stored.derived_state_caches.get(snapshotId) ?? null;
+    return {
+      ...structuredClone(stored.scene),
+      head: {
+        ...structuredClone(stored.scene.head),
+        current_snapshot_id: snapshot.snapshot_id,
+        current_scene_version: snapshot.scene_version,
+      },
+      snapshot: structuredClone(snapshot),
+      derived_state_cache: derivedState ? structuredClone(derivedState.derived_state) : null,
+    };
+  }
+
+  private resolvePhotorealCamera(
+    scene: Scene,
+    request: GeneratePhotorealRequest
+  ): { bookmark_id: string | null; camera_pose: Pose3D; fov: number } {
+    if (request.bookmark_id) {
+      const bookmark = scene.bookmarks.find((entry) => entry.bookmark_id === request.bookmark_id) ?? null;
+      if (!bookmark) {
+        throw new SceneMutationError("TARGET_NOT_FOUND", `Bookmark ${request.bookmark_id} was not found.`);
+      }
+      return {
+        bookmark_id: bookmark.bookmark_id,
+        camera_pose: structuredClone(bookmark.camera_pose),
+        fov: bookmark.fov,
+      };
+    }
+    if (request.camera_pose && typeof request.fov === "number" && Number.isFinite(request.fov)) {
+      return {
+        bookmark_id: null,
+        camera_pose: structuredClone(request.camera_pose),
+        fov: roundNumber(request.fov),
+      };
+    }
+    const fallback = scene.bookmarks[0] ?? null;
+    if (!fallback) {
+      throw new SceneMutationError(
+        "INVALID_CAPTURE",
+        "Photoreal generation requires a bookmark_id or an explicit camera_pose and fov."
+      );
+    }
+    return {
+      bookmark_id: fallback.bookmark_id,
+      camera_pose: structuredClone(fallback.camera_pose),
+      fov: fallback.fov,
+    };
   }
 
   private getIdempotentResponse<T>(
@@ -1259,9 +1472,15 @@ export class RoomPlanCaptureService {
     if (stored.video_upload_token_record) {
       this.videoTokenHashToSceneId.set(stored.video_upload_token_record.token_hash, scene.head.scene_id);
     }
+    for (const job of record.job_records ?? []) {
+      this.jobsById.set(job.job_id, structuredClone(job));
+    }
   }
 
   private persistStoredScene(stored: StoredSceneRecord): void {
+    const job_records = Array.from(this.jobsById.values())
+      .filter((job) => job.scene_id === stored.scene.head.scene_id)
+      .map((job) => structuredClone(job));
     this.durableStore?.save({
       request_fingerprint: stored.request_fingerprint,
       request_id: stored.request_id,
@@ -1271,6 +1490,7 @@ export class RoomPlanCaptureService {
       derived_state_caches: Array.from(stored.derived_state_caches.values()).map((cache) => structuredClone(cache)),
       preview_records: Array.from(stored.preview_records.values()).map((preview) => structuredClone(preview)),
       idempotency_records: Array.from(stored.idempotency_records.values()).map((record) => structuredClone(record)),
+      job_records,
     });
   }
 

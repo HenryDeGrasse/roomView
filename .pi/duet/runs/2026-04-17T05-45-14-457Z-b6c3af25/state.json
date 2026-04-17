@@ -1,7 +1,7 @@
 {
   "version": 1,
   "phase": "plan_approved",
-  "updatedAt": "2026-04-17T21:11:01.506Z",
+  "updatedAt": "2026-04-17T21:30:42.991Z",
   "runId": "2026-04-17T05-45-14-457Z-b6c3af25",
   "goal": "Deliver the one-room MVP that securely turns a RoomPlan bedroom scan into a canonical, versioned, constraint-aware scene with phone-to-web handoff, a three-pane web editor, typed conversational edits, deterministic validation, quick render, photoreal output tied to immutable scene state, single-step undo, and optional non-blocking splat preview.",
   "planSourcePath": "docs/mvp_duet.md",
@@ -174,10 +174,10 @@
       }
     ]
   },
-  "stepIndex": 9,
+  "stepIndex": 10,
   "activeSummary": {
-    "stepId": "step-9",
-    "stepTitle": "Build the constrained planner and chat-driven typed edit workflow",
+    "stepId": "step-10",
+    "stepTitle": "Ship immutable-version photoreal generation, bookmarks, and gallery storage",
     "gateResults": [
       {
         "id": "noop",

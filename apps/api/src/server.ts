@@ -4,12 +4,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type {
   ApplyPlanRequest,
+  CreateBookmarkRequest,
   GeneratePhotorealRequest,
   HandoffRedeemRequest,
+  JobReadResponse,
   OperationPlanRequest,
   RoomPlanCaptureRequest,
-  ScenePreviewRequest,
   SceneReadResponse,
+  ScenePreviewRequest,
   UndoLastChangeRequest,
 } from "@roomview/contracts";
 
@@ -113,6 +115,14 @@ async function handleRequest(
       return;
     }
 
+    if (request.method === "POST" && mutationSceneId && requestUrl.pathname.endsWith("/bookmarks")) {
+      requireAuthenticatedSceneSession(request, mutationSceneId, context);
+      const bookmarkRequest = await readJsonBody<CreateBookmarkRequest>(request);
+      const bookmarkResponse = context.service.createBookmark(mutationSceneId, bookmarkRequest);
+      sendJson(response, 200, bookmarkResponse);
+      return;
+    }
+
     if (request.method === "POST" && mutationSceneId && requestUrl.pathname.endsWith("/preview")) {
       requireAuthenticatedSceneSession(request, mutationSceneId, context);
       const previewRequest = await readJsonBody<ScenePreviewRequest>(request);
@@ -139,11 +149,27 @@ async function handleRequest(
 
     if (request.method === "POST" && mutationSceneId && requestUrl.pathname.endsWith("/photoreal")) {
       requireAuthenticatedSceneSession(request, mutationSceneId, context);
-      await readJsonBody<GeneratePhotorealRequest>(request);
-      throw new RoomPlanCaptureError(
-        "PHOTOREAL_PROVIDER_ERROR",
-        "Photoreal generation is not configured yet. Use the command preview now and the real provider route in step 10."
-      );
+      const photorealRequest = await readJsonBody<GeneratePhotorealRequest>(request);
+      const photorealResponse = context.service.generatePhotoreal(mutationSceneId, photorealRequest);
+      sendJson(response, 200, photorealResponse);
+      return;
+    }
+
+    const jobId = extractJobId(requestUrl.pathname);
+    if (request.method === "GET" && jobId) {
+      const job = context.service.getJob(jobId);
+      if (!job) {
+        throw new RoomPlanCaptureError("TARGET_NOT_FOUND", `Job ${jobId} was not found.`);
+      }
+      requireAuthenticatedSceneSession(request, job.scene_id, context);
+      const scene = context.service.getScene(job.scene_id);
+      const photorealEntry = scene?.photoreal_gallery.find((entry) => entry.asset_id === job.output_asset_id) ?? null;
+      const jobResponse: JobReadResponse = {
+        job,
+        photoreal_entry: photorealEntry,
+      };
+      sendJson(response, 200, jobResponse);
+      return;
     }
 
     const readableSceneId = extractReadableSceneId(requestUrl.pathname);
@@ -247,6 +273,7 @@ function extractReadableSceneId(pathname: string): string | null {
 function extractMutationSceneId(pathname: string): string | null {
   const patterns = [
     /^\/scenes\/([^/]+)\/plan$/,
+    /^\/scenes\/([^/]+)\/bookmarks$/,
     /^\/scenes\/([^/]+)\/preview$/,
     /^\/scenes\/([^/]+)\/apply$/,
     /^\/scenes\/([^/]+)\/undo$/,
@@ -259,6 +286,11 @@ function extractMutationSceneId(pathname: string): string | null {
     }
   }
   return null;
+}
+
+function extractJobId(pathname: string): string | null {
+  const match = pathname.match(/^\/jobs\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
 function readSessionId(request: IncomingMessage): string | null {

@@ -263,6 +263,24 @@ function renderEditorShellHtml(input: {
         border-color: #14532d;
         background: rgba(20, 83, 45, 0.22);
       }
+      .render-section { margin-top: 14px; }
+      .gallery-grid {
+        display: grid;
+        gap: 10px;
+        margin-top: 10px;
+      }
+      .gallery-item {
+        border: 1px solid #374151;
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: #111827;
+      }
+      .gallery-item strong {
+        display: block;
+        margin-bottom: 6px;
+        color: #93c5fd;
+        font-size: 12px;
+      }
       .hidden { display: none; }
       @media (max-width: 1100px) {
         main { grid-template-columns: 1fr; }
@@ -350,6 +368,8 @@ function renderEditorShellHtml(input: {
         sceneId: null,
         sessionId: null,
         selectionId: null,
+        activeBookmarkId: null,
+        lastPhotorealJobId: null,
         loadedFrom: null,
         chatMessages: [],
         pendingPlannerResponse: null,
@@ -419,6 +439,7 @@ function renderEditorShellHtml(input: {
           state.sceneId = payload.scene.head.scene_id;
           state.sessionId = null;
           state.selectionId = firstSelectableEntityId(state.scene);
+          state.activeBookmarkId = state.scene.bookmarks[0]?.bookmark_id || null;
           state.loadedFrom = "fixture";
           state.quickRender = await loadFixtureQuickRender(fixtureSelect.value);
           resetChatState();
@@ -436,6 +457,26 @@ function renderEditorShellHtml(input: {
         }
         state.selectionId = button.getAttribute("data-entity-id");
         renderScene();
+      });
+
+      renderPane.addEventListener("click", (event) => {
+        const actionButton = event.target instanceof HTMLElement ? event.target.closest("button[data-render-action]") : null;
+        if (actionButton) {
+          const action = actionButton.getAttribute("data-render-action");
+          if (action === "save-bookmark") {
+            void saveActiveBookmark();
+            return;
+          }
+          if (action === "generate-photoreal") {
+            void generatePhotorealFromActiveBookmark();
+            return;
+          }
+        }
+        const bookmarkButton = event.target instanceof HTMLElement ? event.target.closest("button[data-bookmark-id]") : null;
+        if (bookmarkButton) {
+          state.activeBookmarkId = bookmarkButton.getAttribute("data-bookmark-id");
+          renderScene();
+        }
       });
 
       chatSendButton.addEventListener("click", () => {
@@ -497,6 +538,9 @@ function renderEditorShellHtml(input: {
         }
         state.scene = payload.scene;
         state.selectionId = firstSelectableEntityId(state.scene);
+        state.activeBookmarkId = state.scene.bookmarks.some((bookmark) => bookmark.bookmark_id === state.activeBookmarkId)
+          ? state.activeBookmarkId
+          : state.scene.bookmarks[0]?.bookmark_id || null;
         state.quickRender = await loadLiveQuickRender();
         renderScene();
         setStatus("Loaded live scene " + state.scene.head.scene_id + " via authenticated read.");
@@ -544,11 +588,100 @@ function renderEditorShellHtml(input: {
 
       async function postSceneJson(pathname, body) {
         if (!state.sessionId) {
-          throw new Error("Chat planning requires a redeemed live scene session.");
+          throw new Error("Live scene actions require a redeemed API handoff.");
         }
         return postJson(new URL(pathname, state.apiBaseUrl).toString(), body, {
           Authorization: "Bearer " + state.sessionId,
         });
+      }
+
+      async function getSceneJson(pathname) {
+        if (!state.sessionId) {
+          throw new Error("Live scene actions require a redeemed API handoff.");
+        }
+        const response = await fetch(new URL(pathname, state.apiBaseUrl).toString(), {
+          headers: {
+            Authorization: "Bearer " + state.sessionId,
+          },
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          const error = new Error(payload.message || payload.reason_code || "Request failed.");
+          error.reasonCode = payload.reason_code || null;
+          throw error;
+        }
+        return payload;
+      }
+
+      async function saveActiveBookmark() {
+        if (!state.scene || !state.sceneId) {
+          return;
+        }
+        if (!state.sessionId) {
+          setStatus("Saving bookmarks requires a redeemed live scene session.", true);
+          return;
+        }
+        const sourceBookmark = resolveActiveBookmark(state.scene);
+        if (!sourceBookmark) {
+          setStatus("No bookmark camera is available to save yet.", true);
+          return;
+        }
+        const name = window.prompt("Bookmark name", sourceBookmark.name + " copy");
+        if (!name) {
+          return;
+        }
+        try {
+          const bookmarkResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/bookmarks", {
+            name,
+            camera_pose: sourceBookmark.camera_pose,
+            fov: sourceBookmark.fov,
+          });
+          state.scene = bookmarkResponse.scene;
+          state.activeBookmarkId = bookmarkResponse.bookmark.bookmark_id;
+          appendChatMessage("assistant", "Bookmark saved", "Saved bookmark “" + bookmarkResponse.bookmark.name + "”.", "success");
+          setStatus("Saved bookmark “" + bookmarkResponse.bookmark.name + "” without changing scene version " + state.scene.head.current_scene_version + ".");
+          renderScene();
+        } catch (error) {
+          appendChatMessage("assistant", "Bookmark failed", (error.reasonCode ? error.reasonCode + ": " : "") + (error.message || "Request failed."), "error");
+          setStatus(error.message || "Failed to save bookmark.", true);
+          renderChatPanel();
+        }
+      }
+
+      async function generatePhotorealFromActiveBookmark() {
+        if (!state.scene || !state.sceneId) {
+          return;
+        }
+        if (!state.sessionId) {
+          setStatus("Photoreal generation requires a redeemed live scene session.", true);
+          return;
+        }
+        try {
+          const bookmark = resolveActiveBookmark(state.scene);
+          const photorealResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/photoreal", {
+            scene_snapshot_id: state.scene.snapshot.snapshot_id,
+            bookmark_id: bookmark ? bookmark.bookmark_id : undefined,
+            prompt_modifiers: [],
+            idempotency_key: "render-photoreal-" + (++state.requestCounter),
+          });
+          const jobResponse = await getSceneJson("/jobs/" + encodeURIComponent(photorealResponse.job_id));
+          state.lastPhotorealJobId = photorealResponse.job_id;
+          if (!state.scene.photoreal_gallery.some((entry) => entry.entry_id === photorealResponse.photoreal_entry.entry_id)) {
+            state.scene.photoreal_gallery = [...state.scene.photoreal_gallery, photorealResponse.photoreal_entry];
+          }
+          appendChatMessage(
+            "assistant",
+            "Photoreal ready",
+            "Generated gallery asset " + photorealResponse.photoreal_entry.entry_id + " for scene version " + photorealResponse.photoreal_entry.scene_version + ". Job status: " + jobResponse.job.status + ".",
+            "success"
+          );
+          setStatus("Photoreal gallery updated for immutable scene version " + photorealResponse.photoreal_entry.scene_version + ".");
+          renderScene();
+        } catch (error) {
+          appendChatMessage("assistant", "Photoreal failed", (error.reasonCode ? error.reasonCode + ": " : "") + (error.message || "Request failed."), "error");
+          setStatus(error.message || "Photoreal generation failed.", true);
+          renderChatPanel();
+        }
       }
 
       async function submitChatPrompt(rawPrompt) {
@@ -652,11 +785,23 @@ function renderEditorShellHtml(input: {
               renderScene();
               return;
             }
-            await postSceneJson(state.pendingPlannerResponse.command.endpoint, {
+            const bookmark = resolveActiveBookmark(state.scene);
+            const photorealResponse = await postSceneJson(state.pendingPlannerResponse.command.endpoint, {
               scene_snapshot_id: state.scene.snapshot.snapshot_id,
+              bookmark_id: bookmark ? bookmark.bookmark_id : undefined,
               prompt_modifiers: [],
               idempotency_key: "chat-photoreal-" + (++state.requestCounter),
             });
+            const jobResponse = await getSceneJson("/jobs/" + encodeURIComponent(photorealResponse.job_id));
+            state.lastPhotorealJobId = photorealResponse.job_id;
+            if (!state.scene.photoreal_gallery.some((entry) => entry.entry_id === photorealResponse.photoreal_entry.entry_id)) {
+              state.scene.photoreal_gallery = [...state.scene.photoreal_gallery, photorealResponse.photoreal_entry];
+            }
+            appendChatMessage("assistant", "Photoreal ready", "Generated gallery asset " + photorealResponse.photoreal_entry.entry_id + " with job status " + jobResponse.job.status + ".", "success");
+            setStatus("Photoreal gallery updated for immutable scene version " + photorealResponse.photoreal_entry.scene_version + ".");
+            state.pendingPlannerResponse = null;
+            renderScene();
+            return;
           }
         } catch (error) {
           appendChatMessage("assistant", "Command failed", (error.reasonCode ? error.reasonCode + ": " : "") + (error.message || "Request failed."), "error");
@@ -825,6 +970,13 @@ function renderEditorShellHtml(input: {
         return '<pre>' + escapeHtml(JSON.stringify(selected, null, 2)) + '</pre>';
       }
 
+      function resolveActiveBookmark(scene) {
+        if (!scene || scene.bookmarks.length === 0) {
+          return null;
+        }
+        return scene.bookmarks.find((bookmark) => bookmark.bookmark_id === state.activeBookmarkId) || scene.bookmarks[0];
+      }
+
       function renderRenderPane(scene, quickRender, selectionId, loadedFrom) {
         const selection = findSelectedEntity(scene, selectionId);
         const selectedBinding = quickRender
@@ -833,6 +985,19 @@ function renderEditorShellHtml(input: {
         const versionSynchronized = quickRender
           ? quickRender.scene_version === scene.head.current_scene_version && quickRender.scene_snapshot_id === scene.snapshot.snapshot_id
           : false;
+        const activeBookmark = resolveActiveBookmark(scene);
+        const bookmarkList = scene.bookmarks.length === 0
+          ? '<p class="muted">No bookmarks saved yet.</p>'
+          : '<div class="list">' + scene.bookmarks.map((bookmark) => {
+              const selectedState = bookmark.bookmark_id === activeBookmark?.bookmark_id ? 'true' : 'false';
+              return '<button type="button" data-bookmark-id="' + escapeHtml(bookmark.bookmark_id) + '" data-selected="' + selectedState + '">' + escapeHtml(bookmark.name + ' · ' + bookmark.bookmark_id) + '</button>';
+            }).join('') + '</div>';
+        const gallery = scene.photoreal_gallery.length === 0
+          ? '<p class="muted">No photoreal outputs yet. Use the button below to generate one from the active bookmark.</p>'
+          : '<div class="gallery-grid">' + [...scene.photoreal_gallery].reverse().map((entry) => {
+              const providerUri = entry.provider_metadata?.uri || '<none>';
+              return '<div class="gallery-item"><strong>' + escapeHtml(entry.entry_id) + '</strong><pre>' + escapeHtml(JSON.stringify({ scene_version: entry.scene_version, scene_snapshot_id: entry.scene_snapshot_id, bookmark_id: entry.bookmark_id, asset_id: entry.asset_id, provider_uri: providerUri, created_at: entry.created_at }, null, 2)) + '</pre></div>';
+            }).join('') + '</div>';
         const details = {
           loaded_from: loadedFrom,
           layout_scene_version: scene.head.current_scene_version,
@@ -840,11 +1005,12 @@ function renderEditorShellHtml(input: {
           quick_render_snapshot_id: quickRender?.scene_snapshot_id ?? null,
           version_synchronized: versionSynchronized,
           style_tags: scene.snapshot.state.style_tags,
-          bookmark_ids: scene.bookmarks.map((bookmark) => bookmark.bookmark_id),
+          active_bookmark_id: activeBookmark?.bookmark_id ?? null,
           editing_asset_refs: scene.snapshot.editing_asset_refs,
           selected_entity_id: selectionId,
           selected_entity: selection,
           selected_asset_binding: selectedBinding,
+          last_photoreal_job_id: state.lastPhotorealJobId,
           quick_render_diagnostics: quickRender?.diagnostics ?? null,
           quick_render_objects: quickRender?.objects ?? [],
         };
@@ -852,10 +1018,14 @@ function renderEditorShellHtml(input: {
           '<div class="badge">Deterministic quick render</div>',
           '<dl>',
           '<div><dt>Bookmarks</dt><dd>' + escapeHtml(String(scene.bookmarks.length)) + '</dd></div>',
+          '<div><dt>Gallery entries</dt><dd>' + escapeHtml(String(scene.photoreal_gallery.length)) + '</dd></div>',
           '<div><dt>Asset refs</dt><dd>' + escapeHtml(String(scene.snapshot.editing_asset_refs.length)) + '</dd></div>',
           '<div><dt>Fallback misses</dt><dd>' + escapeHtml(String(quickRender?.diagnostics.proxy_fallback_count ?? 0)) + '</dd></div>',
           '<div><dt>Version sync</dt><dd>' + escapeHtml(versionSynchronized ? 'synchronized' : 'mismatch') + '</dd></div>',
           '</dl>',
+          '<section class="render-section"><div class="badge">Bookmarks</div>' + bookmarkList + '</section>',
+          '<section class="render-section"><div class="actions"><button type="button" data-render-action="save-bookmark">Save active bookmark</button><button type="button" class="secondary" data-render-action="generate-photoreal">Generate photoreal</button></div><p class="muted" style="margin-top:10px">Buttons are live only after redeeming an authenticated scene handoff. The current shell uses the active bookmark as the render camera scaffold.</p></section>',
+          '<section class="render-section"><div class="badge">Photoreal gallery</div>' + gallery + '</section>',
           '<div style="margin-top:12px"><pre>' + escapeHtml(JSON.stringify(details, null, 2)) + '</pre></div>'
         ].join('');
       }

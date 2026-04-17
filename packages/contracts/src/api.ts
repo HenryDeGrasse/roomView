@@ -13,7 +13,7 @@ import type {
   Vector3D,
 } from "./primitives";
 import type { MaterialState } from "./primitives";
-import type { CameraBookmark, EditableObjectClass, Scene } from "./scene";
+import type { CameraBookmark, EditableObjectClass, PhotorealEntry, Scene } from "./scene";
 import type { CuratedAssetManifest, QuickRenderScene } from "./render";
 
 export const COMMAND_KIND_VALUES = ["generate_photoreal", "undo_last_change"] as const;
@@ -317,6 +317,17 @@ export interface SceneApplyResponse {
   };
 }
 
+export interface CreateBookmarkRequest {
+  name: string;
+  camera_pose: Pose3D;
+  fov: number;
+}
+
+export interface CreateBookmarkResponse {
+  bookmark: CameraBookmark;
+  scene: Scene;
+}
+
 export interface GeneratePhotorealRequest {
   scene_snapshot_id: SnapshotId;
   bookmark_id?: string | null;
@@ -324,6 +335,11 @@ export interface GeneratePhotorealRequest {
   fov?: number | null;
   prompt_modifiers: string[];
   idempotency_key: string;
+}
+
+export interface GeneratePhotorealResponse {
+  job_id: JobId;
+  photoreal_entry: PhotorealEntry;
 }
 
 export interface UndoLastChangeRequest {
@@ -355,6 +371,11 @@ export interface JobRecord {
   updated_at: ISO8601Timestamp;
   output_asset_id: AssetId | null;
   error_code: ReasonCode | null;
+}
+
+export interface JobReadResponse {
+  job: JobRecord;
+  photoreal_entry?: PhotorealEntry | null;
 }
 
 export interface HandoffGrantRecord {

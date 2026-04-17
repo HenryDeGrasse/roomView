@@ -1,0 +1,24 @@
+{
+  "cases": [
+    {
+      "case_id": "bookmark-sidecar-nonmutating",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "notes": "Creating a bookmark must not change the scene head version or snapshot and must persist across reloads."
+    },
+    {
+      "case_id": "photoreal-current-snapshot-idempotent",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "notes": "Generating photoreal for the current snapshot must produce a ready job, persist a gallery entry, and safely replay via idempotency."
+    },
+    {
+      "case_id": "photoreal-historical-snapshot",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "notes": "Generating photoreal for an older snapshot must add a version-linked gallery entry without rewriting the current editable scene head."
+    },
+    {
+      "case_id": "photoreal-camera-and-conflicts",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "notes": "Explicit camera requests, deterministic gallery dedupe, TARGET_NOT_FOUND failures, and IDEMPOTENCY_CONFLICT paths are independently verified."
+    }
+  ]
+}

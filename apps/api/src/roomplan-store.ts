@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import type {
   IdempotencyRecord,
   ISO8601Timestamp,
+  JobRecord,
   SceneEditOperation,
   SceneSnapshot,
 } from "@roomview/contracts";
@@ -40,6 +41,7 @@ export interface PersistedRoomPlanCaptureRecord {
   derived_state_caches?: PersistedDerivedStateCacheRecord[];
   preview_records?: PersistedPreviewRecord[];
   idempotency_records?: PersistedStoredIdempotencyRecord[];
+  job_records?: JobRecord[];
 }
 
 export class FileSystemRoomPlanCaptureRecordStore {
