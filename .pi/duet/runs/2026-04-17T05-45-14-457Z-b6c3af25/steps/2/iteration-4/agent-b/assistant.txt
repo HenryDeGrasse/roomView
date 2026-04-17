@@ -1,0 +1,17 @@
+Fixed one concrete version-boundary inconsistency in `docs/mvp_duet.md`.
+
+What I changed:
+- Removed `last_operation` from `SceneSnapshot`.
+- Removed the transaction-rule line saying `last_operation` is stored on the snapshot.
+
+Why:
+- Step 2 says snapshots should version only editable scene state plus edit-participating asset references.
+- The doc simultaneously said `SceneSnapshot` contains “only editable state plus edit-participating asset bindings” while also storing `last_operation` inside the snapshot, which made the boundary inconsistent.
+
+Check:
+- `noop` ✅
+
+Assessment:
+- This brings the snapshot schema back in line with the stated versioning rules, while preserving the head/snapshot model, sidecar boundaries, bookmark decision, and undo semantics.
+
+Verdict: changes_made

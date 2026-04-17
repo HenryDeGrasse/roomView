@@ -1,0 +1,22 @@
+Reviewed `docs/mvp_duet.md` sections covering scene model, versioning, undo, photoreal, and APIs.
+
+What I changed:
+- Replaced the single mutable `Scene` source-of-truth model with:
+  - `SceneHead` for the mutable head pointer
+  - immutable `SceneSnapshot`
+  - a composed `Scene` read model with sidecars
+- Defined versioning boundaries:
+  - only `SceneSnapshot.state` and `editing_asset_refs` are versioned editable data
+  - bookmarks, photoreal entries, splat/job state, and `derived_state_cache` are sidecars
+- Decided bookmarks are sidecar metadata, not versioned scene state
+- Updated `AssetRef` to editable asset bindings only; added `SplatAssetRecord`
+- Specified one-step undo as creating a new snapshot/head version, never rewinding version numbers
+- Updated related flow, transaction, photoreal, service, and API text to match the new snapshot/head model
+
+Checks:
+- `noop` ✅
+
+Assessment:
+- Step 2 is now explicitly defined in the spec with immutable snapshots, monotonic head versioning, clear sidecar boundaries, and correct undo semantics.
+
+Verdict: changes_made

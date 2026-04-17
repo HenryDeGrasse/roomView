@@ -1,0 +1,16 @@
+Fixed one concrete undo-semantics gap in `docs/mvp_duet.md`.
+
+What I changed:
+- Clarified that after a successful undo, `SceneHead.undo_base_snapshot_id` is cleared to `null`.
+
+Why:
+- The doc said undo is exactly one step and that undo creates a new head snapshot, but it did not explicitly say what happens to `undo_base_snapshot_id` afterward.
+- Without clearing it, the model could still allow a second undo or ambiguous behavior, which contradicts the one-step undo requirement.
+
+Check:
+- `noop` ✅
+
+Assessment:
+- This makes the one-step undo behavior unambiguous without changing any other versioning semantics.
+
+Verdict: changes_made

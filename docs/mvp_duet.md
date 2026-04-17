@@ -205,7 +205,7 @@ A designer or technically inclined user using the room as a structured starting 
 2. System uses current view or chosen bookmark.
 3. Quick render produces high-resolution color, depth, and edge inputs.
 4. Provider generates conditioned photoreal image.
-5. Result is stored in gallery with `scene_version` and `bookmark_id`.
+5. Result is stored as a photoreal sidecar record with `scene_version`, `scene_snapshot_id`, and the resolved camera parameters.
 
 **Acceptance criteria**
 
@@ -216,13 +216,14 @@ A designer or technically inclined user using the room as a structured starting 
 ### 7.5 Undo flow
 
 1. User clicks undo or types “undo that.”
-2. Backend restores previous committed scene version.
+2. Backend creates a new head snapshot whose editable state matches the prior undoable committed snapshot.
 3. Layout and render update.
 4. Gallery images remain attached to their original versions.
 
 **Acceptance criteria**
 
-* Exactly one structural/material commit can be undone.
+* Exactly one structural/material/lock commit can be undone.
+* Undo creates a new head snapshot; it does not decrement or reuse `scene_version`.
 * `generate_photoreal` is not part of undo history.
 
 ## 8. UX requirements
@@ -303,11 +304,11 @@ Requirements:
 
 * maps RoomPlan output into canonical scene JSON
 * assigns stable IDs
-* stores initial scene version
+* stores the initial immutable scene snapshot and scene head
 
 **Scene Service**
 
-* stores canonical scene
+* stores scene heads, immutable snapshots, and sidecars
 * manages versions
 * exposes scene read/write APIs
 
@@ -331,12 +332,12 @@ Requirements:
 
 * renders high-res conditioning inputs
 * calls provider
-* stores output in gallery
+* stores output in the photoreal gallery sidecar
 
 **Splat Job Service**
 
 * runs asynchronous training on uploaded video
-* attaches `AssetRef(kind=splat)` when ready
+* writes/updates the `SplatAssetRecord` sidecar when ready
 
 **Web App**
 
@@ -349,45 +350,67 @@ Requirements:
 
 ### 9.2 Source of truth
 
-The only logical source of truth is `Scene.state`, the canonical editable scene state.
+The only logical source of truth for versioned editable scene data is the immutable `SceneSnapshot` referenced by `SceneHead.current_snapshot_id`, specifically its `state` and `editing_asset_refs`.
 
-The following may be stored alongside the scene document but are never authoritative and may be regenerated or replaced from `Scene.state`:
+The following may be stored alongside the scene but are never authoritative for versioned editable scene data and may be regenerated or replaced from the current snapshot:
 
 * `derived_state_cache`
-* splat assets
+* splat assets and splat job state
 * quick renders
-* photoreal outputs
+* photoreal outputs and photoreal job state
+* camera bookmark sidecars
 * RoomPlan preview meshes
 
 ## 10. Canonical scene model
 
-### 10.1 Authoritative state partitions
+### 10.1 Authoritative persistence model
 
-The scene document is partitioned into three kinds of data:
+The persistence model is split into immutable snapshots, a mutable scene head, and non-authoritative sidecars:
 
-* `state`: canonical, user-editable, validator-authoritative scene data. This is the only part that edit plans mutate.
-* `derived_state_cache`: deterministic, recomputable data derived from `state` for UI and validation explainability.
-* output/artifact references: asset pointers, photoreal gallery entries, and splat readiness. These are attached to scene versions but do not redefine room geometry.
+* `SceneHead`: the only mutable authoritative record; points to the current snapshot and the single undo base.
+* `SceneSnapshot`: immutable version record containing only editable state plus edit-participating asset bindings.
+* sidecars: bookmarks, photoreal gallery, splat/job metadata, and recomputable caches keyed back to `scene_id` and/or `scene_version`.
+
+```json
+SceneHead {
+  scene_id: string,
+  source: "scanned",
+  units: "m",
+  current_snapshot_id: string,
+  current_scene_version: integer,
+  undo_base_snapshot_id: string | null,
+  updated_at: timestamp
+}
+```
+
+```json
+SceneSnapshot {
+  snapshot_id: string,
+  scene_id: string,
+  scene_version: integer,
+  based_on_snapshot_id: string | null,
+  mutation_kind: "initial_ingest" | "edit_plan" | "undo_restore",
+  state: SceneState,
+  editing_asset_refs: AssetRef[],
+  created_at: timestamp
+}
+```
 
 ```json
 Scene {
-  scene_id: string,
-  scene_version: integer,
-  source: "scanned",
-  units: "m",
-  state: SceneState,
+  head: SceneHead,
+  snapshot: SceneSnapshot,
   derived_state_cache: DerivedState | null,
-  assets: AssetRef[],
+  bookmarks: CameraBookmark[],
   photoreal_gallery: PhotorealEntry[],
-  last_operation: OperationSummary | null
+  splat: SplatAssetRecord | null
 }
 ```
 
 ```json
 SceneState {
   style_tags: string[],
-  room: Room,
-  camera_bookmarks: CameraBookmark[]
+  room: Room
 }
 ```
 
@@ -487,9 +510,20 @@ FixedElement {
 ```json
 AssetRef {
   asset_id: string,
-  kind: "gltf" | "splat" | "photoreal",
+  kind: "gltf" | "proxy_gltf",
   uri: string,
   bound_to: string
+}
+```
+
+```json
+SplatAssetRecord {
+  scene_id: string,
+  source_scene_version: integer,
+  status: "queued" | "processing" | "ready" | "failed",
+  asset_id: string | null,
+  uri: string | null,
+  updated_at: timestamp
 }
 ```
 
@@ -620,15 +654,21 @@ AssetRef {
 * `camera_pose`
 * `fov`
 * `created_at`
+* `updated_at`
+* semantics: sidecar record keyed by `scene_id`; `bookmark_id` is an immutable reference to `camera_pose` + `fov`, so changing the saved view creates a new bookmark with a new `bookmark_id`. Bookmark sidecar changes do not create a new `SceneSnapshot` or increment `scene_version`.
 
 `PhotorealEntry`
 
 * `entry_id`
 * `asset_id`
 * `scene_version`
-* `bookmark_id`
+* `scene_snapshot_id`
+* `bookmark_id: string | null`
+* `camera_pose`
+* `fov`
 * `prompt_modifiers`
 * `created_at`
+* semantics: sidecar gallery record keyed to an immutable scene snapshot; it stores resolved camera parameters so later bookmark edits do not alter historical outputs.
 
 `DerivedState`
 
@@ -637,6 +677,7 @@ AssetRef {
 * `soft_scores`
 * `hard_violations[]`
 * `selection_context_summary`
+* semantics: recomputable cache derived from `SceneSnapshot.state`, typically stored by `snapshot_id`.
 
 `OperationSummary`
 
@@ -683,13 +724,24 @@ AssetRef {
 
 ### 10.5 Model invariants
 
-* IDs are stable across scene versions unless an entity is removed.
-* `scene_version` increments once per committed edit plan that mutates `Scene.state`.
-* `generate_photoreal` and recomputation of `derived_state_cache` do not increment `scene_version`.
-* `derived_state_cache` is recomputed after every committed plan and may be dropped and rebuilt without schema migration.
+* IDs are stable across scene snapshots unless an entity is removed.
+* `SceneSnapshot` is immutable once committed.
+* `SceneHead.current_scene_version` is monotonic and must equal the `scene_version` of `SceneHead.current_snapshot_id`.
+* Only `SceneSnapshot.state` and `SceneSnapshot.editing_asset_refs` participate in editable version history.
+* `generate_photoreal`, splat jobs, bookmark edits, and recomputation of `derived_state_cache` do not increment `scene_version`.
+* `derived_state_cache` is recomputed from snapshot state and may be dropped and rebuilt without schema migration.
 * Unsupported captured items may exist as `generic_obstacle` objects. They participate in constraints even if not directly editable.
-* Splat assets are optional and attached by reference only.
+* Splat assets are optional sidecars and never modify editable scene state.
 * All geometry uses meters and is expressed either directly in the room-local frame stored on the room or in an explicit `SurfaceFrame` defined relative to that frame.
+
+### 10.6 Snapshot, versioning, and undo semantics
+
+* A new `SceneSnapshot` is created only for initial ingest, a successful structural/material/lock edit plan, or a successful `undo_last_change`.
+* Undo never rewinds, decrements, or reuses version numbers. It creates a new head snapshot with `mutation_kind = "undo_restore"` whose `state` and `editing_asset_refs` match the prior undoable snapshot.
+* MVP undo depth is exactly one structural/material/lock commit. `SceneHead.undo_base_snapshot_id` points to the snapshot that can be restored by undo.
+* After any successful structural/material/lock commit, `undo_base_snapshot_id` is updated to the pre-commit head snapshot. After a successful undo, the new head snapshot becomes current, `undo_base_snapshot_id` is cleared to `null`, and the prior undone state is no longer redo-able in MVP.
+* Sidecar records must link back to immutable scene versions: photoreal records reference `scene_version` and `scene_snapshot_id`; splat/job records reference the source `scene_version` they were produced from.
+* Camera bookmarks are sidecar metadata. They are not part of undo history and are not versioned scene state.
 
 ## 11. Supported object classes
 
@@ -797,20 +849,20 @@ OperationPlan {
 `generate_photoreal`
 
 * params: bookmark id or current camera, optional prompt modifiers
-* non-mutating job
+* non-mutating sidecar job
 
 `undo_last_change`
 
 * no params
-* restores prior committed scene version
+* creates a new head snapshot whose editable state matches the prior undoable committed snapshot
 
 ### 12.4 Transaction rules
 
 * Max 5 operations per user turn
 * Entire plan is simulated before commit
 * Entire plan commits atomically or fails atomically
-* One successful plan increments `scene_version` by 1
-* `last_operation` stores plan summary, not raw user text alone
+* One successful plan that mutates editable state creates a new immutable `SceneSnapshot` and increments `scene_version` by 1
+* `generate_photoreal` and bookmark changes are sidecar-only updates and do not create scene snapshots
 
 ### 12.5 Reason codes
 
@@ -946,7 +998,7 @@ MVP asset library:
 
 ### 16.1 Inputs
 
-* current committed scene version
+* current committed scene version and `scene_snapshot_id`
 * selected camera bookmark or current camera
 * high-res quick render
 * depth map
@@ -956,7 +1008,7 @@ MVP asset library:
 ### 16.2 Outputs
 
 * generated image asset
-* gallery entry linked to `scene_version`
+* sidecar gallery entry linked to `scene_version` and `scene_snapshot_id`
 * provider metadata for debugging
 
 ### 16.3 Constraints
@@ -980,7 +1032,7 @@ Minimal backend contract:
 
 `GET /scenes/{scene_id}`
 
-* returns latest scene JSON
+* returns the current scene read model: head, current snapshot, derived cache, and related sidecars
 
 `POST /scenes/{scene_id}/plan`
 
@@ -1003,7 +1055,7 @@ Minimal backend contract:
 
 `POST /scenes/{scene_id}/undo`
 
-* reverts last committed scene change
+* creates a new head snapshot that restores the last undoable committed editable state
 
 `DELETE /scenes/{scene_id}`
 
@@ -1156,7 +1208,7 @@ The MVP is done when all of the following work on a real bedroom scan:
 5. “Replace the rug with something warm and earthy” succeeds
 6. “Keep this bed, don’t touch it” locks the bed and future move attempts fail
 7. “Show me what this would actually look like” generates a photoreal image tied to the current scene version
-8. Undo reverts the last committed structural/material change
+8. Undo reverts the last committed structural/material/lock change
 9. Refresh reloads the same latest scene state
 10. If splat completes, scan pane updates without changing editable state
 
