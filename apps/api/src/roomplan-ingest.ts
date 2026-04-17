@@ -74,6 +74,7 @@ import {
   simulateScenePreview,
 } from "./mutation-engine";
 import { planDeterministicTurn } from "./planner";
+import { ObservabilityRecorder, type ObservabilitySnapshot } from "./observability";
 import {
   FileSystemRoomPlanCaptureRecordStore,
 } from "./roomplan-store";
@@ -392,6 +393,7 @@ export interface RoomPlanCaptureServiceOptions {
   now?: () => Date;
   token_secret?: string;
   storage_directory?: string;
+  observability?: ObservabilityRecorder;
 }
 
 interface StoredSceneRecord {
@@ -704,6 +706,7 @@ export class RoomPlanCaptureService {
   private readonly nowFactory: () => Date;
   private readonly tokenSecret: string;
   private readonly durableStore: FileSystemRoomPlanCaptureRecordStore | null;
+  private readonly observability: ObservabilityRecorder;
 
   private readonly scenesById = new Map<string, StoredSceneRecord>();
   private readonly sceneIdByClientCaptureId = new Map<string, string>();
@@ -721,6 +724,7 @@ export class RoomPlanCaptureService {
     this.durableStore = options.storage_directory
       ? new FileSystemRoomPlanCaptureRecordStore(options.storage_directory)
       : null;
+    this.observability = options.observability ?? new ObservabilityRecorder();
 
     for (const record of this.durableStore?.loadAll() ?? []) {
       this.hydrateStoredScene(record);
@@ -728,66 +732,75 @@ export class RoomPlanCaptureService {
   }
 
   public postRoomPlanCapture(request: RoomPlanCaptureRequest): RoomPlanCaptureResponse {
-    const existingSceneId = this.sceneIdByClientCaptureId.get(request.client_capture_id);
-    const requestFingerprint = createRequestFingerprint(request);
+    return this.observeSync(
+      "capture.ingest",
+      {
+        request_id: request.request_id,
+        client_capture_id: request.client_capture_id,
+      },
+      () => {
+        const existingSceneId = this.sceneIdByClientCaptureId.get(request.client_capture_id);
+        const requestFingerprint = createRequestFingerprint(request);
 
-    if (existingSceneId) {
-      const existing = this.scenesById.get(existingSceneId);
-      if (!existing) {
-        throw new RoomPlanCaptureError("INVALID_CAPTURE", "Capture index is inconsistent with stored scenes.");
+        if (existingSceneId) {
+          const existing = this.scenesById.get(existingSceneId);
+          if (!existing) {
+            throw new RoomPlanCaptureError("INVALID_CAPTURE", "Capture index is inconsistent with stored scenes.");
+          }
+          if (existing.request_fingerprint !== requestFingerprint) {
+            throw new RoomPlanCaptureError(
+              "INVALID_CAPTURE",
+              `client_capture_id ${request.client_capture_id} has already been ingested with a different payload.`
+            );
+          }
+          this.refreshAccessArtifacts(existing, request.capture_metadata.video_expected);
+          this.persistStoredScene(existing);
+          return this.toCaptureResponse(existing);
+        }
+
+        const now = this.nowIso();
+        const ingested = ingestRoomPlanCaptureRequest(request, {
+          now,
+          handoff_base_url: this.handoffBaseUrl,
+          handoff_ttl_ms: this.handoffTtlMs,
+          video_upload_ttl_ms: this.videoUploadTtlMs,
+          token_secret: this.tokenSecret,
+        });
+
+        const handoffToken = extractTokenFromQrPayload(ingested.handoff_grant.qr_payload);
+        const videoToken = ingested.response.video_upload_token;
+        const persistedRecords = decomposeIngestedCaptureForStorage(ingested);
+        const stored: StoredSceneRecord = {
+          request_fingerprint: requestFingerprint,
+          request_id: request.request_id,
+          client_capture_id: request.client_capture_id,
+          scene: ingested.scene,
+          persisted_records: persistedRecords,
+          snapshots: new Map([[persistedRecords.scene_snapshot.snapshot_id, structuredClone(persistedRecords.scene_snapshot)]]),
+          derived_state_caches: new Map(
+            persistedRecords.derived_state_cache
+              ? [[persistedRecords.derived_state_cache.snapshot_id, structuredClone(persistedRecords.derived_state_cache)]]
+              : []
+          ),
+          preview_records: new Map(),
+          idempotency_records: new Map(),
+          handoff_grant: persistedRecords.handoff_grant,
+          handoff_token: handoffToken,
+          video_upload_token_record: persistedRecords.video_upload_token_record,
+          video_upload_token: videoToken,
+        };
+
+        this.scenesById.set(ingested.scene_id, stored);
+        this.sceneIdByClientCaptureId.set(request.client_capture_id, ingested.scene_id);
+        this.handoffTokenHashToSceneId.set(ingested.handoff_grant.token_hash, ingested.scene_id);
+        if (stored.video_upload_token_record) {
+          this.videoTokenHashToSceneId.set(stored.video_upload_token_record.token_hash, ingested.scene_id);
+        }
+        this.persistStoredScene(stored);
+
+        return ingested.response;
       }
-      if (existing.request_fingerprint !== requestFingerprint) {
-        throw new RoomPlanCaptureError(
-          "INVALID_CAPTURE",
-          `client_capture_id ${request.client_capture_id} has already been ingested with a different payload.`
-        );
-      }
-      this.refreshAccessArtifacts(existing, request.capture_metadata.video_expected);
-      this.persistStoredScene(existing);
-      return this.toCaptureResponse(existing);
-    }
-
-    const now = this.nowIso();
-    const ingested = ingestRoomPlanCaptureRequest(request, {
-      now,
-      handoff_base_url: this.handoffBaseUrl,
-      handoff_ttl_ms: this.handoffTtlMs,
-      video_upload_ttl_ms: this.videoUploadTtlMs,
-      token_secret: this.tokenSecret,
-    });
-
-    const handoffToken = extractTokenFromQrPayload(ingested.handoff_grant.qr_payload);
-    const videoToken = ingested.response.video_upload_token;
-    const persistedRecords = decomposeIngestedCaptureForStorage(ingested);
-    const stored: StoredSceneRecord = {
-      request_fingerprint: requestFingerprint,
-      request_id: request.request_id,
-      client_capture_id: request.client_capture_id,
-      scene: ingested.scene,
-      persisted_records: persistedRecords,
-      snapshots: new Map([[persistedRecords.scene_snapshot.snapshot_id, structuredClone(persistedRecords.scene_snapshot)]]),
-      derived_state_caches: new Map(
-        persistedRecords.derived_state_cache
-          ? [[persistedRecords.derived_state_cache.snapshot_id, structuredClone(persistedRecords.derived_state_cache)]]
-          : []
-      ),
-      preview_records: new Map(),
-      idempotency_records: new Map(),
-      handoff_grant: persistedRecords.handoff_grant,
-      handoff_token: handoffToken,
-      video_upload_token_record: persistedRecords.video_upload_token_record,
-      video_upload_token: videoToken,
-    };
-
-    this.scenesById.set(ingested.scene_id, stored);
-    this.sceneIdByClientCaptureId.set(request.client_capture_id, ingested.scene_id);
-    this.handoffTokenHashToSceneId.set(ingested.handoff_grant.token_hash, ingested.scene_id);
-    if (stored.video_upload_token_record) {
-      this.videoTokenHashToSceneId.set(stored.video_upload_token_record.token_hash, ingested.scene_id);
-    }
-    this.persistStoredScene(stored);
-
-    return ingested.response;
+    );
   }
 
   public getScene(scene_id: string): Scene | null {
@@ -799,363 +812,425 @@ export class RoomPlanCaptureService {
     return records ? structuredClone(records) : null;
   }
 
-  public createBookmark(scene_id: string, request: CreateBookmarkRequest): CreateBookmarkResponse {
-    const stored = this.mustGetStoredScene(scene_id);
-    const name = request.name.trim();
-    if (!name) {
-      throw new RoomPlanCaptureError("INVALID_CAPTURE", "Bookmark name is required.");
-    }
-    if (!Number.isFinite(request.fov) || request.fov <= 0 || request.fov > 180) {
-      throw new RoomPlanCaptureError("INVALID_CAPTURE", "Bookmark fov must be between 0 and 180 degrees.");
-    }
-
-    const now = this.nowIso();
-    const bookmarkId = makeStableId(
-      "bookmark",
-      `${scene_id}:${name}:${JSON.stringify(request.camera_pose)}:${roundNumber(request.fov)}`
-    );
-    const existing = stored.scene.bookmarks.find((bookmark) => bookmark.bookmark_id === bookmarkId) ?? null;
-    if (existing) {
-      return {
-        bookmark: structuredClone(existing),
-        scene: structuredClone(stored.scene),
-      };
-    }
-
-    const bookmark: CameraBookmark = {
-      bookmark_id: bookmarkId,
-      name,
-      camera_pose: structuredClone(request.camera_pose),
-      fov: roundNumber(request.fov),
-      created_at: now,
-      updated_at: now,
-    };
-    stored.scene.bookmarks = [...stored.scene.bookmarks, bookmark].sort((left, right) => left.created_at.localeCompare(right.created_at));
-    stored.persisted_records.camera_bookmarks = stored.scene.bookmarks.map((entry) => ({
-      ...structuredClone(entry),
-      scene_id,
-    }));
-    this.persistStoredScene(stored);
-
-    return {
-      bookmark: structuredClone(bookmark),
-      scene: structuredClone(stored.scene),
-    };
+  public getObservabilitySnapshot(): ObservabilitySnapshot {
+    return this.observability.snapshot();
   }
 
-  public generatePhotoreal(scene_id: string, request: GeneratePhotorealRequest): GeneratePhotorealResponse {
-    const stored = this.mustGetStoredScene(scene_id);
-    const existing = this.getIdempotentResponse<GeneratePhotorealResponse>(
-      stored,
-      `photoreal:${scene_id}`,
-      request.idempotency_key,
-      request as Record<string, unknown>
-    );
-    if (existing) {
-      return existing;
-    }
-
-    const now = this.nowIso();
-    try {
-      const snapshot = stored.snapshots.get(request.scene_snapshot_id);
-      if (!snapshot) {
-        throw new SceneMutationError("TARGET_NOT_FOUND", `Scene snapshot ${request.scene_snapshot_id} was not found.`);
-      }
-      const historicalScene = this.materializeSceneAtSnapshot(stored, snapshot.snapshot_id);
-      const resolvedCamera = this.resolvePhotorealCamera(historicalScene, request);
-      const conditioning = buildDeterministicQuickRender(historicalScene, CURATED_ASSET_MANIFEST);
-      const entrySeed = JSON.stringify({
+  public createBookmark(scene_id: string, request: CreateBookmarkRequest): CreateBookmarkResponse {
+    return this.observeSync(
+      "bookmark.create",
+      {
         scene_id,
-        scene_snapshot_id: snapshot.snapshot_id,
-        scene_version: snapshot.scene_version,
-        bookmark_id: resolvedCamera.bookmark_id,
-        camera_pose: resolvedCamera.camera_pose,
-        fov: resolvedCamera.fov,
-        prompt_modifiers: request.prompt_modifiers,
-      });
-      const entry_id = makeStableId("photoreal", entrySeed);
-      const asset_id = makeStableId("asset-photoreal", entrySeed);
-      const photorealEntry: PhotorealEntry = {
-        entry_id,
-        asset_id,
-        scene_version: snapshot.scene_version,
-        scene_snapshot_id: snapshot.snapshot_id,
-        bookmark_id: resolvedCamera.bookmark_id,
-        camera_pose: structuredClone(resolvedCamera.camera_pose),
-        fov: resolvedCamera.fov,
-        prompt_modifiers: [...request.prompt_modifiers],
-        provider_metadata: {
-          provider: "deterministic_stub",
-          uri: `asset://photoreal/${encodeURIComponent(scene_id)}/${encodeURIComponent(snapshot.snapshot_id)}/${encodeURIComponent(entry_id)}.png`,
-          conditioning_scene_version: conditioning.scene_version,
-          conditioning_snapshot_id: conditioning.scene_snapshot_id,
-          conditioning_asset_binding_count: conditioning.asset_bindings.length,
-          conditioning_surface_count: conditioning.surfaces.length,
-          conditioning_object_count: conditioning.objects.length,
-        },
-        created_at: now,
-      };
-      if (!stored.scene.photoreal_gallery.some((entry) => entry.entry_id === entry_id)) {
-        stored.scene.photoreal_gallery = [...stored.scene.photoreal_gallery, photorealEntry].sort((left, right) =>
-          left.created_at.localeCompare(right.created_at)
+        name: request.name,
+      },
+      () => {
+        const stored = this.mustGetStoredScene(scene_id);
+        const name = request.name.trim();
+        if (!name) {
+          throw new RoomPlanCaptureError("INVALID_CAPTURE", "Bookmark name is required.");
+        }
+        if (!Number.isFinite(request.fov) || request.fov <= 0 || request.fov > 180) {
+          throw new RoomPlanCaptureError("INVALID_CAPTURE", "Bookmark fov must be between 0 and 180 degrees.");
+        }
+
+        const now = this.nowIso();
+        const bookmarkId = makeStableId(
+          "bookmark",
+          `${scene_id}:${name}:${JSON.stringify(request.camera_pose)}:${roundNumber(request.fov)}`
         );
-        stored.persisted_records.photoreal_entries = stored.scene.photoreal_gallery.map((entry) => ({
+        const existing = stored.scene.bookmarks.find((bookmark) => bookmark.bookmark_id === bookmarkId) ?? null;
+        if (existing) {
+          return {
+            bookmark: structuredClone(existing),
+            scene: structuredClone(stored.scene),
+          };
+        }
+
+        const bookmark: CameraBookmark = {
+          bookmark_id: bookmarkId,
+          name,
+          camera_pose: structuredClone(request.camera_pose),
+          fov: roundNumber(request.fov),
+          created_at: now,
+          updated_at: now,
+        };
+        stored.scene.bookmarks = [...stored.scene.bookmarks, bookmark].sort((left, right) => left.created_at.localeCompare(right.created_at));
+        stored.persisted_records.camera_bookmarks = stored.scene.bookmarks.map((entry) => ({
           ...structuredClone(entry),
           scene_id,
         }));
-      }
+        this.persistStoredScene(stored);
 
-      const job_id = makeStableId("job", `photoreal:${scene_id}:${request.idempotency_key}`);
-      const job: JobRecord = {
-        job_id,
-        scene_id,
-        job_kind: "photoreal",
-        status: "ready",
-        source_scene_version: snapshot.scene_version,
-        scene_snapshot_id: snapshot.snapshot_id,
-        created_at: now,
-        updated_at: now,
-        output_asset_id: asset_id,
-        error_code: null,
-      };
-      this.jobsById.set(job_id, structuredClone(job));
-      this.persistStoredScene(stored);
-
-      const response: GeneratePhotorealResponse = {
-        job_id,
-        photoreal_entry: structuredClone(stored.scene.photoreal_gallery.find((entry) => entry.entry_id === entry_id) ?? photorealEntry),
-      };
-      this.recordIdempotentResponse(
-        stored,
-        `photoreal:${scene_id}`,
-        request.idempotency_key,
-        request as Record<string, unknown>,
-        200,
-        response,
-        now
-      );
-      return response;
-    } catch (error) {
-      if (error instanceof SceneMutationError) {
-        const responseBody = {
-          reason_code: error.reason_code,
-          message: error.message,
+        return {
+          bookmark: structuredClone(bookmark),
+          scene: structuredClone(stored.scene),
         };
-        this.recordIdempotentResponse(stored, `photoreal:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 409, responseBody, now);
-        throw new RoomPlanCaptureError(error.reason_code, error.message);
       }
-      throw error;
-    }
+    );
   }
 
-  public planSceneOperation(scene_id: string, request: OperationPlanRequest): PlannerResponse {
-    const stored = this.mustGetStoredScene(scene_id);
-    const existing = this.getIdempotentResponse<PlannerResponse>(stored, `plan:${scene_id}`, request.idempotency_key, request as Record<string, unknown>);
-    if (existing) {
-      return existing;
-    }
+  public generatePhotoreal(scene_id: string, request: GeneratePhotorealRequest): GeneratePhotorealResponse {
+    return this.observeSync(
+      "photoreal.generate",
+      {
+        scene_id,
+        scene_snapshot_id: request.scene_snapshot_id,
+        idempotency_key: request.idempotency_key,
+      },
+      () => {
+        const stored = this.mustGetStoredScene(scene_id);
+        const existing = this.getIdempotentResponse<GeneratePhotorealResponse>(
+          stored,
+          `photoreal:${scene_id}`,
+          request.idempotency_key,
+          request as Record<string, unknown>
+        );
+        if (existing) {
+          return existing;
+        }
 
-    const now = this.nowIso();
-    const planned = planDeterministicTurn(stored.scene, request);
-    let response: PlannerResponse;
-    if (planned.response_kind === "preview_request") {
-      try {
-        const preview = this.createScenePreview(scene_id, planned.preview_request);
-        response = {
-          response_kind: "operation_plan_preview",
-          preview: preview.preview,
-        };
-      } catch (error) {
-        if (error instanceof RoomPlanCaptureError) {
-          response = {
-            response_kind: "rejection",
-            request_id: request.request_id,
-            reason_code: error.reason_code,
-            message: error.message,
+        const now = this.nowIso();
+        try {
+          const snapshot = stored.snapshots.get(request.scene_snapshot_id);
+          if (!snapshot) {
+            throw new SceneMutationError("TARGET_NOT_FOUND", `Scene snapshot ${request.scene_snapshot_id} was not found.`);
+          }
+          const historicalScene = this.materializeSceneAtSnapshot(stored, snapshot.snapshot_id);
+          const resolvedCamera = this.resolvePhotorealCamera(historicalScene, request);
+          const conditioning = buildDeterministicQuickRender(historicalScene, CURATED_ASSET_MANIFEST);
+          const entrySeed = JSON.stringify({
+            scene_id,
+            scene_snapshot_id: snapshot.snapshot_id,
+            scene_version: snapshot.scene_version,
+            bookmark_id: resolvedCamera.bookmark_id,
+            camera_pose: resolvedCamera.camera_pose,
+            fov: resolvedCamera.fov,
+            prompt_modifiers: request.prompt_modifiers,
+          });
+          const entry_id = makeStableId("photoreal", entrySeed);
+          const asset_id = makeStableId("asset-photoreal", entrySeed);
+          const photorealEntry: PhotorealEntry = {
+            entry_id,
+            asset_id,
+            scene_version: snapshot.scene_version,
+            scene_snapshot_id: snapshot.snapshot_id,
+            bookmark_id: resolvedCamera.bookmark_id,
+            camera_pose: structuredClone(resolvedCamera.camera_pose),
+            fov: resolvedCamera.fov,
+            prompt_modifiers: [...request.prompt_modifiers],
+            provider_metadata: {
+              provider: "deterministic_stub",
+              uri: `asset://photoreal/${encodeURIComponent(scene_id)}/${encodeURIComponent(snapshot.snapshot_id)}/${encodeURIComponent(entry_id)}.png`,
+              conditioning_scene_version: conditioning.scene_version,
+              conditioning_snapshot_id: conditioning.scene_snapshot_id,
+              conditioning_asset_binding_count: conditioning.asset_bindings.length,
+              conditioning_surface_count: conditioning.surfaces.length,
+              conditioning_object_count: conditioning.objects.length,
+            },
+            created_at: now,
           };
-        } else {
+          if (!stored.scene.photoreal_gallery.some((entry) => entry.entry_id === entry_id)) {
+            stored.scene.photoreal_gallery = [...stored.scene.photoreal_gallery, photorealEntry].sort((left, right) =>
+              left.created_at.localeCompare(right.created_at)
+            );
+            stored.persisted_records.photoreal_entries = stored.scene.photoreal_gallery.map((entry) => ({
+              ...structuredClone(entry),
+              scene_id,
+            }));
+          }
+
+          const job_id = makeStableId("job", `photoreal:${scene_id}:${request.idempotency_key}`);
+          const job: JobRecord = {
+            job_id,
+            scene_id,
+            job_kind: "photoreal",
+            status: "ready",
+            source_scene_version: snapshot.scene_version,
+            scene_snapshot_id: snapshot.snapshot_id,
+            created_at: now,
+            updated_at: now,
+            output_asset_id: asset_id,
+            error_code: null,
+          };
+          this.jobsById.set(job_id, structuredClone(job));
+          this.persistStoredScene(stored);
+
+          const response: GeneratePhotorealResponse = {
+            job_id,
+            photoreal_entry: structuredClone(stored.scene.photoreal_gallery.find((entry) => entry.entry_id === entry_id) ?? photorealEntry),
+          };
+          this.recordIdempotentResponse(
+            stored,
+            `photoreal:${scene_id}`,
+            request.idempotency_key,
+            request as Record<string, unknown>,
+            200,
+            response,
+            now
+          );
+          return response;
+        } catch (error) {
+          if (error instanceof SceneMutationError) {
+            const responseBody = {
+              reason_code: error.reason_code,
+              message: error.message,
+            };
+            this.recordIdempotentResponse(stored, `photoreal:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 409, responseBody, now);
+            throw new RoomPlanCaptureError(error.reason_code, error.message);
+          }
           throw error;
         }
       }
-    } else {
-      response = planned;
-    }
+    );
+  }
 
-    this.recordIdempotentResponse(stored, `plan:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 200, response, now);
-    return response;
+  public planSceneOperation(scene_id: string, request: OperationPlanRequest): PlannerResponse {
+    return this.observeSync(
+      "planner.plan",
+      {
+        scene_id,
+        request_id: request.request_id,
+        idempotency_key: request.idempotency_key,
+      },
+      () => {
+        const stored = this.mustGetStoredScene(scene_id);
+        const existing = this.getIdempotentResponse<PlannerResponse>(stored, `plan:${scene_id}`, request.idempotency_key, request as Record<string, unknown>);
+        if (existing) {
+          return existing;
+        }
+
+        const now = this.nowIso();
+        const planned = planDeterministicTurn(stored.scene, request);
+        let response: PlannerResponse;
+        if (planned.response_kind === "preview_request") {
+          try {
+            const preview = this.createScenePreview(scene_id, planned.preview_request);
+            response = {
+              response_kind: "operation_plan_preview",
+              preview: preview.preview,
+            };
+          } catch (error) {
+            if (error instanceof RoomPlanCaptureError) {
+              response = {
+                response_kind: "rejection",
+                request_id: request.request_id,
+                reason_code: error.reason_code,
+                message: error.message,
+              };
+            } else {
+              throw error;
+            }
+          }
+        } else {
+          response = planned;
+        }
+
+        this.recordIdempotentResponse(stored, `plan:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 200, response, now);
+        return response;
+      }
+    );
   }
 
   public createScenePreview(scene_id: string, request: ScenePreviewRequest): ScenePreviewResponse {
-    const stored = this.mustGetStoredScene(scene_id);
-    const existing = this.getIdempotentResponse<ScenePreviewResponse>(stored, `preview:${scene_id}`, request.idempotency_key, request as Record<string, unknown>);
-    if (existing) {
-      return existing;
-    }
-
-    const now = this.nowIso();
-    try {
-      const preview_id = makeStableId(
-        "preview",
-        `${scene_id}:${request.request_id}:${request.idempotency_key}:${stored.scene.head.current_scene_version}`
-      );
-      const apply_token = createOpaqueToken(
-        "apply",
-        `${scene_id}:${preview_id}:${stored.scene.head.current_scene_version}`,
-        this.tokenSecret
-      );
-      const apply_token_expires_at = addMilliseconds(now, this.handoffTtlMs);
-      const response = createPreviewResponse(stored.scene, request, now, preview_id, apply_token, apply_token_expires_at);
-      const previewRecord: PersistedPreviewRecord = {
-        preview_id,
+    return this.observeSync(
+      "mutation.preview",
+      {
         scene_id,
-        based_on_scene_version: stored.scene.head.current_scene_version,
-        ops: structuredClone(request.ops),
-        explanation: request.explanation,
-        canonical_plan_hash: response.preview.canonical_plan_hash,
-        apply_token_hash: hashOpaqueToken(this.tokenSecret, apply_token),
-        apply_token_expires_at,
+        request_id: request.request_id,
         idempotency_key: request.idempotency_key,
-        created_at: now,
-        consumed_at: null,
-      };
-      stored.preview_records.set(preview_id, previewRecord);
-      this.persistStoredScene(stored);
-      this.recordIdempotentResponse(stored, `preview:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 200, response, now);
-      return response;
-    } catch (error) {
-      if (error instanceof SceneMutationError) {
-        const responseBody = {
-          reason_code: error.reason_code,
-          message: error.message,
-          validation_summary: error.validation_summary,
-        };
-        this.recordIdempotentResponse(stored, `preview:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 409, responseBody, now);
-        throw new RoomPlanCaptureError(error.reason_code, error.message);
+      },
+      () => {
+        const stored = this.mustGetStoredScene(scene_id);
+        const existing = this.getIdempotentResponse<ScenePreviewResponse>(stored, `preview:${scene_id}`, request.idempotency_key, request as Record<string, unknown>);
+        if (existing) {
+          return existing;
+        }
+
+        const now = this.nowIso();
+        try {
+          const preview_id = makeStableId(
+            "preview",
+            `${scene_id}:${request.request_id}:${request.idempotency_key}:${stored.scene.head.current_scene_version}`
+          );
+          const apply_token = createOpaqueToken(
+            "apply",
+            `${scene_id}:${preview_id}:${stored.scene.head.current_scene_version}`,
+            this.tokenSecret
+          );
+          const apply_token_expires_at = addMilliseconds(now, this.handoffTtlMs);
+          const response = createPreviewResponse(stored.scene, request, now, preview_id, apply_token, apply_token_expires_at);
+          const previewRecord: PersistedPreviewRecord = {
+            preview_id,
+            scene_id,
+            based_on_scene_version: stored.scene.head.current_scene_version,
+            ops: structuredClone(request.ops),
+            explanation: request.explanation,
+            canonical_plan_hash: response.preview.canonical_plan_hash,
+            apply_token_hash: hashOpaqueToken(this.tokenSecret, apply_token),
+            apply_token_expires_at,
+            idempotency_key: request.idempotency_key,
+            created_at: now,
+            consumed_at: null,
+          };
+          stored.preview_records.set(preview_id, previewRecord);
+          this.persistStoredScene(stored);
+          this.recordIdempotentResponse(stored, `preview:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 200, response, now);
+          return response;
+        } catch (error) {
+          if (error instanceof SceneMutationError) {
+            const responseBody = {
+              reason_code: error.reason_code,
+              message: error.message,
+              validation_summary: error.validation_summary,
+            };
+            this.recordIdempotentResponse(stored, `preview:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 409, responseBody, now);
+            throw new RoomPlanCaptureError(error.reason_code, error.message);
+          }
+          throw error;
+        }
       }
-      throw error;
-    }
+    );
   }
 
   public applyScenePreview(scene_id: string, request: ApplyPlanRequest): SceneApplyResponse {
-    const stored = this.mustGetStoredScene(scene_id);
-    const existing = this.getIdempotentResponse<SceneApplyResponse>(stored, `apply:${scene_id}`, request.idempotency_key, request as Record<string, unknown>);
-    if (existing) {
-      return existing;
-    }
+    return this.observeSync(
+      "mutation.apply",
+      {
+        scene_id,
+        preview_id: request.preview_id,
+        idempotency_key: request.idempotency_key,
+      },
+      () => {
+        const stored = this.mustGetStoredScene(scene_id);
+        const existing = this.getIdempotentResponse<SceneApplyResponse>(stored, `apply:${scene_id}`, request.idempotency_key, request as Record<string, unknown>);
+        if (existing) {
+          return existing;
+        }
 
-    const now = this.nowIso();
-    try {
-      if (request.expected_scene_version !== stored.scene.head.current_scene_version) {
-        throw new SceneMutationError(
-          "VERSION_CONFLICT",
-          `Expected scene version ${request.expected_scene_version} does not match current version ${stored.scene.head.current_scene_version}.`
-        );
-      }
-      const preview = stored.preview_records.get(request.preview_id);
-      if (!preview) {
-        throw new SceneMutationError("APPLY_TOKEN_INVALID", `Preview ${request.preview_id} was not found.`);
-      }
-      if (preview.consumed_at) {
-        throw new SceneMutationError("APPLY_TOKEN_INVALID", `Preview ${request.preview_id} has already been used.`);
-      }
-      if (isExpired(preview.apply_token_expires_at, now)) {
-        throw new SceneMutationError("APPLY_TOKEN_EXPIRED", `Preview ${request.preview_id} has expired.`);
-      }
-      if (preview.based_on_scene_version !== stored.scene.head.current_scene_version) {
-        throw new SceneMutationError(
-          "VERSION_CONFLICT",
-          `Preview ${request.preview_id} was created for scene version ${preview.based_on_scene_version}.`
-        );
-      }
-      if (preview.canonical_plan_hash !== request.canonical_plan_hash) {
-        throw new SceneMutationError("APPLY_TOKEN_INVALID", `Preview ${request.preview_id} has a mismatched plan hash.`);
-      }
-      if (preview.apply_token_hash !== hashOpaqueToken(this.tokenSecret, request.apply_token)) {
-        throw new SceneMutationError("APPLY_TOKEN_INVALID", `Preview ${request.preview_id} has an invalid apply token.`);
-      }
+        const now = this.nowIso();
+        try {
+          if (request.expected_scene_version !== stored.scene.head.current_scene_version) {
+            throw new SceneMutationError(
+              "VERSION_CONFLICT",
+              `Expected scene version ${request.expected_scene_version} does not match current version ${stored.scene.head.current_scene_version}.`
+            );
+          }
+          const preview = stored.preview_records.get(request.preview_id);
+          if (!preview) {
+            throw new SceneMutationError("APPLY_TOKEN_INVALID", `Preview ${request.preview_id} was not found.`);
+          }
+          if (preview.consumed_at) {
+            throw new SceneMutationError("APPLY_TOKEN_INVALID", `Preview ${request.preview_id} has already been used.`);
+          }
+          if (isExpired(preview.apply_token_expires_at, now)) {
+            throw new SceneMutationError("APPLY_TOKEN_EXPIRED", `Preview ${request.preview_id} has expired.`);
+          }
+          if (preview.based_on_scene_version !== stored.scene.head.current_scene_version) {
+            throw new SceneMutationError(
+              "VERSION_CONFLICT",
+              `Preview ${request.preview_id} was created for scene version ${preview.based_on_scene_version}.`
+            );
+          }
+          if (preview.canonical_plan_hash !== request.canonical_plan_hash) {
+            throw new SceneMutationError("APPLY_TOKEN_INVALID", `Preview ${request.preview_id} has a mismatched plan hash.`);
+          }
+          if (preview.apply_token_hash !== hashOpaqueToken(this.tokenSecret, request.apply_token)) {
+            throw new SceneMutationError("APPLY_TOKEN_INVALID", `Preview ${request.preview_id} has an invalid apply token.`);
+          }
 
-      const simulation = simulateScenePreview(
-        stored.scene,
-        {
-          request_id: request.preview_id,
-          idempotency_key: request.idempotency_key,
-          expected_scene_version: request.expected_scene_version,
-          ops: preview.ops,
-          explanation: preview.explanation,
-        },
-        now
-      );
-      preview.consumed_at = now;
-      const response = this.commitSimulatedScene(stored, simulation, "edit_plan", now);
-      this.recordIdempotentResponse(stored, `apply:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 200, response, now);
-      return response;
-    } catch (error) {
-      if (error instanceof SceneMutationError) {
-        const responseBody = {
-          reason_code: error.reason_code,
-          message: error.message,
-          validation_summary: error.validation_summary,
-        };
-        this.recordIdempotentResponse(stored, `apply:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 409, responseBody, now);
-        throw new RoomPlanCaptureError(error.reason_code, error.message);
+          const simulation = simulateScenePreview(
+            stored.scene,
+            {
+              request_id: request.preview_id,
+              idempotency_key: request.idempotency_key,
+              expected_scene_version: request.expected_scene_version,
+              ops: preview.ops,
+              explanation: preview.explanation,
+            },
+            now
+          );
+          preview.consumed_at = now;
+          const response = this.commitSimulatedScene(stored, simulation, "edit_plan", now);
+          this.recordIdempotentResponse(stored, `apply:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 200, response, now);
+          return response;
+        } catch (error) {
+          if (error instanceof SceneMutationError) {
+            const responseBody = {
+              reason_code: error.reason_code,
+              message: error.message,
+              validation_summary: error.validation_summary,
+            };
+            this.recordIdempotentResponse(stored, `apply:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 409, responseBody, now);
+            throw new RoomPlanCaptureError(error.reason_code, error.message);
+          }
+          throw error;
+        }
       }
-      throw error;
-    }
+    );
   }
 
   public undoLastChange(scene_id: string, request: UndoLastChangeRequest): SceneApplyResponse {
-    const stored = this.mustGetStoredScene(scene_id);
-    const existing = this.getIdempotentResponse<SceneApplyResponse>(stored, `undo:${scene_id}`, request.idempotency_key, request as Record<string, unknown>);
-    if (existing) {
-      return existing;
-    }
+    return this.observeSync(
+      "mutation.undo",
+      {
+        scene_id,
+        idempotency_key: request.idempotency_key,
+      },
+      () => {
+        const stored = this.mustGetStoredScene(scene_id);
+        const existing = this.getIdempotentResponse<SceneApplyResponse>(stored, `undo:${scene_id}`, request.idempotency_key, request as Record<string, unknown>);
+        if (existing) {
+          return existing;
+        }
 
-    const now = this.nowIso();
-    try {
-      if (request.expected_scene_version !== stored.scene.head.current_scene_version) {
-        throw new SceneMutationError(
-          "VERSION_CONFLICT",
-          `Expected scene version ${request.expected_scene_version} does not match current version ${stored.scene.head.current_scene_version}.`
-        );
+        const now = this.nowIso();
+        try {
+          if (request.expected_scene_version !== stored.scene.head.current_scene_version) {
+            throw new SceneMutationError(
+              "VERSION_CONFLICT",
+              `Expected scene version ${request.expected_scene_version} does not match current version ${stored.scene.head.current_scene_version}.`
+            );
+          }
+          const undoBaseSnapshotId = stored.scene.head.undo_base_snapshot_id;
+          if (!undoBaseSnapshotId) {
+            throw new SceneMutationError("UNDO_NOT_AVAILABLE", `Scene ${scene_id} has no undoable snapshot.`);
+          }
+          const baseSnapshot = stored.snapshots.get(undoBaseSnapshotId);
+          if (!baseSnapshot) {
+            throw new SceneMutationError("UNDO_NOT_AVAILABLE", `Undo snapshot ${undoBaseSnapshotId} was not found.`);
+          }
+          const baseDerived = stored.derived_state_caches.get(undoBaseSnapshotId) ?? null;
+          const simulatedScene = structuredClone(stored.scene);
+          simulatedScene.snapshot = structuredClone(baseSnapshot);
+          simulatedScene.derived_state_cache = baseDerived ? structuredClone(baseDerived.derived_state) : simulatedScene.derived_state_cache;
+          const response = this.commitSimulatedScene(
+            stored,
+            {
+              simulated_scene: simulatedScene,
+              validation_summary: {
+                hard_violations: simulatedScene.derived_state_cache?.hard_violations ?? [],
+                soft_scores: simulatedScene.derived_state_cache?.soft_scores ?? {},
+              },
+            },
+            "undo_restore",
+            now
+          );
+          this.recordIdempotentResponse(stored, `undo:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 200, response, now);
+          return response;
+        } catch (error) {
+          if (error instanceof SceneMutationError) {
+            const responseBody = {
+              reason_code: error.reason_code,
+              message: error.message,
+              validation_summary: error.validation_summary,
+            };
+            this.recordIdempotentResponse(stored, `undo:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 409, responseBody, now);
+            throw new RoomPlanCaptureError(error.reason_code, error.message);
+          }
+          throw error;
+        }
       }
-      const undoBaseSnapshotId = stored.scene.head.undo_base_snapshot_id;
-      if (!undoBaseSnapshotId) {
-        throw new SceneMutationError("UNDO_NOT_AVAILABLE", `Scene ${scene_id} has no undoable snapshot.`);
-      }
-      const baseSnapshot = stored.snapshots.get(undoBaseSnapshotId);
-      if (!baseSnapshot) {
-        throw new SceneMutationError("UNDO_NOT_AVAILABLE", `Undo snapshot ${undoBaseSnapshotId} was not found.`);
-      }
-      const baseDerived = stored.derived_state_caches.get(undoBaseSnapshotId) ?? null;
-      const simulatedScene = structuredClone(stored.scene);
-      simulatedScene.snapshot = structuredClone(baseSnapshot);
-      simulatedScene.derived_state_cache = baseDerived ? structuredClone(baseDerived.derived_state) : simulatedScene.derived_state_cache;
-      const response = this.commitSimulatedScene(
-        stored,
-        {
-          simulated_scene: simulatedScene,
-          validation_summary: {
-            hard_violations: simulatedScene.derived_state_cache?.hard_violations ?? [],
-            soft_scores: simulatedScene.derived_state_cache?.soft_scores ?? {},
-          },
-        },
-        "undo_restore",
-        now
-      );
-      this.recordIdempotentResponse(stored, `undo:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 200, response, now);
-      return response;
-    } catch (error) {
-      if (error instanceof SceneMutationError) {
-        const responseBody = {
-          reason_code: error.reason_code,
-          message: error.message,
-          validation_summary: error.validation_summary,
-        };
-        this.recordIdempotentResponse(stored, `undo:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 409, responseBody, now);
-        throw new RoomPlanCaptureError(error.reason_code, error.message);
-      }
-      throw error;
-    }
+    );
   }
 
   public redeemHandoff(request: HandoffRedeemRequest): HandoffRedeemResponse {
@@ -1194,60 +1269,69 @@ export class RoomPlanCaptureService {
   }
 
   public postCaptureVideo(scene_id: string, request: VideoUploadRequest): VideoUploadResponse {
-    const stored = this.mustGetStoredScene(scene_id);
-    const tokenHash = hashOpaqueToken(this.tokenSecret, request.video_upload_token);
-    const tokenSceneId = this.videoTokenHashToSceneId.get(tokenHash);
+    return this.observeSync(
+      "splat.upload",
+      {
+        scene_id,
+        content_type: request.content_type,
+      },
+      () => {
+        const stored = this.mustGetStoredScene(scene_id);
+        const tokenHash = hashOpaqueToken(this.tokenSecret, request.video_upload_token);
+        const tokenSceneId = this.videoTokenHashToSceneId.get(tokenHash);
 
-    if (!tokenSceneId || tokenSceneId !== scene_id || !stored.video_upload_token_record) {
-      throw new RoomPlanCaptureError("VIDEO_UPLOAD_TOKEN_INVALID", "The video upload token is invalid.");
-    }
-    if (stored.video_upload_token_record.token_hash !== tokenHash) {
-      throw new RoomPlanCaptureError("VIDEO_UPLOAD_TOKEN_INVALID", "The video upload token is no longer valid.");
-    }
+        if (!tokenSceneId || tokenSceneId !== scene_id || !stored.video_upload_token_record) {
+          throw new RoomPlanCaptureError("VIDEO_UPLOAD_TOKEN_INVALID", "The video upload token is invalid.");
+        }
+        if (stored.video_upload_token_record.token_hash !== tokenHash) {
+          throw new RoomPlanCaptureError("VIDEO_UPLOAD_TOKEN_INVALID", "The video upload token is no longer valid.");
+        }
 
-    const now = this.nowIso();
-    if (isExpired(stored.video_upload_token_record.expires_at, now)) {
-      stored.video_upload_token_record.status = "expired";
-      throw new RoomPlanCaptureError("VIDEO_UPLOAD_TOKEN_EXPIRED", "The video upload token has expired.");
-    }
-    if (stored.video_upload_token_record.status === "used") {
-      throw new RoomPlanCaptureError(
-        "VIDEO_UPLOAD_TOKEN_ALREADY_USED",
-        "The video upload token has already been used."
-      );
-    }
+        const now = this.nowIso();
+        if (isExpired(stored.video_upload_token_record.expires_at, now)) {
+          stored.video_upload_token_record.status = "expired";
+          throw new RoomPlanCaptureError("VIDEO_UPLOAD_TOKEN_EXPIRED", "The video upload token has expired.");
+        }
+        if (stored.video_upload_token_record.status === "used") {
+          throw new RoomPlanCaptureError(
+            "VIDEO_UPLOAD_TOKEN_ALREADY_USED",
+            "The video upload token has already been used."
+          );
+        }
 
-    stored.video_upload_token_record.status = "used";
-    stored.video_upload_token_record.used_at = now;
+        stored.video_upload_token_record.status = "used";
+        stored.video_upload_token_record.used_at = now;
 
-    const job_id = makeStableId("job", `${scene_id}:splat:${request.content_type}:${now}`);
-    const job: JobRecord = {
-      job_id,
-      scene_id,
-      job_kind: "splat",
-      status: "queued",
-      source_scene_version: stored.scene.head.current_scene_version,
-      scene_snapshot_id: stored.scene.snapshot.snapshot_id,
-      created_at: now,
-      updated_at: now,
-      output_asset_id: null,
-      error_code: request.content_type.toLowerCase().includes("fail") ? "INVALID_CAPTURE" : null,
-    };
-    this.jobsById.set(job_id, job);
+        const job_id = makeStableId("job", `${scene_id}:splat:${request.content_type}:${now}`);
+        const job: JobRecord = {
+          job_id,
+          scene_id,
+          job_kind: "splat",
+          status: "queued",
+          source_scene_version: stored.scene.head.current_scene_version,
+          scene_snapshot_id: stored.scene.snapshot.snapshot_id,
+          created_at: now,
+          updated_at: now,
+          output_asset_id: null,
+          error_code: request.content_type.toLowerCase().includes("fail") ? "INVALID_CAPTURE" : null,
+        };
+        this.jobsById.set(job_id, job);
 
-    stored.scene.splat = {
-      scene_id,
-      source_scene_version: stored.scene.head.current_scene_version,
-      status: "queued",
-      asset_id: null,
-      uri: null,
-      job_id,
-      updated_at: now,
-    };
-    stored.persisted_records.splat_asset_record = structuredClone(stored.scene.splat);
-    this.persistStoredScene(stored);
+        stored.scene.splat = {
+          scene_id,
+          source_scene_version: stored.scene.head.current_scene_version,
+          status: "queued",
+          asset_id: null,
+          uri: null,
+          job_id,
+          updated_at: now,
+        };
+        stored.persisted_records.splat_asset_record = structuredClone(stored.scene.splat);
+        this.persistStoredScene(stored);
 
-    return { job_id };
+        return { job_id };
+      }
+    );
   }
 
   public getJob(job_id: string): JobRecord | null {
@@ -1256,60 +1340,68 @@ export class RoomPlanCaptureService {
   }
 
   public pollJob(job_id: string): JobRecord | null {
-    const existing = this.jobsById.get(job_id);
-    if (!existing) {
-      return null;
-    }
-    if (existing.job_kind !== "splat") {
-      return structuredClone(existing);
-    }
-
-    const stored = this.mustGetStoredScene(existing.scene_id);
-    const now = this.nowIso();
-    const job = this.jobsById.get(job_id);
-    if (!job) {
-      return null;
-    }
-    if (job.status === "queued") {
-      job.status = "processing";
-      job.updated_at = now;
-      if (stored.scene.splat?.job_id === job_id) {
-        stored.scene.splat.status = "processing";
-        stored.scene.splat.updated_at = now;
-        stored.persisted_records.splat_asset_record = structuredClone(stored.scene.splat);
-      }
-      this.persistStoredScene(stored);
-      return structuredClone(job);
-    }
-    if (job.status === "processing") {
-      if (job.error_code) {
-        job.status = "failed";
-        job.updated_at = now;
-        if (stored.scene.splat?.job_id === job_id) {
-          stored.scene.splat.status = "failed";
-          stored.scene.splat.asset_id = null;
-          stored.scene.splat.uri = null;
-          stored.scene.splat.updated_at = now;
-          stored.persisted_records.splat_asset_record = structuredClone(stored.scene.splat);
+    return this.observeSync(
+      "job.poll",
+      {
+        job_id,
+      },
+      () => {
+        const existing = this.jobsById.get(job_id);
+        if (!existing) {
+          return null;
         }
-        this.persistStoredScene(stored);
+        if (existing.job_kind !== "splat") {
+          return structuredClone(existing);
+        }
+
+        const stored = this.mustGetStoredScene(existing.scene_id);
+        const now = this.nowIso();
+        const job = this.jobsById.get(job_id);
+        if (!job) {
+          return null;
+        }
+        if (job.status === "queued") {
+          job.status = "processing";
+          job.updated_at = now;
+          if (stored.scene.splat?.job_id === job_id) {
+            stored.scene.splat.status = "processing";
+            stored.scene.splat.updated_at = now;
+            stored.persisted_records.splat_asset_record = structuredClone(stored.scene.splat);
+          }
+          this.persistStoredScene(stored);
+          return structuredClone(job);
+        }
+        if (job.status === "processing") {
+          if (job.error_code) {
+            job.status = "failed";
+            job.updated_at = now;
+            if (stored.scene.splat?.job_id === job_id) {
+              stored.scene.splat.status = "failed";
+              stored.scene.splat.asset_id = null;
+              stored.scene.splat.uri = null;
+              stored.scene.splat.updated_at = now;
+              stored.persisted_records.splat_asset_record = structuredClone(stored.scene.splat);
+            }
+            this.persistStoredScene(stored);
+            return structuredClone(job);
+          }
+          const assetId = makeStableId("asset-splat", `${job.scene_id}:${job.scene_snapshot_id}:${job.job_id}`);
+          job.status = "ready";
+          job.output_asset_id = assetId;
+          job.updated_at = now;
+          if (stored.scene.splat?.job_id === job_id) {
+            stored.scene.splat.status = "ready";
+            stored.scene.splat.asset_id = assetId;
+            stored.scene.splat.uri = `asset://splat/${encodeURIComponent(job.scene_id)}/${encodeURIComponent(assetId)}.splat`;
+            stored.scene.splat.updated_at = now;
+            stored.persisted_records.splat_asset_record = structuredClone(stored.scene.splat);
+          }
+          this.persistStoredScene(stored);
+          return structuredClone(job);
+        }
         return structuredClone(job);
       }
-      const assetId = makeStableId("asset-splat", `${job.scene_id}:${job.scene_snapshot_id}:${job.job_id}`);
-      job.status = "ready";
-      job.output_asset_id = assetId;
-      job.updated_at = now;
-      if (stored.scene.splat?.job_id === job_id) {
-        stored.scene.splat.status = "ready";
-        stored.scene.splat.asset_id = assetId;
-        stored.scene.splat.uri = `asset://splat/${encodeURIComponent(job.scene_id)}/${encodeURIComponent(assetId)}.splat`;
-        stored.scene.splat.updated_at = now;
-        stored.persisted_records.splat_asset_record = structuredClone(stored.scene.splat);
-      }
-      this.persistStoredScene(stored);
-      return structuredClone(job);
-    }
-    return structuredClone(job);
+    );
   }
 
   private materializeSceneAtSnapshot(stored: StoredSceneRecord, snapshotId: string): Scene {
@@ -1610,6 +1702,27 @@ export class RoomPlanCaptureService {
 
   private nowIso(): string {
     return this.nowFactory().toISOString();
+  }
+
+  private observeSync<T>(operation: string, fields: Record<string, unknown>, execute: () => T): T {
+    const span = this.observability.start(operation, fields);
+    try {
+      const result = execute();
+      span.finish("ok");
+      return result;
+    } catch (error) {
+      span.finish("error", {
+        reason_code: this.extractReasonCode(error),
+      });
+      throw error;
+    }
+  }
+
+  private extractReasonCode(error: unknown): string | null {
+    if (error && typeof error === "object" && "reason_code" in error && typeof (error as { reason_code: unknown }).reason_code === "string") {
+      return (error as { reason_code: string }).reason_code;
+    }
+    return null;
   }
 }
 

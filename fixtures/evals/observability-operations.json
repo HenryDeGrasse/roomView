@@ -1,0 +1,15 @@
+{
+  "required_operations": [
+    "capture.ingest",
+    "planner.plan",
+    "mutation.preview",
+    "mutation.apply",
+    "bookmark.create",
+    "photoreal.generate",
+    "splat.upload",
+    "job.poll"
+  ],
+  "expected_error_reasons": [
+    "TARGET_NOT_FOUND"
+  ]
+}

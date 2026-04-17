@@ -20,7 +20,11 @@ npm run verify:mutation-pipeline
 npm run verify:planner
 npm run verify:photoreal
 npm run verify:splat
+npm run verify:observability
+npm run verify:demo
 ```
+
+See `docs/demo-runbook.md` for the reproducible end-to-end MVP script and failure fallback behavior.
 
 To regenerate canonical fixture scenes from the shared RoomPlan ingest module:
 

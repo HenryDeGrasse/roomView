@@ -42,6 +42,15 @@ export {
 } from "./mutation-engine";
 export { planDeterministicTurn } from "./planner";
 export type { DeterministicPlannerResult } from "./planner";
+export {
+  createConsoleObservabilitySink,
+  ObservabilityRecorder,
+} from "./observability";
+export type {
+  ObservabilityEvent,
+  ObservabilitySnapshot,
+  OperationLatencySummary,
+} from "./observability";
 export type {
   BuildInitialSceneOptions,
   IngestedCaptureArtifacts,

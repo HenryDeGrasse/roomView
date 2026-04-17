@@ -1,0 +1,41 @@
+{
+  "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+  "steps": [
+    {
+      "action": "capture_roomplan",
+      "notes": "Create the canonical scene plus secure handoff and optional video upload token."
+    },
+    {
+      "action": "redeem_handoff",
+      "notes": "Open the scene through an authenticated scene-scoped session."
+    },
+    {
+      "action": "plan_lock_bed",
+      "notes": "Use the deterministic planner to preview a lock operation from chat-style input."
+    },
+    {
+      "action": "apply_preview",
+      "notes": "Commit the previewed edit and verify scene version increments exactly once."
+    },
+    {
+      "action": "create_bookmark",
+      "notes": "Save a bookmark sidecar without mutating editable scene state."
+    },
+    {
+      "action": "generate_photoreal",
+      "notes": "Attach a version-linked photoreal gallery entry and ready job without changing scene head."
+    },
+    {
+      "action": "upload_video_for_splat",
+      "notes": "Start the optional sidecar-only splat flow from the scene-scoped one-time upload token."
+    },
+    {
+      "action": "poll_splat_job_until_ready",
+      "notes": "Advance the queued splat job to ready and swap the scan pane source."
+    },
+    {
+      "action": "refresh_scene",
+      "notes": "Reload the latest scene and verify refresh preserves the committed edit, gallery, bookmark, and ready splat sidecar."
+    }
+  ]
+}

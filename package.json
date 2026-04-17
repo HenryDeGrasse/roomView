@@ -15,6 +15,8 @@
     "verify:planner": "npx --yes tsx ./scripts/verify-planner-transcripts.mts",
     "verify:photoreal": "npx --yes tsx ./scripts/verify-photoreal-sidecars.mts",
     "verify:splat": "npx --yes tsx ./scripts/verify-splat-jobs.mts",
-    "check": "npm run verify:fixtures && npm run verify:replays && npm run verify:quick-render && npm run verify:mutation-pipeline && npm run verify:planner && npm run verify:photoreal && npm run verify:splat"
+    "verify:observability": "npx --yes tsx ./scripts/verify-observability.mts",
+    "verify:demo": "npx --yes tsx ./scripts/verify-mvp-demo.mts",
+    "check": "npm run verify:fixtures && npm run verify:replays && npm run verify:quick-render && npm run verify:mutation-pipeline && npm run verify:planner && npm run verify:photoreal && npm run verify:splat && npm run verify:observability && npm run verify:demo"
   }
 }

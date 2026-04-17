@@ -20,6 +20,7 @@ import {
   createAssetManifestResponse,
   createQuickRenderResponse,
 } from "./quick-render";
+import { createConsoleObservabilitySink, ObservabilityRecorder } from "./observability";
 import {
   RoomPlanCaptureError,
   RoomPlanCaptureService,
@@ -52,8 +53,12 @@ interface RoomPlanApiRequestContext {
 }
 
 export function createRoomPlanApiServer(options: RoomPlanApiServerOptions = {}): Server {
+  const observability = options.observability ?? new ObservabilityRecorder({
+    sink: createConsoleObservabilitySink("roomview_api"),
+  });
   const service = new RoomPlanCaptureService({
     ...options,
+    observability,
     storage_directory: options.storage_directory ?? DEFAULT_ROOMPLAN_CAPTURE_STORAGE_DIRECTORY,
   });
   const context: RoomPlanApiRequestContext = {

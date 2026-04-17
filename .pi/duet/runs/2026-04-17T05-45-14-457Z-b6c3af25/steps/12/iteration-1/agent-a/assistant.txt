@@ -1,0 +1,37 @@
+Reviewed the current API/service verification surface, existing golden scripts, and demo-critical flows.
+
+What I changed:
+- Added structured observability in `apps/api/src/observability.ts`
+  - structured events
+  - counters
+  - error-reason tallies
+  - latency summaries
+- Wired observability into `apps/api/src/roomplan-ingest.ts` for:
+  - ingest
+  - planner
+  - preview/apply/undo
+  - bookmark creation
+  - photoreal
+  - splat upload/poll
+- Wired console JSON observability sink into `apps/api/src/server.ts`
+- Exported observability helpers from `apps/api/src/index.ts`
+- Added golden eval fixtures:
+  - `fixtures/evals/observability-operations.json`
+  - `fixtures/demo/mvp-sequence.json`
+- Added verification scripts:
+  - `scripts/verify-observability.mts`
+  - `scripts/verify-mvp-demo.mts`
+- Added demo runbook:
+  - `docs/demo-runbook.md`
+- Updated `package.json`, `README.md`, and `apps/api/README.md`
+
+Verification:
+- `npm run check`
+- import smoke for API/server/web
+- new observability verify
+- reproducible end-to-end MVP demo verify
+
+Assessment:
+Step 12 now adds repo-carried acceptance evidence, structured logs/metrics, and a replayable capture-to-refresh demo path with documented fallback behavior.
+
+Verdict: changes_made

@@ -10,9 +10,13 @@ Key bootstrap assets:
 - `src/mutation-engine.ts`
 - `src/planner.ts`
 - `src/quick-render.ts`
+- `src/observability.ts`
 - `src/server.ts` with authenticated scene reads, scene-scoped `/plan`, bookmark creation, `POST /captures/:scene_id/video`, quick-render routes, preview/apply/undo mutation endpoints, `POST /scenes/:scene_id/photoreal`, and `GET /jobs/:job_id`
 - `../../fixtures/manifest.json`
 - `../../fixtures/mutations/step-8-cases.json`
 - `../../fixtures/planner/golden-transcripts.json`
 - `../../fixtures/photoreal/step-10-cases.json`
 - `../../fixtures/splat/step-11-cases.json`
+- `../../fixtures/evals/observability-operations.json`
+- `../../fixtures/demo/mvp-sequence.json`
+- `../../docs/demo-runbook.md`
