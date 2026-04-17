@@ -1,0 +1,23 @@
+Reviewed the API contracts/routes, mutation service integration, and web editor shell for step 9.
+
+Changed:
+- Added deterministic planner/router in `apps/api/src/planner.ts`
+- Added `planSceneOperation()` in `apps/api/src/roomplan-ingest.ts`
+- Added authenticated `POST /scenes/:scene_id/plan` and photoreal command placeholder route in `apps/api/src/server.ts`
+- Exported planner helpers from `apps/api/src/index.ts`
+- Added selection-grounded chat UI with preview/accept/reject, clarification options, and reason-code messaging in `apps/web/src/server.ts`
+- Added golden prompt transcripts in `fixtures/planner/golden-transcripts.json`
+- Added `scripts/verify-planner-transcripts.mts`
+- Updated `package.json`, `README.md`, and `apps/api/README.md`
+
+Verification:
+- `npm run check`
+- API import smoke: `apps/api/src/index.ts`
+- Web import smoke: `apps/web/src/server.ts`
+- Live API probe covering `/plan` → `/apply`, undo command routing, and photoreal placeholder route
+- Web shell probe confirming chat UI is present
+
+Assessment:
+Step 9 is implemented with a deterministic planner fallback, server-authoritative `/plan` flow, selection-grounded chat UX, preview/apply/reject handling, clarification messaging, and golden transcript verification.
+
+Verdict: changes_made

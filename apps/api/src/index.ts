@@ -40,6 +40,8 @@ export {
   SceneMutationError,
   simulateScenePreview,
 } from "./mutation-engine";
+export { planDeterministicTurn } from "./planner";
+export type { DeterministicPlannerResult } from "./planner";
 export type {
   BuildInitialSceneOptions,
   IngestedCaptureArtifacts,

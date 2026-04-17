@@ -17,6 +17,7 @@ npm run verify:fixtures
 npm run verify:replays
 npm run verify:quick-render
 npm run verify:mutation-pipeline
+npm run verify:planner
 ```
 
 To regenerate canonical fixture scenes from the shared RoomPlan ingest module:

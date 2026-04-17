@@ -17,7 +17,8 @@ import type {
   NamedWallRef,
   ObjectClass,
   Opening,
-  OperationPlanPreview,
+  OperationPlanRequest,
+  PlannerResponse,
   Point2D,
   Point3D,
   Polygon2D,
@@ -63,6 +64,7 @@ import {
   SceneMutationError,
   simulateScenePreview,
 } from "./mutation-engine";
+import { planDeterministicTurn } from "./planner";
 import {
   FileSystemRoomPlanCaptureRecordStore,
 } from "./roomplan-store";
@@ -786,6 +788,43 @@ export class RoomPlanCaptureService {
   public getPersistedInitialSceneRecords(scene_id: string): PersistedInitialSceneRecords | null {
     const records = this.scenesById.get(scene_id)?.persisted_records;
     return records ? structuredClone(records) : null;
+  }
+
+  public planSceneOperation(scene_id: string, request: OperationPlanRequest): PlannerResponse {
+    const stored = this.mustGetStoredScene(scene_id);
+    const existing = this.getIdempotentResponse<PlannerResponse>(stored, `plan:${scene_id}`, request.idempotency_key, request as Record<string, unknown>);
+    if (existing) {
+      return existing;
+    }
+
+    const now = this.nowIso();
+    const planned = planDeterministicTurn(stored.scene, request);
+    let response: PlannerResponse;
+    if (planned.response_kind === "preview_request") {
+      try {
+        const preview = this.createScenePreview(scene_id, planned.preview_request);
+        response = {
+          response_kind: "operation_plan_preview",
+          preview: preview.preview,
+        };
+      } catch (error) {
+        if (error instanceof RoomPlanCaptureError) {
+          response = {
+            response_kind: "rejection",
+            request_id: request.request_id,
+            reason_code: error.reason_code,
+            message: error.message,
+          };
+        } else {
+          throw error;
+        }
+      }
+    } else {
+      response = planned;
+    }
+
+    this.recordIdempotentResponse(stored, `plan:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 200, response, now);
+    return response;
   }
 
   public createScenePreview(scene_id: string, request: ScenePreviewRequest): ScenePreviewResponse {

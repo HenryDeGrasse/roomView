@@ -229,6 +229,41 @@ function renderEditorShellHtml(input: {
       dt { font-size: 12px; color: #93c5fd; }
       dd { margin: 2px 0 0; color: #e5e7eb; }
       .muted { color: #9ca3af; }
+      .chat-selection {
+        margin-bottom: 10px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid #374151;
+        background: #111827;
+        font-size: 12px;
+        color: #cbd5e1;
+      }
+      .chat-thread {
+        display: grid;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .chat-entry {
+        border: 1px solid #1f2937;
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: #111827;
+      }
+      .chat-entry strong {
+        display: block;
+        margin-bottom: 6px;
+        color: #93c5fd;
+        font-size: 12px;
+      }
+      .chat-entry.error {
+        border-color: #7f1d1d;
+        background: rgba(127, 29, 29, 0.2);
+      }
+      .chat-entry.success {
+        border-color: #14532d;
+        background: rgba(20, 83, 45, 0.22);
+      }
+      .hidden { display: none; }
       @media (max-width: 1100px) {
         main { grid-template-columns: 1fr; }
         .pane { min-height: 0; }
@@ -257,6 +292,24 @@ function renderEditorShellHtml(input: {
           <div class="actions">
             <button id="fixture-button" class="secondary" type="button">Load local fixture</button>
           </div>
+        </section>
+        <section class="card">
+          <h2>Chat planner</h2>
+          <p class="muted">Use layout selection as context for prompts like “this wall” or “that chair.” Live API sessions enable preview/apply.</p>
+          <label for="chat-selection">Current selection</label>
+          <div id="chat-selection" class="chat-selection">No scene loaded.</div>
+          <label for="chat-input">Prompt</label>
+          <textarea id="chat-input" placeholder="Try: move the desk under the window"></textarea>
+          <div class="actions">
+            <button id="chat-send-button" type="button">Plan from chat</button>
+            <button id="chat-clear-button" class="secondary" type="button">Clear thread</button>
+          </div>
+          <div id="chat-action-buttons" class="actions hidden">
+            <button id="chat-accept-button" type="button">Accept preview</button>
+            <button id="chat-reject-button" class="secondary" type="button">Reject preview</button>
+          </div>
+          <div id="chat-options" class="list"></div>
+          <div id="chat-thread" class="chat-thread"></div>
         </section>
       </div>
     </header>
@@ -298,6 +351,9 @@ function renderEditorShellHtml(input: {
         sessionId: null,
         selectionId: null,
         loadedFrom: null,
+        chatMessages: [],
+        pendingPlannerResponse: null,
+        requestCounter: 0,
       };
 
       const statusNode = document.getElementById("status");
@@ -309,6 +365,15 @@ function renderEditorShellHtml(input: {
       const fixtureSelect = document.getElementById("fixture-select");
       const redeemButton = document.getElementById("redeem-button");
       const fixtureButton = document.getElementById("fixture-button");
+      const chatSelection = document.getElementById("chat-selection");
+      const chatInput = document.getElementById("chat-input");
+      const chatSendButton = document.getElementById("chat-send-button");
+      const chatClearButton = document.getElementById("chat-clear-button");
+      const chatActionButtons = document.getElementById("chat-action-buttons");
+      const chatAcceptButton = document.getElementById("chat-accept-button");
+      const chatRejectButton = document.getElementById("chat-reject-button");
+      const chatOptions = document.getElementById("chat-options");
+      const chatThread = document.getElementById("chat-thread");
 
       apiBaseUrlInput.value = state.apiBaseUrl;
       for (const fixture of bootstrap.fixtureSources) {
@@ -335,6 +400,7 @@ function renderEditorShellHtml(input: {
           state.sessionId = redeemResponse.session_id;
           state.sceneId = redeemResponse.scene_id;
           state.loadedFrom = "live";
+          resetChatState();
           await loadLiveScene();
         } catch (error) {
           setStatus(error.message || "Failed to redeem handoff.", true);
@@ -355,6 +421,7 @@ function renderEditorShellHtml(input: {
           state.selectionId = firstSelectableEntityId(state.scene);
           state.loadedFrom = "fixture";
           state.quickRender = await loadFixtureQuickRender(fixtureSelect.value);
+          resetChatState();
           renderScene();
           setStatus("Loaded fixture " + fixtureSelect.value + ".");
         } catch (error) {
@@ -369,6 +436,36 @@ function renderEditorShellHtml(input: {
         }
         state.selectionId = button.getAttribute("data-entity-id");
         renderScene();
+      });
+
+      chatSendButton.addEventListener("click", () => {
+        void submitChatPrompt(chatInput.value);
+      });
+
+      chatClearButton.addEventListener("click", () => {
+        resetChatState();
+        renderChatPanel();
+      });
+
+      chatAcceptButton.addEventListener("click", () => {
+        void acceptPendingPlannerResponse();
+      });
+
+      chatRejectButton.addEventListener("click", () => {
+        if (state.pendingPlannerResponse) {
+          appendChatMessage("assistant", "Preview rejected", "The pending preview was discarded.", "error");
+        }
+        state.pendingPlannerResponse = null;
+        renderChatPanel();
+      });
+
+      chatOptions.addEventListener("click", (event) => {
+        const button = event.target instanceof HTMLElement ? event.target.closest("button[data-chat-option]") : null;
+        if (!button) {
+          return;
+        }
+        chatInput.value = button.getAttribute("data-chat-option") || "";
+        void submitChatPrompt(chatInput.value);
       });
 
       const params = new URLSearchParams(window.location.search);
@@ -427,19 +524,154 @@ function renderEditorShellHtml(input: {
         return payload.render_scene;
       }
 
-      async function postJson(url, body) {
+      async function postJson(url, body, headers = {}) {
         const response = await fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...headers,
           },
           body: JSON.stringify(body),
         });
         const payload = await response.json();
         if (!response.ok) {
-          throw new Error(payload.message || payload.reason_code || "Request failed.");
+          const error = new Error(payload.message || payload.reason_code || "Request failed.");
+          error.reasonCode = payload.reason_code || null;
+          throw error;
         }
         return payload;
+      }
+
+      async function postSceneJson(pathname, body) {
+        if (!state.sessionId) {
+          throw new Error("Chat planning requires a redeemed live scene session.");
+        }
+        return postJson(new URL(pathname, state.apiBaseUrl).toString(), body, {
+          Authorization: "Bearer " + state.sessionId,
+        });
+      }
+
+      async function submitChatPrompt(rawPrompt) {
+        const prompt = rawPrompt.trim();
+        if (!prompt) {
+          setStatus("Type a prompt before planning from chat.", true);
+          return;
+        }
+        appendChatMessage("user", "You", prompt);
+        chatInput.value = "";
+        state.pendingPlannerResponse = null;
+        if (!state.scene || !state.sceneId) {
+          appendChatMessage("assistant", "Planner", "Load a scene before asking for a preview.", "error");
+          renderChatPanel();
+          return;
+        }
+        if (!state.sessionId) {
+          appendChatMessage("assistant", "Planner", "Fixture mode keeps the chat UI visible, but live preview/apply requires a redeemed API handoff.", "error");
+          renderChatPanel();
+          return;
+        }
+        try {
+          const request = {
+            request_id: "chat-request-" + (++state.requestCounter),
+            idempotency_key: "chat-request-" + state.requestCounter,
+            scene_id: state.sceneId,
+            expected_scene_version: state.scene.head.current_scene_version,
+            selection_context: {
+              selected_entity_ids: state.selectionId ? [state.selectionId] : [],
+            },
+            user_prompt: prompt,
+          };
+          const response = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/plan", request);
+          handlePlannerResponse(response);
+        } catch (error) {
+          appendChatMessage("assistant", "Planner", error.message || "Failed to create a planner response.", "error");
+        }
+        renderChatPanel();
+      }
+
+      function handlePlannerResponse(response) {
+        state.pendingPlannerResponse = response;
+        if (response.response_kind === "operation_plan_preview") {
+          appendChatMessage(
+            "assistant",
+            "Preview ready",
+            response.preview.explanation + "\n\n" + JSON.stringify(response.preview.ops, null, 2),
+            "success"
+          );
+          return;
+        }
+        if (response.response_kind === "command_request") {
+          appendChatMessage("assistant", "Command ready", response.command.explanation, "success");
+          return;
+        }
+        if (response.response_kind === "clarification_request") {
+          appendChatMessage("assistant", "Need clarification", response.prompt);
+          return;
+        }
+        appendChatMessage(
+          "assistant",
+          "Planner rejection",
+          (response.reason_code ? response.reason_code + ": " : "") + response.message,
+          "error"
+        );
+      }
+
+      async function acceptPendingPlannerResponse() {
+        if (!state.pendingPlannerResponse || !state.scene || !state.sceneId) {
+          return;
+        }
+        try {
+          if (state.pendingPlannerResponse.response_kind === "operation_plan_preview") {
+            const preview = state.pendingPlannerResponse.preview;
+            const applyResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/apply", {
+              preview_id: preview.preview_id,
+              apply_token: preview.apply_token,
+              canonical_plan_hash: preview.canonical_plan_hash,
+              expected_scene_version: state.scene.head.current_scene_version,
+              idempotency_key: "chat-apply-" + (++state.requestCounter),
+            });
+            state.scene = applyResponse.scene;
+            state.quickRender = await loadLiveQuickRender();
+            appendChatMessage("assistant", "Preview applied", "Committed scene version " + applyResponse.applied_scene_version + ".", "success");
+            setStatus("Applied planner preview to scene version " + applyResponse.applied_scene_version + ".");
+            state.pendingPlannerResponse = null;
+            renderScene();
+            return;
+          }
+          if (state.pendingPlannerResponse.response_kind === "command_request") {
+            if (state.pendingPlannerResponse.command.command_kind === "undo_last_change") {
+              const undoResponse = await postSceneJson(state.pendingPlannerResponse.command.endpoint, {
+                expected_scene_version: state.scene.head.current_scene_version,
+                idempotency_key: "chat-undo-" + (++state.requestCounter),
+              });
+              state.scene = undoResponse.scene;
+              state.quickRender = await loadLiveQuickRender();
+              appendChatMessage("assistant", "Undo applied", "Restored the last undoable change in scene version " + undoResponse.applied_scene_version + ".", "success");
+              setStatus("Undo created scene version " + undoResponse.applied_scene_version + ".");
+              state.pendingPlannerResponse = null;
+              renderScene();
+              return;
+            }
+            await postSceneJson(state.pendingPlannerResponse.command.endpoint, {
+              scene_snapshot_id: state.scene.snapshot.snapshot_id,
+              prompt_modifiers: [],
+              idempotency_key: "chat-photoreal-" + (++state.requestCounter),
+            });
+          }
+        } catch (error) {
+          appendChatMessage("assistant", "Command failed", (error.reasonCode ? error.reasonCode + ": " : "") + (error.message || "Request failed."), "error");
+          setStatus(error.message || "Planner action failed.", true);
+        }
+        renderChatPanel();
+      }
+
+      function resetChatState() {
+        state.chatMessages = [];
+        state.pendingPlannerResponse = null;
+      }
+
+      function appendChatMessage(role, title, body, tone = "") {
+        state.chatMessages.push({ role, title, body, tone });
       }
 
       function parseHandoffToken(rawValue) {
@@ -474,12 +706,61 @@ function renderEditorShellHtml(input: {
         scanPane.innerHTML = renderScanPane(state.scene);
         layoutPane.innerHTML = renderLayoutPane(state.scene, state.selectionId);
         renderPane.innerHTML = renderRenderPane(state.scene, state.quickRender, state.selectionId, state.loadedFrom);
+        renderChatPanel();
       }
 
       function renderEmptyState() {
         scanPane.innerHTML = emptyPane("Redeem a handoff or load a fixture to populate the read-only scan pane.");
         layoutPane.innerHTML = emptyPane("Selection state appears here once the server returns a scene.");
         renderPane.innerHTML = emptyPane("Quick-render inputs and derived cache details appear here once a scene is loaded.");
+        renderChatPanel();
+      }
+
+      function renderChatPanel() {
+        chatSelection.textContent = describeSelectionLabel(state.scene, state.selectionId);
+        const isLive = Boolean(state.sessionId);
+        chatSendButton.disabled = !state.scene;
+        const pending = state.pendingPlannerResponse;
+        const canAccept = Boolean(
+          pending &&
+          (pending.response_kind === "operation_plan_preview" || pending.response_kind === "command_request") &&
+          isLive
+        );
+        chatActionButtons.classList.toggle("hidden", !canAccept);
+        chatAcceptButton.disabled = !canAccept;
+        chatRejectButton.disabled = !canAccept;
+
+        if (pending && pending.response_kind === "clarification_request") {
+          chatOptions.innerHTML = pending.options.map((option) => {
+            return '<button type="button" class="secondary" data-chat-option="' + escapeHtml(option) + '">' + escapeHtml(option) + '</button>';
+          }).join('');
+        } else {
+          chatOptions.innerHTML = pending && !isLive
+            ? '<p class="muted">Planner previews apply only after redeeming a live API handoff.</p>'
+            : '';
+        }
+
+        chatThread.innerHTML = state.chatMessages.length === 0
+          ? '<p class="muted">Chat transcripts, previews, clarifications, and reason-code messages appear here.</p>'
+          : state.chatMessages.map((entry) => {
+              const tone = entry.tone ? ' ' + entry.tone : '';
+              return '<div class="chat-entry' + tone + '"><strong>' + escapeHtml(entry.title) + '</strong><pre>' + escapeHtml(entry.body) + '</pre></div>';
+            }).join('');
+      }
+
+      function describeSelectionLabel(scene, selectionId) {
+        if (!scene || !selectionId) {
+          return 'No entity selected.';
+        }
+        const selected = findSelectedEntity(scene, selectionId);
+        if (!selected) {
+          return 'No entity selected.';
+        }
+        return selected.class
+          ? selected.class + ' · ' + selectionId
+          : selected.type
+            ? selected.type + ' · ' + selectionId
+            : selectionId;
       }
 
       function renderScanPane(scene) {

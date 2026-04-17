@@ -1,0 +1,89 @@
+{
+  "cases": [
+    {
+      "case_id": "lock-selected-bed",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "selection": { "kind": "object_class", "value": "bed" },
+      "prompt": "Keep this bed, don't touch it.",
+      "expected": {
+        "response_kind": "operation_plan_preview",
+        "op": "lock_entity",
+        "entity_type": "object",
+        "apply_assertion": { "kind": "object_locked", "value": true, "target_class": "bed" }
+      }
+    },
+    {
+      "case_id": "repaint-selected-wall-blue",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "selection": { "kind": "wall_name", "value": "north wall" },
+      "prompt": "Paint this wall blue.",
+      "expected": {
+        "response_kind": "operation_plan_preview",
+        "op": "repaint_surface",
+        "apply_assertion": { "kind": "surface_color", "value": "blue", "target_wall": "north wall" }
+      }
+    },
+    {
+      "case_id": "move-desk-under-window",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "selection": null,
+      "prompt": "Move the desk under the window.",
+      "expected": {
+        "response_kind": "operation_plan_preview",
+        "op": "move_object",
+        "apply_assertion": { "kind": "object_hosted_by_window_wall", "target_class": "desk" }
+      }
+    },
+    {
+      "case_id": "replace-rug-warm-earthy",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "selection": { "kind": "object_class", "value": "rug" },
+      "prompt": "Replace this rug with something warm and earthy.",
+      "expected": {
+        "response_kind": "operation_plan_preview",
+        "op": "replace_object",
+        "apply_assertion": { "kind": "object_style_tags_include", "value": ["warm", "earthy"], "target_class": "rug" }
+      }
+    },
+    {
+      "case_id": "undo-command",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "selection": null,
+      "prompt": "Undo that.",
+      "expected": {
+        "response_kind": "command_request",
+        "command_kind": "undo_last_change"
+      }
+    },
+    {
+      "case_id": "photoreal-command",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "selection": null,
+      "prompt": "Show me what this would actually look like.",
+      "expected": {
+        "response_kind": "command_request",
+        "command_kind": "generate_photoreal"
+      }
+    },
+    {
+      "case_id": "clarify-missing-target",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "selection": null,
+      "prompt": "Move it.",
+      "expected": {
+        "response_kind": "clarification_request",
+        "options_include": "bed"
+      }
+    },
+    {
+      "case_id": "reject-generic-obstacle-replace",
+      "fixture_request_path": "fixtures/roomplan/bedroom-obstacle/capture-request.json",
+      "selection": { "kind": "object_class", "value": "generic_obstacle" },
+      "prompt": "Replace this obstacle with a chair.",
+      "expected": {
+        "response_kind": "rejection",
+        "reason_code": "UNSUPPORTED_CLASS"
+      }
+    }
+  ]
+}

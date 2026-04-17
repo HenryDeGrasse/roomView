@@ -4,7 +4,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type {
   ApplyPlanRequest,
+  GeneratePhotorealRequest,
   HandoffRedeemRequest,
+  OperationPlanRequest,
   RoomPlanCaptureRequest,
   ScenePreviewRequest,
   SceneReadResponse,
@@ -103,6 +105,14 @@ async function handleRequest(
     }
 
     const mutationSceneId = extractMutationSceneId(requestUrl.pathname);
+    if (request.method === "POST" && mutationSceneId && requestUrl.pathname.endsWith("/plan")) {
+      requireAuthenticatedSceneSession(request, mutationSceneId, context);
+      const planRequest = await readJsonBody<OperationPlanRequest>(request);
+      const planResponse = context.service.planSceneOperation(mutationSceneId, planRequest);
+      sendJson(response, 200, planResponse);
+      return;
+    }
+
     if (request.method === "POST" && mutationSceneId && requestUrl.pathname.endsWith("/preview")) {
       requireAuthenticatedSceneSession(request, mutationSceneId, context);
       const previewRequest = await readJsonBody<ScenePreviewRequest>(request);
@@ -125,6 +135,15 @@ async function handleRequest(
       const undoResponse = context.service.undoLastChange(mutationSceneId, undoRequest);
       sendJson(response, 200, undoResponse);
       return;
+    }
+
+    if (request.method === "POST" && mutationSceneId && requestUrl.pathname.endsWith("/photoreal")) {
+      requireAuthenticatedSceneSession(request, mutationSceneId, context);
+      await readJsonBody<GeneratePhotorealRequest>(request);
+      throw new RoomPlanCaptureError(
+        "PHOTOREAL_PROVIDER_ERROR",
+        "Photoreal generation is not configured yet. Use the command preview now and the real provider route in step 10."
+      );
     }
 
     const readableSceneId = extractReadableSceneId(requestUrl.pathname);
@@ -227,9 +246,11 @@ function extractReadableSceneId(pathname: string): string | null {
 
 function extractMutationSceneId(pathname: string): string | null {
   const patterns = [
+    /^\/scenes\/([^/]+)\/plan$/,
     /^\/scenes\/([^/]+)\/preview$/,
     /^\/scenes\/([^/]+)\/apply$/,
     /^\/scenes\/([^/]+)\/undo$/,
+    /^\/scenes\/([^/]+)\/photoreal$/,
   ];
   for (const pattern of patterns) {
     const match = pathname.match(pattern);
