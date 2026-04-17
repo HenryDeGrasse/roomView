@@ -1,0 +1,4 @@
+module RoomViewCapturePackageTests {
+    header "/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.build/RoomViewCapturePackageTests-Swift.h"
+    requires objc
+}

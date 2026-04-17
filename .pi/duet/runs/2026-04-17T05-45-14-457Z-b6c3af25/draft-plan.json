@@ -4,42 +4,39 @@
     {
       "id": "step-1",
       "title": "Finalize the authoritative scene schema and semantic model",
-      "description": "Freeze the canonical room/scene schema, entity semantics, supported object classes, typed operation shapes, and invariants so every surface implements the same contract from `SceneState` down to `AssetRef` and `DerivedState`.",
+      "description": "Lock the canonical scene schema, entity semantics, geometric frames, planner-facing references, and reason-code vocabulary in the shared contracts so every later surface builds on one authoritative model.",
       "requiredChecks": [
         "noop"
-      ],
-      "highStakes": true
+      ]
     },
     {
       "id": "step-2",
       "title": "Define scene snapshots, versioning boundaries, and undo semantics",
-      "description": "Define the immutable `SceneSnapshot` + mutable `SceneHead` model, version increment rules, sidecar boundaries, and one-step undo behavior so every edit is reconstructable and no non-authoritative artifact can drift into scene history.",
+      "description": "Define immutable SceneSnapshot records, the mutable SceneHead pointer, non-authoritative sidecars, monotonic scene_version rules, and single-step undo semantics before any runtime mutations are added.",
       "requiredChecks": [
         "noop"
-      ],
-      "highStakes": true
+      ]
     },
     {
       "id": "step-3",
       "title": "Define the secure handoff and server-authoritative API contract",
-      "description": "Define the one-time handoff grant, scene-scoped session model, upload-token rules, idempotent API contracts, reason codes, and plan/apply authority boundaries so raw `scene_id` possession is never enough to mutate or read a scene.",
+      "description": "Fix the capture, handoff, scene read, plan, apply, undo, photoreal, job, and delete contracts so the server remains authoritative and scene access always flows through short-lived, scene-scoped credentials.",
       "requiredChecks": [
         "noop"
-      ],
-      "highStakes": true
+      ]
     },
     {
       "id": "step-4",
       "title": "Bootstrap the implementation workspace, shared contracts, and fixture scenes",
-      "description": "Because the repository is docs-only today, first create the real implementation surfaces: a minimal workspace for `ios/`, `apps/web/`, `apps/api/`, and a shared contracts package that mirrors the finalized PRD type names; add database migrations for `SceneHead`, `SceneSnapshot`, sidecars, handoff grants, jobs, and idempotency records; seed RoomPlan fixture payloads plus golden canonical-scene outputs so backend and web work can proceed fixture-first before device capture is complete. This is the fastest path because it unblocks parallel development without waiting on Swift capture hardware loops.",
+      "description": "Stand up the monorepo workspaces, initial migration, shared TypeScript and Swift contract surfaces, and fixture-first golden scenes so later implementation work can land against stable repo-native artifacts.",
       "requiredChecks": [
         "noop"
       ]
     },
     {
       "id": "step-5",
-      "title": "Implement RoomPlan capture, ingest, and initial scene creation",
-      "description": "Build the native RoomPlan companion flow and the synchronous ingest path behind `POST /captures/roomplan`: serialize `RoomPlanCaptureRequest`, validate single-bedroom captures, map shell/openings/surfaces into canonical coordinates, assign stable IDs exactly once, preserve unsupported detections as `generic_obstacle`, attach initial asset refs or proxies, compute the first `derived_state_cache`, persist `SceneSnapshot(scene_version = 1)` + `SceneHead`, issue the one-time web handoff, and return the optional `video_upload_token` without blocking editor readiness.",
+      "title": "Implement RoomPlan capture, ingest, and initial scene creation with deterministic parity",
+      "description": "Turn the existing contract and ingest bootstrap into the first end-to-end vertical slice: persist POST /captures/roomplan results, store the initial SceneHead/SceneSnapshot/derived_state_cache plus handoff and video-upload artifacts, and wire the iOS companion upload path to the same shared payload shapes. Keep stable-ID assignment, scene mapping, and initial cache derivation in one pure module reused by fixtures, HTTP handlers, and replay tests, and make this the first hard verification seam by proving fixture replays create the same canonical scene output every time except for timestamps and opaque tokens.",
       "requiredChecks": [
         "noop"
       ],
@@ -47,8 +44,8 @@
     },
     {
       "id": "step-6",
-      "title": "Stand up scene reads and the initial web editor shell",
-      "description": "Implement `POST /handoffs/redeem`, scene-scoped web sessions, and `GET /scenes/{scene_id}` so the editor loads only from canonical persisted scene data; then build the first three-pane web shell with scan/layout/render placeholders, current-selection state, scene version display, rejection messaging hooks, and refresh/reload behavior that always reflects the latest committed snapshot instead of any client-local draft state.",
+      "title": "Stand up authenticated scene reads and the initial three-pane web editor shell",
+      "description": "Implement POST /handoffs/redeem and authenticated GET /scenes/{scene_id}, then build the minimal web shell that redeems a handoff, loads the canonical read model, and renders scan, layout, and render panes plus selection state from server data only. Keep the scan pane read-only, support fixture-backed local loading during development, and avoid any client-side scene reconstruction so independent verification sees the same scene state the server stores.",
       "requiredChecks": [
         "noop"
       ],
@@ -56,16 +53,16 @@
     },
     {
       "id": "step-7",
-      "title": "Add asset retrieval, proxy fallback, and quick rendering",
-      "description": "Ingest the curated glTF manifest, implement class/style/dimension-based asset resolution plus deterministic proxy fallback, and wire the layout and render panes to the current scene snapshot so object footprints, labels, selection highlights, and quick-render geometry update in under the MVP budget after every committed change. Keep asset misses non-blocking and log-only so editing never stalls on retrieval.",
+      "title": "Add asset retrieval, proxy fallback, and deterministic quick rendering",
+      "description": "Implement the curated asset manifest, server-side asset resolution, proxy fallback, and the fast render adapter that turns the committed snapshot plus editing_asset_refs into a renderable scene without mutating scene state. Share one scene-to-render mapping between backend and web, log fallback misses, and verify that layout and quick render stay version-synchronized even when exact assets are unavailable.",
       "requiredChecks": [
         "noop"
       ]
     },
     {
       "id": "step-8",
-      "title": "Implement the deterministic mutation pipeline: validation, apply, locking, and undo",
-      "description": "Build the server-side executor for supported typed scene operations and expose authoritative `POST /scenes/{scene_id}/apply` and `POST /scenes/{scene_id}/undo` flows. On every accepted mutation, enforce schema/target/version/lock checks, simulate the full plan, run hard constraints and soft-score recomputation, regenerate `derived_state_cache`, commit a new immutable snapshot atomically, update `undo_base_snapshot_id`, and surface machine-readable reason codes for stale versions, locks, overlaps, opening blockage, clearance failures, anchor violations, and undo unavailability.",
+      "title": "Implement the deterministic mutation pipeline: preview/apply, validation, locking, and undo",
+      "description": "Before adding any LLM behavior, build the pure mutation engine and wrap it with the server-authoritative preview/apply flow: preview persistence, single-use apply tokens, idempotency records, expected-version checks, lock enforcement, deterministic simulation, hard/soft constraint evaluation, atomic snapshot commits, derived-state recomputation, and one-step undo that creates a new head snapshot. Drive this step first with scripted typed operations and invalid-case fixtures so every reason code, conflict path, and undo rule is independently verifiable without conversational ambiguity.",
       "requiredChecks": [
         "noop"
       ],
@@ -73,33 +70,33 @@
     },
     {
       "id": "step-9",
-      "title": "Build the LLM planner and chat-driven edit workflow",
-      "description": "Implement `POST /scenes/{scene_id}/plan`, prompt assembly from compact scene summaries + selection context + asset manifest, structured planner outputs constrained to `operation_plan_preview`, `command_request`, `clarification_request`, or `rejection`, and a chat UI that supports selection-grounded references like “this wall” and “that chair.” Keep the model non-authoritative: the client can only accept or reject server-issued previews, and dedicated commands such as photoreal/undo must route through their own endpoints.",
+      "title": "Build the constrained planner and chat-driven typed edit workflow",
+      "description": "Layer conversational editing on top of the proven mutation engine by keeping the planner behind the existing PlannerResponse contract and by starting with a deterministic router/template fallback for common prompts and dedicated commands before enabling the full LLM path. Add selection-grounded chat UX, preview/accept/reject flows, clarification handling, and reason-code messaging, and keep golden prompt transcripts so planner behavior can be checked against the same typed operations that the validator already understands.",
       "requiredChecks": [
         "noop"
       ]
     },
     {
       "id": "step-10",
-      "title": "Ship photoreal generation, bookmarks, and version-linked gallery storage",
-      "description": "Add bookmark sidecars, high-resolution conditioning render outputs (RGB/depth/edge), provider integration for `POST /scenes/{scene_id}/photoreal`, and gallery storage keyed to immutable `scene_version` + `scene_snapshot_id`. Expose button-triggered and chat-triggered generation from the current camera or saved bookmarks, keep retries idempotent, and ensure photoreal jobs never mutate editable scene state or participate in undo history.",
-      "requiredChecks": [
-        "noop"
-      ]
-    },
-    {
-      "id": "step-11",
-      "title": "Add asynchronous splat jobs and scan-pane swap behavior",
-      "description": "Implement the optional raw-video upload path at `POST /captures/{scene_id}/video`, validate the scene-scoped one-time `video_upload_token`, queue background splat training, store/update the `SplatAssetRecord` sidecar, and make the scan pane visibly switch from RoomPlan placeholder to splat only when job state becomes `ready`. Keep the editor fully usable when no video is uploaded or when splat processing fails.",
+      "title": "Ship immutable-version photoreal generation, bookmarks, and gallery storage",
+      "description": "Implement bookmark sidecars, POST /scenes/{scene_id}/photoreal, job tracking, and gallery reads so photoreal outputs are always keyed to scene_id, scene_version, scene_snapshot_id, and resolved camera parameters. Reuse quick-render conditioning inputs, keep retries idempotent and non-mutating, and verify that generating or revisiting older versions never rewrites the current editable scene head.",
       "requiredChecks": [
         "noop"
       ],
       "highStakes": true
     },
     {
+      "id": "step-11",
+      "title": "Add asynchronous splat jobs and scan-pane swap behavior",
+      "description": "Finish the optional video path as a sidecar-only workflow: accept scene-scoped one-time video upload tokens, create or update splat jobs, expose job polling, and swap the scan pane from the RoomPlan preview to the splat asset when the job reaches ready. Preserve the current scene snapshot as the only editable source of truth, never increment scene_version for splat state changes, and keep the editor fully usable when the upload never happens or the job fails.",
+      "requiredChecks": [
+        "noop"
+      ]
+    },
+    {
       "id": "step-12",
-      "title": "Add observability, evaluation harnesses, and demo hardening",
-      "description": "Backfill structured logs, metrics, and trace points for ingest latency, planner behavior, validation reason codes, asset misses, photoreal latency/failures, and splat job duration; add fixture-driven regression suites and scripted end-to-end demos covering valid/invalid edits, stale-version conflicts, undo, and scene reload; then harden scene deletion, retry behavior, empty/error states, seeded demo scans, and presentation polish so the one-room MVP is reliable on real bedroom scans.",
+      "title": "Add observability, golden evaluation harnesses, and demo hardening",
+      "description": "Close the verification gap that caused the escalation by adding structured logs, latency/error metrics, golden fixtures and transcripts for ingest, mutation, planner, photoreal, and splat flows, plus one reproducible end-to-end MVP script from capture through refresh. Because automated checks are still effectively noop, make the repo itself carry the acceptance evidence: replayable bedroom scans, scripted command sequences, version-linked gallery artifacts, and a demo runbook with clear fallback behavior for planner, photoreal, and splat failures.",
       "requiredChecks": [
         "noop"
       ]

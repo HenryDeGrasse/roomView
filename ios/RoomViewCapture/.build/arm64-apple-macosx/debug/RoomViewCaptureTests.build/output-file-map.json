@@ -1,0 +1,11 @@
+{
+  "": {
+    "swift-dependencies": "/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCaptureTests.build/master.swiftdeps"
+  },
+  "/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/Tests/RoomViewCaptureTests.swift": {
+    "dependencies": "/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCaptureTests.build/RoomViewCaptureTests.d",
+    "object": "/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCaptureTests.build/RoomViewCaptureTests.swift.o",
+    "swiftmodule": "/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCaptureTests.build/RoomViewCaptureTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCaptureTests.build/RoomViewCaptureTests.swiftdeps"
+  }
+}

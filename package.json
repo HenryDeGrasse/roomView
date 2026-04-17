@@ -7,7 +7,9 @@
     "packages/*"
   ],
   "scripts": {
+    "fixtures:update": "npx --yes tsx ./scripts/update-roomplan-fixtures.mts",
     "verify:fixtures": "node ./scripts/verify-fixtures.mjs",
-    "check": "npm run verify:fixtures"
+    "verify:replays": "npx --yes tsx ./scripts/verify-roomplan-replays.mts",
+    "check": "npm run verify:fixtures && npm run verify:replays"
   }
 }

@@ -1,0 +1,16 @@
+Reviewed the API surface only. Fixed the rejection blocker by adding a real Node HTTP server for `POST /captures/roomplan` in `apps/api/src/server.ts`, and wiring it via `apps/api/src/index.ts` plus `apps/api/package.json`.
+
+I also added a file-backed capture store in `apps/api/src/roomplan-store.ts` and updated `apps/api/src/roomplan-ingest.ts` so initial scene records are durably persisted and reloaded: `SceneHead`, `SceneSnapshot`, `derived_state_cache`, handoff grant, and video-upload token artifacts now survive process restart instead of living only in memory.
+
+Verified with:
+- `npm run check`
+- `cd ios/RoomViewCapture && swift test`
+- manual HTTP smoke test: `POST /captures/roomplan` returns a scene response, writes a persisted JSON record, and reloads correctly on a new service instance
+
+Assessment: both blockers are now resolved.
+
+```observations
+- [medium] ios/RoomViewCapture/Sources/RoomViewCapture/RoomViewCapture.swift: `uploadVideo` still sends raw bytes/header instead of the shared `VideoUploadRequest` JSON shape.
+```
+
+Verdict: changes_made

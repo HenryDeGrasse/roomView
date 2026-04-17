@@ -1,26 +1,27 @@
 {
   "head": {
-    "scene_id": "scene-bedroom-obstacle",
+    "scene_id": "scene-capture-bedroom-obstacle-3309818a",
     "source": "scanned",
     "units": "m",
-    "current_snapshot_id": "snapshot-bedroom-obstacle-v1",
+    "current_snapshot_id": "snapshot-scene-capture-bedroom-obstacle-3309818a--dbbad850",
     "current_scene_version": 1,
     "undo_base_snapshot_id": null,
-    "updated_at": "2026-04-16T18:28:06Z"
+    "updated_at": "2026-04-16T18:28:00Z"
   },
   "snapshot": {
-    "snapshot_id": "snapshot-bedroom-obstacle-v1",
-    "scene_id": "scene-bedroom-obstacle",
+    "snapshot_id": "snapshot-scene-capture-bedroom-obstacle-3309818a--dbbad850",
+    "scene_id": "scene-capture-bedroom-obstacle-3309818a",
     "scene_version": 1,
     "based_on_snapshot_id": null,
     "mutation_kind": "initial_ingest",
     "state": {
       "style_tags": [
-        "minimal",
-        "light_wood"
+        "light_wood",
+        "modern",
+        "proxy"
       ],
       "room": {
-        "room_id": "room-bedroom-obstacle",
+        "room_id": "room-capture-bedroom-obstacle-3309818a",
         "room_type": "bedroom",
         "coordinate_frame": {
           "origin": {
@@ -69,7 +70,7 @@
           "ceiling_height": 2.7,
           "surfaces": [
             {
-              "surface_id": "surface2-floor-1",
+              "surface_id": "surface-scene-capture-bedroom-obstacle-3309818a--24f24c07",
               "type": "floor",
               "geometry_ref": "rp2-floor-1",
               "boundary": {
@@ -104,13 +105,13 @@
               "user_locked": false,
               "provenance": {
                 "source_kind": "measured",
-                "confidence": 0.98,
+                "confidence": 0.99,
                 "source_ref": "roomplan:rp2-floor-1",
-                "updated_at": "2026-04-16T18:28:06Z"
+                "updated_at": "2026-04-16T18:28:00Z"
               }
             },
             {
-              "surface_id": "surface2-ceiling-1",
+              "surface_id": "surface-scene-capture-bedroom-obstacle-3309818a--bfa4d046",
               "type": "ceiling",
               "geometry_ref": "rp2-ceiling-1",
               "boundary": {
@@ -166,13 +167,13 @@
               "user_locked": false,
               "provenance": {
                 "source_kind": "measured",
-                "confidence": 0.97,
+                "confidence": 0.98,
                 "source_ref": "roomplan:rp2-ceiling-1",
-                "updated_at": "2026-04-16T18:28:06Z"
+                "updated_at": "2026-04-16T18:28:00Z"
               }
             },
             {
-              "surface_id": "surface2-wall-north-1",
+              "surface_id": "surface-scene-capture-bedroom-obstacle-3309818a--77e47017",
               "type": "wall",
               "geometry_ref": "rp2-wall-north",
               "boundary": {
@@ -217,10 +218,10 @@
                   "z": 0
                 }
               },
-              "named_wall_ref_id": "wall2-ref-north",
+              "named_wall_ref_id": "wall-ref-scene-capture-bedroom-obstacle-3309818a--a2126fd0",
               "material_state": {
                 "category": "paint",
-                "color": "soft_gray",
+                "color": "warm_white",
                 "finish": "eggshell",
                 "pattern": null,
                 "reference_asset_id": null
@@ -230,11 +231,11 @@
                 "source_kind": "measured",
                 "confidence": 0.98,
                 "source_ref": "roomplan:rp2-wall-north",
-                "updated_at": "2026-04-16T18:28:06Z"
+                "updated_at": "2026-04-16T18:28:00Z"
               }
             },
             {
-              "surface_id": "surface2-wall-east-1",
+              "surface_id": "surface-scene-capture-bedroom-obstacle-3309818a--2f5ae981",
               "type": "wall",
               "geometry_ref": "rp2-wall-east",
               "boundary": {
@@ -279,10 +280,10 @@
                   "z": 0
                 }
               },
-              "named_wall_ref_id": "wall2-ref-east",
+              "named_wall_ref_id": "wall-ref-scene-capture-bedroom-obstacle-3309818a--80ef71d8",
               "material_state": {
                 "category": "paint",
-                "color": "soft_gray",
+                "color": "warm_white",
                 "finish": "eggshell",
                 "pattern": null,
                 "reference_asset_id": null
@@ -292,11 +293,11 @@
                 "source_kind": "measured",
                 "confidence": 0.98,
                 "source_ref": "roomplan:rp2-wall-east",
-                "updated_at": "2026-04-16T18:28:06Z"
+                "updated_at": "2026-04-16T18:28:00Z"
               }
             },
             {
-              "surface_id": "surface2-wall-south-1",
+              "surface_id": "surface-scene-capture-bedroom-obstacle-3309818a--75f8d715",
               "type": "wall",
               "geometry_ref": "rp2-wall-south",
               "boundary": {
@@ -341,10 +342,10 @@
                   "z": 0
                 }
               },
-              "named_wall_ref_id": "wall2-ref-south",
+              "named_wall_ref_id": "wall-ref-scene-capture-bedroom-obstacle-3309818a--ebe26366",
               "material_state": {
                 "category": "paint",
-                "color": "soft_gray",
+                "color": "warm_white",
                 "finish": "eggshell",
                 "pattern": null,
                 "reference_asset_id": null
@@ -354,11 +355,11 @@
                 "source_kind": "measured",
                 "confidence": 0.98,
                 "source_ref": "roomplan:rp2-wall-south",
-                "updated_at": "2026-04-16T18:28:06Z"
+                "updated_at": "2026-04-16T18:28:00Z"
               }
             },
             {
-              "surface_id": "surface2-wall-west-1",
+              "surface_id": "surface-scene-capture-bedroom-obstacle-3309818a--f47c6603",
               "type": "wall",
               "geometry_ref": "rp2-wall-west",
               "boundary": {
@@ -403,10 +404,10 @@
                   "z": 0
                 }
               },
-              "named_wall_ref_id": "wall2-ref-west",
+              "named_wall_ref_id": "wall-ref-scene-capture-bedroom-obstacle-3309818a--a9da973a",
               "material_state": {
                 "category": "paint",
-                "color": "soft_gray",
+                "color": "warm_white",
                 "finish": "eggshell",
                 "pattern": null,
                 "reference_asset_id": null
@@ -416,16 +417,16 @@
                 "source_kind": "measured",
                 "confidence": 0.98,
                 "source_ref": "roomplan:rp2-wall-west",
-                "updated_at": "2026-04-16T18:28:06Z"
+                "updated_at": "2026-04-16T18:28:00Z"
               }
             }
           ],
           "named_wall_refs": [
             {
-              "wall_ref_id": "wall2-ref-north",
+              "wall_ref_id": "wall-ref-scene-capture-bedroom-obstacle-3309818a--a2126fd0",
               "name": "north wall",
               "surface_ids": [
-                "surface2-wall-north-1"
+                "surface-scene-capture-bedroom-obstacle-3309818a--77e47017"
               ],
               "azimuth_degrees": 0,
               "inward_normal_xy": {
@@ -434,10 +435,10 @@
               }
             },
             {
-              "wall_ref_id": "wall2-ref-east",
+              "wall_ref_id": "wall-ref-scene-capture-bedroom-obstacle-3309818a--80ef71d8",
               "name": "east wall",
               "surface_ids": [
-                "surface2-wall-east-1"
+                "surface-scene-capture-bedroom-obstacle-3309818a--2f5ae981"
               ],
               "azimuth_degrees": 90,
               "inward_normal_xy": {
@@ -446,10 +447,10 @@
               }
             },
             {
-              "wall_ref_id": "wall2-ref-south",
+              "wall_ref_id": "wall-ref-scene-capture-bedroom-obstacle-3309818a--ebe26366",
               "name": "south wall",
               "surface_ids": [
-                "surface2-wall-south-1"
+                "surface-scene-capture-bedroom-obstacle-3309818a--75f8d715"
               ],
               "azimuth_degrees": 180,
               "inward_normal_xy": {
@@ -458,10 +459,10 @@
               }
             },
             {
-              "wall_ref_id": "wall2-ref-west",
+              "wall_ref_id": "wall-ref-scene-capture-bedroom-obstacle-3309818a--a9da973a",
               "name": "west wall",
               "surface_ids": [
-                "surface2-wall-west-1"
+                "surface-scene-capture-bedroom-obstacle-3309818a--f47c6603"
               ],
               "azimuth_degrees": 270,
               "inward_normal_xy": {
@@ -472,28 +473,28 @@
           ],
           "openings": [
             {
-              "opening_id": "opening2-door-1",
-              "host_surface_id": "surface2-wall-east-1",
+              "opening_id": "opening-scene-capture-bedroom-obstacle-3309818a--5dae4e2d",
+              "host_surface_id": "surface-scene-capture-bedroom-obstacle-3309818a--2f5ae981",
               "type": "door",
               "rect": {
                 "min_u": 2.4,
-                "min_v": 0.0,
+                "min_v": 0,
                 "width": 0.85,
                 "height": 2.1
               },
               "swing_zone": {
                 "vertices": [
                   {
-                    "x": 3.35,
-                    "y": 0.55
-                  },
-                  {
-                    "x": 4.2,
-                    "y": 0.55
-                  },
-                  {
                     "x": 4.2,
                     "y": 1.4
+                  },
+                  {
+                    "x": 4.2,
+                    "y": 0.55
+                  },
+                  {
+                    "x": 3.35,
+                    "y": 0.55
                   },
                   {
                     "x": 3.35,
@@ -504,20 +505,20 @@
               "keepout_zone": {
                 "vertices": [
                   {
-                    "x": 3.25,
-                    "y": 0.45
+                    "x": 4.2,
+                    "y": 1.4
                   },
                   {
                     "x": 4.2,
-                    "y": 0.45
-                  },
-                  {
-                    "x": 4.2,
-                    "y": 1.5
+                    "y": 0.55
                   },
                   {
                     "x": 3.25,
-                    "y": 1.5
+                    "y": 0.55
+                  },
+                  {
+                    "x": 3.25,
+                    "y": 1.4
                   }
                 ]
               },
@@ -526,46 +527,46 @@
                 "source_kind": "measured",
                 "confidence": 0.99,
                 "source_ref": "roomplan:rp2-opening-door-1",
-                "updated_at": "2026-04-16T18:28:06Z"
+                "updated_at": "2026-04-16T18:28:00Z"
               }
             },
             {
-              "opening_id": "opening2-window-1",
-              "host_surface_id": "surface2-wall-west-1",
+              "opening_id": "opening-scene-capture-bedroom-obstacle-3309818a--a14ddf85",
+              "host_surface_id": "surface-scene-capture-bedroom-obstacle-3309818a--f47c6603",
               "type": "window",
               "rect": {
                 "min_u": 1.6,
                 "min_v": 0.8,
                 "width": 1.3,
-                "height": 1.0
+                "height": 1
               },
               "swing_zone": null,
               "keepout_zone": {
                 "vertices": [
                   {
-                    "x": 0.0,
-                    "y": 1.45
+                    "x": 0,
+                    "y": 1.6
                   },
                   {
-                    "x": 0.45,
-                    "y": 1.45
+                    "x": 0,
+                    "y": 2.9
                   },
                   {
-                    "x": 0.45,
-                    "y": 3.0
+                    "x": 0.4,
+                    "y": 2.9
                   },
                   {
-                    "x": 0.0,
-                    "y": 3.0
+                    "x": 0.4,
+                    "y": 1.6
                   }
                 ]
               },
               "connects_to_room_id": null,
               "provenance": {
                 "source_kind": "measured",
-                "confidence": 0.97,
+                "confidence": 0.98,
                 "source_ref": "roomplan:rp2-opening-window-1",
-                "updated_at": "2026-04-16T18:28:06Z"
+                "updated_at": "2026-04-16T18:28:00Z"
               }
             }
           ],
@@ -573,7 +574,7 @@
         },
         "objects": [
           {
-            "object_id": "object2-bed-1",
+            "object_id": "object-scene-capture-bedroom-obstacle-3309818a--08610b50",
             "class": "bed",
             "attributes": [
               "queen"
@@ -584,7 +585,7 @@
               "position": {
                 "x": 2.85,
                 "y": 2.95,
-                "z": 0.0
+                "z": 0
               },
               "yaw_degrees": 180
             },
@@ -594,7 +595,7 @@
                 "y": 2.95,
                 "z": 0.3
               },
-              "size_x": 2.0,
+              "size_x": 2,
               "size_y": 1.6,
               "size_z": 0.6,
               "yaw_degrees": 180
@@ -602,41 +603,41 @@
             "mobility": "movable",
             "host": {
               "relation_type": "flush_to_wall",
-              "host_surface_id": "surface2-wall-north-1",
+              "host_surface_id": "surface-scene-capture-bedroom-obstacle-3309818a--77e47017",
               "anchor_rect": null
             },
             "support": {
               "support_kind": "floor",
-              "support_entity_id": "surface2-floor-1",
+              "support_entity_id": "surface-scene-capture-bedroom-obstacle-3309818a--24f24c07",
               "contact_patch": {
                 "vertices": [
                   {
-                    "x": 1.85,
-                    "y": 2.15
-                  },
-                  {
-                    "x": 3.85,
-                    "y": 2.15
-                  },
-                  {
                     "x": 3.85,
                     "y": 3.75
                   },
                   {
                     "x": 1.85,
                     "y": 3.75
+                  },
+                  {
+                    "x": 1.85,
+                    "y": 2.15
+                  },
+                  {
+                    "x": 3.85,
+                    "y": 2.15
                   }
                 ]
               }
             },
-            "asset_ref": "asset-bed-queen-walnut-01",
+            "asset_ref": "asset-bed-queen-ash-01",
             "style_tags": [
-              "minimal",
-              "dark_wood"
+              "modern",
+              "light_wood"
             ],
             "material_state": {
               "category": "fabric",
-              "color": "mist_gray",
+              "color": "oatmeal",
               "finish": "woven",
               "pattern": null,
               "reference_asset_id": null
@@ -644,13 +645,13 @@
             "user_locked": false,
             "provenance": {
               "source_kind": "measured",
-              "confidence": 0.93,
+              "confidence": 0.9,
               "source_ref": "roomplan:rp2-bed-1",
-              "updated_at": "2026-04-16T18:28:06Z"
+              "updated_at": "2026-04-16T18:28:00Z"
             }
           },
           {
-            "object_id": "object2-nightstand-1",
+            "object_id": "object-scene-capture-bedroom-obstacle-3309818a--bd27bdef",
             "class": "nightstand",
             "attributes": [
               "right_of_bed"
@@ -661,7 +662,7 @@
               "position": {
                 "x": 3.75,
                 "y": 2.95,
-                "z": 0.0
+                "z": 0
               },
               "yaw_degrees": 180
             },
@@ -677,57 +678,53 @@
               "yaw_degrees": 180
             },
             "mobility": "movable",
-            "host": {
-              "relation_type": "flush_to_wall",
-              "host_surface_id": "surface2-wall-north-1",
-              "anchor_rect": null
-            },
+            "host": null,
             "support": {
               "support_kind": "floor",
-              "support_entity_id": "surface2-floor-1",
+              "support_entity_id": "surface-scene-capture-bedroom-obstacle-3309818a--24f24c07",
               "contact_patch": {
                 "vertices": [
                   {
-                    "x": 3.53,
-                    "y": 2.73
+                    "x": 3.975,
+                    "y": 3.175
                   },
                   {
-                    "x": 3.98,
-                    "y": 2.73
+                    "x": 3.525,
+                    "y": 3.175
                   },
                   {
-                    "x": 3.98,
-                    "y": 3.18
+                    "x": 3.525,
+                    "y": 2.725
                   },
                   {
-                    "x": 3.53,
-                    "y": 3.18
+                    "x": 3.975,
+                    "y": 2.725
                   }
                 ]
               }
             },
-            "asset_ref": "asset-nightstand-walnut-01",
+            "asset_ref": "asset-nightstand-oak-01",
             "style_tags": [
-              "minimal",
-              "dark_wood"
+              "modern",
+              "light_wood"
             ],
             "material_state": {
               "category": "wood",
-              "color": "walnut",
-              "finish": "satin",
+              "color": "oak",
+              "finish": "matte",
               "pattern": null,
               "reference_asset_id": null
             },
             "user_locked": false,
             "provenance": {
               "source_kind": "measured",
-              "confidence": 0.88,
+              "confidence": 0.9,
               "source_ref": "roomplan:rp2-nightstand-1",
-              "updated_at": "2026-04-16T18:28:06Z"
+              "updated_at": "2026-04-16T18:28:00Z"
             }
           },
           {
-            "object_id": "object2-desk-1",
+            "object_id": "object-scene-capture-bedroom-obstacle-3309818a--9ecfca04",
             "class": "desk",
             "attributes": [
               "near_window"
@@ -738,7 +735,7 @@
               "position": {
                 "x": 0.55,
                 "y": 2.25,
-                "z": 0.0
+                "z": 0
               },
               "yaw_degrees": 90
             },
@@ -756,19 +753,15 @@
             "mobility": "movable",
             "host": {
               "relation_type": "flush_to_wall",
-              "host_surface_id": "surface2-wall-west-1",
+              "host_surface_id": "surface-scene-capture-bedroom-obstacle-3309818a--f47c6603",
               "anchor_rect": null
             },
             "support": {
               "support_kind": "floor",
-              "support_entity_id": "surface2-floor-1",
+              "support_entity_id": "surface-scene-capture-bedroom-obstacle-3309818a--24f24c07",
               "contact_patch": {
                 "vertices": [
                   {
-                    "x": 0.25,
-                    "y": 1.7
-                  },
-                  {
                     "x": 0.85,
                     "y": 1.7
                   },
@@ -779,14 +772,18 @@
                   {
                     "x": 0.25,
                     "y": 2.8
+                  },
+                  {
+                    "x": 0.25,
+                    "y": 1.7
                   }
                 ]
               }
             },
             "asset_ref": "asset-desk-proxy-01",
             "style_tags": [
-              "minimal",
-              "workspace"
+              "workspace",
+              "proxy"
             ],
             "material_state": {
               "category": "wood",
@@ -798,13 +795,13 @@
             "user_locked": false,
             "provenance": {
               "source_kind": "measured",
-              "confidence": 0.84,
+              "confidence": 0.9,
               "source_ref": "roomplan:rp2-desk-1",
-              "updated_at": "2026-04-16T18:28:06Z"
+              "updated_at": "2026-04-16T18:28:00Z"
             }
           },
           {
-            "object_id": "object2-obstacle-1",
+            "object_id": "object-scene-capture-bedroom-obstacle-3309818a--af4400c3",
             "class": "generic_obstacle",
             "attributes": [
               "exercise_bike",
@@ -814,15 +811,15 @@
             "child_movement_policy": "independent",
             "pose": {
               "position": {
-                "x": 2.0,
+                "x": 2,
                 "y": 1.55,
-                "z": 0.0
+                "z": 0
               },
               "yaw_degrees": 45
             },
             "obb": {
               "center": {
-                "x": 2.0,
+                "x": 2,
                 "y": 1.55,
                 "z": 0.7
               },
@@ -835,24 +832,24 @@
             "host": null,
             "support": {
               "support_kind": "floor",
-              "support_entity_id": "surface2-floor-1",
+              "support_entity_id": "surface-scene-capture-bedroom-obstacle-3309818a--24f24c07",
               "contact_patch": {
                 "vertices": [
                   {
-                    "x": 1.45,
-                    "y": 1.2
+                    "x": 1.859,
+                    "y": 0.914
                   },
                   {
-                    "x": 2.55,
-                    "y": 1.2
+                    "x": 2.636,
+                    "y": 1.691
                   },
                   {
-                    "x": 2.55,
-                    "y": 1.9
+                    "x": 2.141,
+                    "y": 2.186
                   },
                   {
-                    "x": 1.45,
-                    "y": 1.9
+                    "x": 1.364,
+                    "y": 1.409
                   }
                 ]
               }
@@ -865,32 +862,32 @@
               "source_kind": "generated",
               "confidence": 0.67,
               "source_ref": "supplementary:supp-exercise-bike-1",
-              "updated_at": "2026-04-16T18:28:06Z"
+              "updated_at": "2026-04-16T18:28:00Z"
             }
           }
         ],
         "constraints": [
           {
-            "constraint_id": "constraint2-opening-1",
+            "constraint_id": "constraint-scene-capture-bedroom-obstacle-3309818a--f72c318e",
             "kind": "opening_preserved",
             "severity": "hard",
             "target_entity_ids": [
-              "opening2-door-1",
-              "opening2-window-1"
+              "opening-scene-capture-bedroom-obstacle-3309818a--5dae4e2d",
+              "opening-scene-capture-bedroom-obstacle-3309818a--a14ddf85"
             ],
             "params": {
-              "min_keepout_m": 0.0
+              "min_keepout_m": 0
             },
             "reason_code_on_fail": "OPENING_BLOCKED"
           },
           {
-            "constraint_id": "constraint2-walkway-1",
+            "constraint_id": "constraint-scene-capture-bedroom-obstacle-3309818a--bbf2b1f8",
             "kind": "walkway_clearance",
             "severity": "hard",
             "target_entity_ids": [
-              "opening2-door-1",
-              "object2-bed-1",
-              "object2-desk-1"
+              "opening-scene-capture-bedroom-obstacle-3309818a--5dae4e2d",
+              "object-scene-capture-bedroom-obstacle-3309818a--08610b50",
+              "object-scene-capture-bedroom-obstacle-3309818a--9ecfca04"
             ],
             "params": {
               "minimum_width_m": 0.76
@@ -898,14 +895,14 @@
             "reason_code_on_fail": "CLEARANCE_VIOLATION"
           },
           {
-            "constraint_id": "constraint2-overlap-1",
+            "constraint_id": "constraint-scene-capture-bedroom-obstacle-3309818a--2e3100d2",
             "kind": "no_overlap_in_bounds",
             "severity": "hard",
             "target_entity_ids": [
-              "object2-bed-1",
-              "object2-nightstand-1",
-              "object2-desk-1",
-              "object2-obstacle-1"
+              "object-scene-capture-bedroom-obstacle-3309818a--08610b50",
+              "object-scene-capture-bedroom-obstacle-3309818a--bd27bdef",
+              "object-scene-capture-bedroom-obstacle-3309818a--9ecfca04",
+              "object-scene-capture-bedroom-obstacle-3309818a--af4400c3"
             ],
             "params": {
               "tolerance_m": 0.02
@@ -913,23 +910,22 @@
             "reason_code_on_fail": "OBJECT_OVERLAP"
           },
           {
-            "constraint_id": "constraint2-anchor-1",
+            "constraint_id": "constraint-scene-capture-bedroom-obstacle-3309818a--a174ac82",
             "kind": "anchor_integrity",
             "severity": "hard",
             "target_entity_ids": [
-              "object2-bed-1",
-              "object2-nightstand-1",
-              "object2-desk-1"
+              "object-scene-capture-bedroom-obstacle-3309818a--08610b50",
+              "object-scene-capture-bedroom-obstacle-3309818a--9ecfca04"
             ],
             "params": {},
             "reason_code_on_fail": "ANCHOR_VIOLATION"
           },
           {
-            "constraint_id": "constraint2-clearance-bed-1",
+            "constraint_id": "constraint-scene-capture-bedroom-obstacle-3309818a--c30645b7",
             "kind": "class_specific_clearance",
             "severity": "hard",
             "target_entity_ids": [
-              "object2-bed-1"
+              "object-scene-capture-bedroom-obstacle-3309818a--08610b50"
             ],
             "params": {
               "minimum_access_side_m": 0.6
@@ -937,25 +933,50 @@
             "reason_code_on_fail": "CLEARANCE_VIOLATION"
           },
           {
-            "constraint_id": "constraint2-soft-desk-window-1",
+            "constraint_id": "constraint-scene-capture-bedroom-obstacle-3309818a--5bfe3208",
+            "kind": "class_specific_clearance",
+            "severity": "hard",
+            "target_entity_ids": [
+              "object-scene-capture-bedroom-obstacle-3309818a--9ecfca04"
+            ],
+            "params": {
+              "minimum_pullout_m": 0.9
+            },
+            "reason_code_on_fail": "CLEARANCE_VIOLATION"
+          },
+          {
+            "constraint_id": "constraint-scene-capture-bedroom-obstacle-3309818a--17535500",
             "kind": "desk_near_window",
             "severity": "soft",
             "target_entity_ids": [
-              "object2-desk-1",
-              "opening2-window-1"
+              "object-scene-capture-bedroom-obstacle-3309818a--9ecfca04",
+              "opening-scene-capture-bedroom-obstacle-3309818a--a14ddf85"
             ],
             "params": {
-              "target_distance_m": 0.8
+              "target_distance_m": 0.75
+            },
+            "reason_code_on_fail": null
+          },
+          {
+            "constraint_id": "constraint-scene-capture-bedroom-obstacle-3309818a--01adbff3",
+            "kind": "primary_path_not_serpentine",
+            "severity": "soft",
+            "target_entity_ids": [
+              "opening-scene-capture-bedroom-obstacle-3309818a--5dae4e2d",
+              "object-scene-capture-bedroom-obstacle-3309818a--08610b50"
+            ],
+            "params": {
+              "max_tortuosity": 1.25
             },
             "reason_code_on_fail": null
           }
         ],
         "focal_elements": [
           {
-            "entity_id": "opening2-window-1",
+            "entity_id": "opening-scene-capture-bedroom-obstacle-3309818a--a14ddf85",
             "entity_type": "opening",
             "role": "primary",
-            "reason": "task-light source for desk placement"
+            "reason": "largest natural-light source"
           }
         ],
         "section_hints": [
@@ -967,74 +988,99 @@
     },
     "editing_asset_refs": [
       {
-        "asset_id": "asset-bed-queen-walnut-01",
+        "asset_id": "asset-bed-queen-ash-01",
         "kind": "gltf",
-        "uri": "asset://furniture/bed/queen-walnut-01.glb",
-        "bound_to": "object2-bed-1"
+        "uri": "asset://furniture/bed/queen-ash-01.glb",
+        "bound_to": "object-scene-capture-bedroom-obstacle-3309818a--08610b50"
       },
       {
-        "asset_id": "asset-nightstand-walnut-01",
+        "asset_id": "asset-nightstand-oak-01",
         "kind": "gltf",
-        "uri": "asset://furniture/nightstand/walnut-01.glb",
-        "bound_to": "object2-nightstand-1"
+        "uri": "asset://furniture/nightstand/oak-01.glb",
+        "bound_to": "object-scene-capture-bedroom-obstacle-3309818a--bd27bdef"
       },
       {
         "asset_id": "asset-desk-proxy-01",
         "kind": "proxy_gltf",
         "uri": "asset://proxies/desk/simple-rect.glb",
-        "bound_to": "object2-desk-1"
+        "bound_to": "object-scene-capture-bedroom-obstacle-3309818a--9ecfca04"
       }
     ],
-    "created_at": "2026-04-16T18:28:06Z"
+    "created_at": "2026-04-16T18:28:00Z"
   },
   "derived_state_cache": {
     "zones": [
       {
-        "zone_id": "zone2-bed-access-1",
+        "zone_id": "zone-object-scene-capture-bedroom-obstacle-33-3827b091",
         "kind": "bed_access",
-        "entity_id": "object2-bed-1",
+        "entity_id": "object-scene-capture-bedroom-obstacle-3309818a--08610b50",
         "polygon": {
           "vertices": [
             {
-              "x": 0.95,
-              "y": 2.2
+              "x": 1.85,
+              "y": 1.25
             },
             {
-              "x": 1.8,
-              "y": 2.2
+              "x": 3.85,
+              "y": 1.25
             },
             {
-              "x": 1.8,
-              "y": 3.55
+              "x": 3.85,
+              "y": 2.85
             },
             {
-              "x": 0.95,
-              "y": 3.55
+              "x": 1.85,
+              "y": 2.85
             }
           ]
         }
       },
       {
-        "zone_id": "zone2-obstacle-buffer-1",
-        "kind": "obstacle_buffer",
-        "entity_id": "object2-obstacle-1",
+        "zone_id": "zone-object-scene-capture-bedroom-obstacle-33-6d6a561f",
+        "kind": "desk_pullout",
+        "entity_id": "object-scene-capture-bedroom-obstacle-3309818a--9ecfca04",
         "polygon": {
           "vertices": [
             {
-              "x": 1.3,
-              "y": 1.0
+              "x": 0.85,
+              "y": 2.6
             },
             {
-              "x": 2.7,
-              "y": 1.0
+              "x": 0.85,
+              "y": 3.7
             },
             {
-              "x": 2.7,
-              "y": 2.1
+              "x": 0.25,
+              "y": 3.7
             },
             {
-              "x": 1.3,
-              "y": 2.1
+              "x": 0.25,
+              "y": 2.6
+            }
+          ]
+        }
+      },
+      {
+        "zone_id": "zone-object-scene-capture-bedroom-obstacle-33-da39548e",
+        "kind": "obstacle_buffer",
+        "entity_id": "object-scene-capture-bedroom-obstacle-3309818a--af4400c3",
+        "polygon": {
+          "vertices": [
+            {
+              "x": 1.827,
+              "y": 0.768
+            },
+            {
+              "x": 2.782,
+              "y": 1.723
+            },
+            {
+              "x": 2.173,
+              "y": 2.332
+            },
+            {
+              "x": 1.218,
+              "y": 1.377
             }
           ]
         }
@@ -1042,63 +1088,108 @@
     ],
     "clearance_paths": [
       {
-        "path_id": "path2-door-to-bed",
-        "width_m": 0.79,
+        "path_id": "path-opening-scene-capture-bedroom-obstacle-3-ec15a59a",
+        "width_m": 1,
         "waypoints": [
           {
-            "x": 3.75,
-            "y": 1.0
+            "x": 3.725,
+            "y": 0.975
           },
           {
-            "x": 3.0,
-            "y": 1.7
+            "x": 3.288,
+            "y": 1.963
           },
           {
-            "x": 2.1,
-            "y": 2.3
+            "x": 2.85,
+            "y": 2.95
           }
         ]
       },
       {
-        "path_id": "path2-door-to-desk",
-        "width_m": 0.81,
+        "path_id": "path-opening-scene-capture-bedroom-obstacle-3-b76774ff",
+        "width_m": 0.488,
         "waypoints": [
           {
-            "x": 3.75,
-            "y": 1.0
+            "x": 3.725,
+            "y": 0.975
           },
           {
-            "x": 2.7,
-            "y": 1.0
+            "x": 2.138,
+            "y": 1.613
           },
           {
-            "x": 1.2,
-            "y": 1.9
+            "x": 0.55,
+            "y": 2.25
           }
         ]
       }
     ],
     "soft_scores": {
-      "desk_near_window": 0.88
+      "desk_near_window": 1,
+      "primary_path_not_serpentine": 0.4
     },
-    "hard_violations": [],
-    "selection_context_summary": "Unsupported exercise bike preserved as generic obstacle and kept in validation geometry."
+    "hard_violations": [
+      {
+        "entity_ids": [
+          "object-scene-capture-bedroom-obstacle-3309818a--08610b50",
+          "object-scene-capture-bedroom-obstacle-3309818a--bd27bdef"
+        ],
+        "reason_code": "OBJECT_OVERLAP",
+        "message": "bed overlaps nightstand."
+      },
+      {
+        "entity_ids": [
+          "object-scene-capture-bedroom-obstacle-3309818a--08610b50",
+          "object-scene-capture-bedroom-obstacle-3309818a--af4400c3"
+        ],
+        "reason_code": "OBJECT_OVERLAP",
+        "message": "bed overlaps generic_obstacle."
+      },
+      {
+        "entity_id": "opening-scene-capture-bedroom-obstacle-3309818a--a14ddf85",
+        "reason_code": "OPENING_BLOCKED",
+        "blocked_by": [
+          "object-scene-capture-bedroom-obstacle-3309818a--9ecfca04"
+        ]
+      },
+      {
+        "entity_id": "object-scene-capture-bedroom-obstacle-3309818a--9ecfca04",
+        "reason_code": "CLEARANCE_VIOLATION",
+        "message": "Insufficient walkway width (0.488m) from door to desk."
+      }
+    ],
+    "selection_context_summary": "Bed captured as primary sleep anchor. Desk positioned near a window. Unsupported detection preserved as generic obstacle."
   },
   "bookmarks": [
     {
-      "bookmark_id": "bookmark2-entry-view",
+      "bookmark_id": "bookmark-scene-capture-bedroom-obstacle-3309818a--3137f7bb",
       "name": "Entry view",
       "camera_pose": {
         "position": {
-          "x": 5.2,
-          "y": 1.7,
+          "x": 3.725,
+          "y": -0.225,
           "z": 1.65
         },
-        "yaw_degrees": 270
+        "yaw_degrees": 160.115
       },
-      "fov": 60,
-      "created_at": "2026-04-16T18:28:06Z",
-      "updated_at": "2026-04-16T18:28:06Z"
+      "fov": 58,
+      "created_at": "2026-04-16T18:28:00Z",
+      "updated_at": "2026-04-16T18:28:00Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-capture-bedroom-obstacle-3309818a--6656c509",
+      "name": "Window wall",
+      "camera_pose": {
+        "position": {
+          "x": 0.2,
+          "y": 0.8,
+          "z": 1.55
+        },
+        "yaw_degrees": 90
+      },
+      "fov": 52,
+      "created_at": "2026-04-16T18:28:00Z",
+      "updated_at": "2026-04-16T18:28:00Z"
     }
   ],
   "photoreal_gallery": [],

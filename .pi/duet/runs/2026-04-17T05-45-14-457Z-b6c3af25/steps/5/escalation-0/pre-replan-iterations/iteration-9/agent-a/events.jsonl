@@ -1,0 +1,17 @@
+{"t":441,"type":"message_end","role":"user"}
+{"t":1801,"type":"thinking_start"}
+{"t":19072,"type":"message_end","role":"assistant","stopReason":"toolUse","textLength":0,"textPreview":""}
+{"t":19072,"type":"tool_start","toolName":"bash","toolArgs":"git status --short"}
+{"t":19072,"type":"tool_start","toolName":"grep","toolArgs":"apps/api/src"}
+{"t":19072,"type":"tool_start","toolName":"read","toolArgs":"ios/RoomViewCapture/Sources/RoomViewCapture/RoomViewCapture.…"}
+{"t":19125,"type":"tool_end","toolName":"bash"}
+{"t":19126,"type":"message_end","role":"toolResult"}
+{"t":19126,"type":"tool_end","toolName":"grep"}
+{"t":19126,"type":"message_end","role":"toolResult"}
+{"t":19126,"type":"tool_end","toolName":"read"}
+{"t":19126,"type":"message_end","role":"toolResult"}
+{"t":19126,"type":"turn_end","toolCount":3,"thinkingLength":1721,"textLength":0}
+{"t":22330,"type":"thinking_start"}
+{"t":35932,"type":"message_end","role":"assistant","stopReason":"stop","textLength":16,"textPreview":"Verdict: approve"}
+{"t":35932,"type":"turn_end","toolCount":3,"thinkingLength":1721,"textLength":16}
+{"t":35986,"type":"agent_end","messageCount":6,"toolCount":3,"thinkingLength":1721,"textLength":16}

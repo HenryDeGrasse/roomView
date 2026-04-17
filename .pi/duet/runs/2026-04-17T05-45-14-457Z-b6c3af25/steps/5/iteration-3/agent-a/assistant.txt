@@ -1,0 +1,17 @@
+Fixed the concrete defect in the iOS video-upload path: it was not using the shared `VideoUploadRequest` JSON shape. `RoomPlanCaptureUploader.uploadVideo(...)` had been sending raw video bytes plus a custom header (`X-Video-Upload-Token`) instead of the contract’s snake_case JSON body.
+
+What I changed:
+- `ios/RoomViewCapture/Sources/RoomViewCapture/RoomViewCapture.swift`
+  - `uploadVideo(...)` now posts `application/json`
+  - added `encodeVideoUploadRequest(...)`
+- `ios/RoomViewCapture/Tests/RoomViewCaptureTests.swift`
+  - added a focused test proving `video_upload_token` / `content_type` JSON encoding
+
+Why:
+- Step 5 requires the iOS companion upload path to use the same shared payload shapes as the API contract.
+
+Verified:
+- `swift test --package-path ios/RoomViewCapture --scratch-path /tmp/roomview-swift-test`
+- `npm run check`
+
+Verdict: changes_made

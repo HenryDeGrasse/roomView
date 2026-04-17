@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "npx --yes tsx ./src/server.ts",
     "verify:fixtures": "node ../../scripts/verify-fixtures.mjs"
   }
 }

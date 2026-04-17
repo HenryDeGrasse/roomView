@@ -1,0 +1,32 @@
+Reviewed the step-5 diff in:
+
+- `packages/contracts/src/api.ts`
+- `apps/api/src/roomplan-ingest.ts`
+- `apps/api/src/index.ts`
+- `ios/RoomViewCapture/Sources/RoomViewCapture/RoomViewCapture.swift`
+- `scripts/verify-fixtures.mjs`
+
+What I changed:
+- Fixed a material security bug in `apps/api/src/roomplan-ingest.ts` around handoff/video token refresh.
+  - Previously, when a duplicate capture refreshed the handoff grant or video upload token, the old token hash mapping stayed valid.
+  - Because redeem/upload only looked up `tokenHash -> sceneId`, an old token could still operate against the newly issued current record.
+- I fixed this by:
+  - requiring the presented token hash to match the currently active stored record before redeem/upload succeeds
+  - deleting stale handoff/video token hash mappings before issuing refreshed tokens
+
+Why it mattered:
+- Old handoff tokens could become valid again after a refresh
+- Old video upload tokens could be reused against a newly issued token record
+- That violates the one-time/short-lived security semantics for this high-stakes step
+
+Checks run:
+- `node ./scripts/verify-fixtures.mjs`
+- `npm run check`
+- `cd ios/RoomViewCapture && swift build`
+- `true`
+
+Assessment:
+- The ingest/canonicalization/service scaffolding for step 5 is in place.
+- After the token invalidation fix, I did not find additional material defects in the reviewed diff.
+
+Verdict: changes_made

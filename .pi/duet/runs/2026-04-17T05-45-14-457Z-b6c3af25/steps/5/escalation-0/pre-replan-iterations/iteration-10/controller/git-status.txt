@@ -1,0 +1,10 @@
+ M .pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/cost.json
+ M .pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/sessions/continuous/replan-mo31vvp1-3b91722d/relay-a/2026-04-17T15-15-52-094Z_e6ade98c-bed8-4d70-acac-c249ce3e87ba.jsonl
+ M .pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/sessions/continuous/replan-mo31vvp1-3b91722d/relay-b/2026-04-17T15-54-14-099Z_4bb9386b-bb2e-4330-86c4-03f80b8366d4.jsonl
+ M .pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/state.json
+ M apps/api/src/index.ts
+ M ios/RoomViewCapture/Sources/RoomViewCapture/RoomViewCapture.swift
+ M packages/contracts/src/api.ts
+ M scripts/verify-fixtures.mjs
+?? .pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/steps/5/
+?? apps/api/src/roomplan-ingest.ts

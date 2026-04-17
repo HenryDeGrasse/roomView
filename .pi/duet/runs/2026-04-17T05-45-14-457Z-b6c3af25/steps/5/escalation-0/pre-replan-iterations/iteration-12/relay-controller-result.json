@@ -1,0 +1,13 @@
+{
+  "round": 12,
+  "agentVerdict": "approve",
+  "controllerState": "continue",
+  "controllerStatus": "independent verification diverged",
+  "gatesPassed": true,
+  "verificationStatus": "diverged",
+  "divergenceIssues": [
+    "No actual HTTP `POST /captures/roomplan` endpoint is implemented or wired.",
+    "`SceneHead` / `SceneSnapshot` are constructed in memory but not durably persisted to the declared database schema."
+  ],
+  "handoffSummary": "Independent verification diverged: No actual HTTP `POST /captures/roomplan` endpoint is implemented or wired.; `SceneHead` / `SceneSnapshot` are constructed in memory but not durably persisted to the declared database schema."
+}

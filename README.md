@@ -14,4 +14,11 @@ Bootstrapped implementation surfaces for the RoomView one-room MVP.
 
 ```bash
 npm run verify:fixtures
+npm run verify:replays
+```
+
+To regenerate canonical fixture scenes from the shared RoomPlan ingest module:
+
+```bash
+npm run fixtures:update
 ```

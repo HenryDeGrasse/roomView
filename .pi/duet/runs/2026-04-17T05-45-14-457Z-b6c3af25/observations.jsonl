@@ -1,0 +1,1 @@
+{"timestamp":"2026-04-17T19:33:10.855Z","stepIndex":4,"round":4,"agent":"relay-b","severity":"medium","file":"ios/RoomViewCapture/Sources/RoomViewCapture/RoomViewCapture.swift","note":"`uploadVideo` still sends raw bytes/header instead of the shared `VideoUploadRequest` JSON shape."}

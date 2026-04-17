@@ -24,6 +24,12 @@ export type JobKind = (typeof JOB_KIND_VALUES)[number];
 export const JOB_STATUS_VALUES = ["queued", "processing", "ready", "failed"] as const;
 export type JobStatus = (typeof JOB_STATUS_VALUES)[number];
 
+export const HANDOFF_GRANT_STATUS_VALUES = ["issued", "redeemed", "expired", "revoked"] as const;
+export type HandoffGrantStatus = (typeof HANDOFF_GRANT_STATUS_VALUES)[number];
+
+export const VIDEO_UPLOAD_TOKEN_STATUS_VALUES = ["issued", "used", "expired", "revoked"] as const;
+export type VideoUploadTokenStatus = (typeof VIDEO_UPLOAD_TOKEN_STATUS_VALUES)[number];
+
 export const REASON_CODE_VALUES = [
   "AUTH_REQUIRED",
   "SCENE_ACCESS_DENIED",
@@ -47,15 +53,43 @@ export const REASON_CODE_VALUES = [
   "UNDO_NOT_AVAILABLE",
   "SCENE_DELETED",
   "PHOTOREAL_PROVIDER_ERROR",
+  "INVALID_CAPTURE",
+  "ROOM_TYPE_NOT_SUPPORTED",
+  "MULTI_ROOM_NOT_SUPPORTED",
+  "VIDEO_UPLOAD_TOKEN_INVALID",
+  "VIDEO_UPLOAD_TOKEN_EXPIRED",
+  "VIDEO_UPLOAD_TOKEN_ALREADY_USED",
 ] as const;
 export type ReasonCode = (typeof REASON_CODE_VALUES)[number];
 
 export interface RoomPlanCaptureRequest {
   request_id: string;
   client_capture_id: string;
-  roomplan_payload: Record<string, unknown>;
+  roomplan_payload: RoomPlanPayload;
   capture_metadata: CaptureMetadata;
   supplementary_detections: SupplementaryDetection[] | null;
+}
+
+export interface RoomPlanPayload {
+  schema_version: string;
+  room_type: "bedroom" | string;
+  coordinate_frame: {
+    origin: Point3D;
+    x_axis: Vector3D;
+    y_axis: Vector3D;
+    z_axis: Vector3D;
+    north_source: "true_north" | "scan_forward";
+  };
+  dimensions: {
+    width_m: number;
+    length_m: number;
+    ceiling_height_m: number;
+  };
+  surfaces: RoomPlanSurfaceSeed[];
+  openings: RoomPlanOpeningSeed[];
+  objects: RoomPlanObjectSeed[];
+  fixed_elements?: RoomPlanFixedElementSeed[] | null;
+  room_count?: number | null;
 }
 
 export interface CaptureMetadata {
@@ -301,8 +335,21 @@ export interface HandoffGrantRecord {
   grant_id: string;
   scene_id: SceneId;
   token_hash: string;
+  qr_payload: string;
+  status: HandoffGrantStatus;
   expires_at: ISO8601Timestamp;
   redeemed_at: ISO8601Timestamp | null;
+  redeemed_session_id?: string | null;
+}
+
+export interface VideoUploadTokenRecord {
+  token_id: string;
+  scene_id: SceneId;
+  token_hash: string;
+  status: VideoUploadTokenStatus;
+  expires_at: ISO8601Timestamp;
+  used_at: ISO8601Timestamp | null;
+  created_at: ISO8601Timestamp;
 }
 
 export interface IdempotencyRecord {
@@ -341,6 +388,15 @@ export interface RoomPlanObjectSeed {
   pose: Pose3D;
   obb: OBB3D;
   attributes: string[];
+}
+
+export interface RoomPlanFixedElementSeed {
+  id: string;
+  category: string;
+  pose: Pose3D;
+  obb: OBB3D;
+  attributes?: string[];
+  host_surface_id?: string | null;
 }
 
 export interface FixtureDescriptor {

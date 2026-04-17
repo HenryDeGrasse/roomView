@@ -1,0 +1,105 @@
+{
+  "goal": "Deliver the one-room MVP that securely turns a RoomPlan bedroom scan into a canonical, versioned, constraint-aware scene with phone-to-web handoff, a three-pane web editor, typed conversational edits, deterministic validation, quick render, photoreal output tied to immutable scene state, single-step undo, and optional non-blocking splat preview.",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "Finalize the authoritative scene schema and semantic model",
+      "description": "Lock the canonical scene schema, entity semantics, geometric frames, planner-facing references, and reason-code vocabulary in the shared contracts so every later surface builds on one authoritative model.",
+      "requiredChecks": [
+        "noop"
+      ]
+    },
+    {
+      "id": "step-2",
+      "title": "Define scene snapshots, versioning boundaries, and undo semantics",
+      "description": "Define immutable SceneSnapshot records, the mutable SceneHead pointer, non-authoritative sidecars, monotonic scene_version rules, and single-step undo semantics before any runtime mutations are added.",
+      "requiredChecks": [
+        "noop"
+      ]
+    },
+    {
+      "id": "step-3",
+      "title": "Define the secure handoff and server-authoritative API contract",
+      "description": "Fix the capture, handoff, scene read, plan, apply, undo, photoreal, job, and delete contracts so the server remains authoritative and scene access always flows through short-lived, scene-scoped credentials.",
+      "requiredChecks": [
+        "noop"
+      ]
+    },
+    {
+      "id": "step-4",
+      "title": "Bootstrap the implementation workspace, shared contracts, and fixture scenes",
+      "description": "Stand up the monorepo workspaces, initial migration, shared TypeScript and Swift contract surfaces, and fixture-first golden scenes so later implementation work can land against stable repo-native artifacts.",
+      "requiredChecks": [
+        "noop"
+      ]
+    },
+    {
+      "id": "step-5",
+      "title": "Implement RoomPlan capture, ingest, and initial scene creation with deterministic parity",
+      "description": "Turn the existing contract and ingest bootstrap into the first end-to-end vertical slice: persist POST /captures/roomplan results, store the initial SceneHead/SceneSnapshot/derived_state_cache plus handoff and video-upload artifacts, and wire the iOS companion upload path to the same shared payload shapes. Keep stable-ID assignment, scene mapping, and initial cache derivation in one pure module reused by fixtures, HTTP handlers, and replay tests, and make this the first hard verification seam by proving fixture replays create the same canonical scene output every time except for timestamps and opaque tokens.",
+      "requiredChecks": [
+        "noop"
+      ],
+      "highStakes": true
+    },
+    {
+      "id": "step-6",
+      "title": "Stand up authenticated scene reads and the initial three-pane web editor shell",
+      "description": "Implement POST /handoffs/redeem and authenticated GET /scenes/{scene_id}, then build the minimal web shell that redeems a handoff, loads the canonical read model, and renders scan, layout, and render panes plus selection state from server data only. Keep the scan pane read-only, support fixture-backed local loading during development, and avoid any client-side scene reconstruction so independent verification sees the same scene state the server stores.",
+      "requiredChecks": [
+        "noop"
+      ],
+      "highStakes": true
+    },
+    {
+      "id": "step-7",
+      "title": "Add asset retrieval, proxy fallback, and deterministic quick rendering",
+      "description": "Implement the curated asset manifest, server-side asset resolution, proxy fallback, and the fast render adapter that turns the committed snapshot plus editing_asset_refs into a renderable scene without mutating scene state. Share one scene-to-render mapping between backend and web, log fallback misses, and verify that layout and quick render stay version-synchronized even when exact assets are unavailable.",
+      "requiredChecks": [
+        "noop"
+      ]
+    },
+    {
+      "id": "step-8",
+      "title": "Implement the deterministic mutation pipeline: preview/apply, validation, locking, and undo",
+      "description": "Before adding any LLM behavior, build the pure mutation engine and wrap it with the server-authoritative preview/apply flow: preview persistence, single-use apply tokens, idempotency records, expected-version checks, lock enforcement, deterministic simulation, hard/soft constraint evaluation, atomic snapshot commits, derived-state recomputation, and one-step undo that creates a new head snapshot. Drive this step first with scripted typed operations and invalid-case fixtures so every reason code, conflict path, and undo rule is independently verifiable without conversational ambiguity.",
+      "requiredChecks": [
+        "noop"
+      ],
+      "highStakes": true
+    },
+    {
+      "id": "step-9",
+      "title": "Build the constrained planner and chat-driven typed edit workflow",
+      "description": "Layer conversational editing on top of the proven mutation engine by keeping the planner behind the existing PlannerResponse contract and by starting with a deterministic router/template fallback for common prompts and dedicated commands before enabling the full LLM path. Add selection-grounded chat UX, preview/accept/reject flows, clarification handling, and reason-code messaging, and keep golden prompt transcripts so planner behavior can be checked against the same typed operations that the validator already understands.",
+      "requiredChecks": [
+        "noop"
+      ]
+    },
+    {
+      "id": "step-10",
+      "title": "Ship immutable-version photoreal generation, bookmarks, and gallery storage",
+      "description": "Implement bookmark sidecars, POST /scenes/{scene_id}/photoreal, job tracking, and gallery reads so photoreal outputs are always keyed to scene_id, scene_version, scene_snapshot_id, and resolved camera parameters. Reuse quick-render conditioning inputs, keep retries idempotent and non-mutating, and verify that generating or revisiting older versions never rewrites the current editable scene head.",
+      "requiredChecks": [
+        "noop"
+      ],
+      "highStakes": true
+    },
+    {
+      "id": "step-11",
+      "title": "Add asynchronous splat jobs and scan-pane swap behavior",
+      "description": "Finish the optional video path as a sidecar-only workflow: accept scene-scoped one-time video upload tokens, create or update splat jobs, expose job polling, and swap the scan pane from the RoomPlan preview to the splat asset when the job reaches ready. Preserve the current scene snapshot as the only editable source of truth, never increment scene_version for splat state changes, and keep the editor fully usable when the upload never happens or the job fails.",
+      "requiredChecks": [
+        "noop"
+      ]
+    },
+    {
+      "id": "step-12",
+      "title": "Add observability, golden evaluation harnesses, and demo hardening",
+      "description": "Close the verification gap that caused the escalation by adding structured logs, latency/error metrics, golden fixtures and transcripts for ingest, mutation, planner, photoreal, and splat flows, plus one reproducible end-to-end MVP script from capture through refresh. Because automated checks are still effectively noop, make the repo itself carry the acceptance evidence: replayable bedroom scans, scripted command sequences, version-linked gallery artifacts, and a demo runbook with clear fallback behavior for planner, photoreal, and splat failures.",
+      "requiredChecks": [
+        "noop"
+      ]
+    }
+  ]
+}

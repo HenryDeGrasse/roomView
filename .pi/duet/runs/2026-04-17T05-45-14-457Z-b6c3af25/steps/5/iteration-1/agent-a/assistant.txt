@@ -1,0 +1,39 @@
+Reviewed the RoomPlan ingest path, shared contracts usage, fixture outputs, and the iOS companion payload surface.
+
+What I changed:
+- Added `apps/api/src/roomplan-persistence.ts`
+  - decomposes ingest output into persisted `scene_head`, `scene_snapshot`, `derived_state_cache`, bookmarks, splat, handoff, and video-token records
+  - hydrates a `Scene` back from those stored records
+- Updated `apps/api/src/roomplan-ingest.ts`
+  - stores split persisted records alongside the scene
+  - exposes `getPersistedInitialSceneRecords(scene_id)`
+  - keeps persisted handoff/video/splat records in sync with service mutations
+- Updated `apps/api/src/index.ts` exports for the new persistence helpers/types
+- Added deterministic replay tooling:
+  - `scripts/update-roomplan-fixtures.mts`
+  - `scripts/verify-roomplan-replays.mts`
+- Updated `package.json` scripts:
+  - `fixtures:update`
+  - `verify:replays`
+  - `check` now runs fixture shape + replay parity
+- Fixed the primary fixture request to actually include `fixed_elements`
+- Regenerated both fixture scenes from the shared pure ingest module so fixtures now reflect real canonical output
+- Added Swift package tests in `ios/RoomViewCapture/Tests/RoomViewCaptureTests.swift`
+  - verifies snake_case capture payload encoding
+  - verifies scene-scoped companion URLs
+- Updated `ios/RoomViewCapture/Package.swift` to support macOS test execution
+- Updated README/API README to document the replay verification flow
+
+Verification run:
+- `npm run verify:fixtures`
+- `npm run verify:replays`
+- `npm run check`
+- `swift build --package-path ios/RoomViewCapture --scratch-path /tmp/roomview-swift-build`
+- `swift test --package-path ios/RoomViewCapture --scratch-path /tmp/roomview-swift-test`
+
+Assessment:
+- The step now has a deterministic replay seam that proves fixture requests regenerate the same canonical scene output and persisted ingest records, aside from opaque token material.
+- The iOS companion payload surface is exercised by tests against the API JSON shape.
+- Initial ingest persistence is now explicitly materialized into storage-aligned record structures.
+
+Verdict: changes_made

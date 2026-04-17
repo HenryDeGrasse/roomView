@@ -4,6 +4,7 @@ import PackageDescription
 let package = Package(
     name: "RoomViewCapture",
     platforms: [
+        .macOS(.v12),
         .iOS(.v17)
     ],
     products: [
@@ -16,6 +17,11 @@ let package = Package(
         .target(
             name: "RoomViewCapture",
             path: "Sources"
+        ),
+        .testTarget(
+            name: "RoomViewCaptureTests",
+            dependencies: ["RoomViewCapture"],
+            path: "Tests"
         )
     ]
 )

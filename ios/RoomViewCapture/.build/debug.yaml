@@ -1,0 +1,112 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "PackageStructure": ["<PackageStructure>"]
+  "RoomViewCapture-arm64-apple-macosx16.0-debug.module": ["<RoomViewCapture-arm64-apple-macosx16.0-debug.module>"]
+  "RoomViewCapturePackageTests-arm64-apple-macosx16.0-debug.module": ["<RoomViewCapturePackageTests-arm64-apple-macosx16.0-debug.module>"]
+  "RoomViewCapturePackageTests-arm64-apple-macosx16.0-debug.test": ["<RoomViewCapturePackageTests-arm64-apple-macosx16.0-debug.test>"]
+  "RoomViewCaptureTests-arm64-apple-macosx16.0-debug.module": ["<RoomViewCaptureTests-arm64-apple-macosx16.0-debug.module>"]
+  "main": ["<RoomViewCapture-arm64-apple-macosx16.0-debug.module>"]
+  "test": ["<RoomViewCapture-arm64-apple-macosx16.0-debug.module>","<RoomViewCapturePackageTests-arm64-apple-macosx16.0-debug.test>","<RoomViewCaptureTests-arm64-apple-macosx16.0-debug.module>"]
+default: "main"
+nodes:
+  "/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/Sources/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/Tests/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+commands:
+  "/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapture.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/Sources/RoomViewCapture/RoomViewCapture.swift"]
+    outputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapture.build/sources"]
+    description: "Write auxiliary file /Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapture.build/sources"
+
+  "/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.derived/runner.swift"]
+    outputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.build/sources"]
+    description: "Write auxiliary file /Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.build/sources"
+
+  "/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.derived/runner.swift":
+    tool: test-entry-point-tool
+    inputs: []
+    outputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.derived/runner.swift"]
+
+  "/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapture.build/RoomViewCapture.swift.o","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.build/runner.swift.o","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCaptureTests.build/RoomViewCaptureTests.swift.o"]
+    outputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.product/Objects.LinkFileList"
+
+  "/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCaptureTests.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/Tests/RoomViewCaptureTests.swift"]
+    outputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCaptureTests.build/sources"]
+    description: "Write auxiliary file /Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCaptureTests.build/sources"
+
+  "/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Library/Developer/CommandLineTools/usr/bin/swiftc"]
+    outputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+
+  "<RoomViewCapture-arm64-apple-macosx16.0-debug.module>":
+    tool: phony
+    inputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapture.build/RoomViewCapture.swift.o","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules/RoomViewCapture.swiftmodule"]
+    outputs: ["<RoomViewCapture-arm64-apple-macosx16.0-debug.module>"]
+
+  "<RoomViewCapturePackageTests-arm64-apple-macosx16.0-debug.module>":
+    tool: phony
+    inputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.build/runner.swift.o","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules/RoomViewCapturePackageTests.swiftmodule"]
+    outputs: ["<RoomViewCapturePackageTests-arm64-apple-macosx16.0-debug.module>"]
+
+  "<RoomViewCapturePackageTests-arm64-apple-macosx16.0-debug.test>":
+    tool: phony
+    inputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.xctest/Contents/MacOS/RoomViewCapturePackageTests"]
+    outputs: ["<RoomViewCapturePackageTests-arm64-apple-macosx16.0-debug.test>"]
+
+  "<RoomViewCaptureTests-arm64-apple-macosx16.0-debug.module>":
+    tool: phony
+    inputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCaptureTests.build/RoomViewCaptureTests.swift.o","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules/RoomViewCaptureTests.swiftmodule"]
+    outputs: ["<RoomViewCaptureTests-arm64-apple-macosx16.0-debug.module>"]
+
+  "C.RoomViewCapture-arm64-apple-macosx16.0-debug.module":
+    tool: shell
+    inputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/Sources/RoomViewCapture/RoomViewCapture.swift","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapture.build/sources"]
+    outputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapture.build/RoomViewCapture.swift.o","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules/RoomViewCapture.swiftmodule"]
+    description: "Compiling Swift Module 'RoomViewCapture' (1 sources)"
+    args: ["/Library/Developer/CommandLineTools/usr/bin/swiftc","-module-name","RoomViewCapture","-emit-dependencies","-emit-module","-emit-module-path","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules/RoomViewCapture.swiftmodule","-output-file-map","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapture.build/output-file-map.json","-parse-as-library","-incremental","-c","@/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapture.build/sources","-I","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx12.0","-enable-batch-mode","-index-store-path","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j18","-DSWIFT_PACKAGE","-DDEBUG","-module-cache-path","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-parse-as-library","-emit-objc-header","-emit-objc-header-path","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapture.build/RoomViewCapture-Swift.h","-swift-version","5","-F","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-sdk","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-g","-Xcc","-isysroot","-Xcc","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-Xcc","-fPIC","-Xcc","-g","-package-name","roomviewcapture"]
+
+  "C.RoomViewCapturePackageTests-arm64-apple-macosx16.0-debug.module":
+    tool: shell
+    inputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.derived/runner.swift","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules/RoomViewCaptureTests.swiftmodule","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.build/sources"]
+    outputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.build/runner.swift.o","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules/RoomViewCapturePackageTests.swiftmodule"]
+    description: "Compiling Swift Module 'RoomViewCapturePackageTests' (1 sources)"
+    args: ["/Library/Developer/CommandLineTools/usr/bin/swiftc","-module-name","RoomViewCapturePackageTests","-emit-dependencies","-emit-module","-emit-module-path","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules/RoomViewCapturePackageTests.swiftmodule","-output-file-map","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.build/output-file-map.json","-parse-as-library","-incremental","-c","@/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.build/sources","-I","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx12.0","-enable-batch-mode","-index-store-path","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-Xfrontend","-enable-cross-import-overlays","-j18","-DSWIFT_PACKAGE","-DDEBUG","-module-cache-path","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-parse-as-library","-emit-objc-header","-emit-objc-header-path","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.build/RoomViewCapturePackageTests-Swift.h","-F","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-sdk","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-g","-Xcc","-isysroot","-Xcc","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-Xcc","-fPIC","-Xcc","-g","-package-name","roomviewcapture"]
+
+  "C.RoomViewCapturePackageTests-arm64-apple-macosx16.0-debug.test":
+    tool: shell
+    inputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapture.build/RoomViewCapture.swift.o","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.build/runner.swift.o","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCaptureTests.build/RoomViewCaptureTests.swift.o","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.product/Objects.LinkFileList"]
+    outputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.xctest/Contents/MacOS/RoomViewCapturePackageTests"]
+    description: "Linking ./.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.xctest/Contents/MacOS/RoomViewCapturePackageTests"
+    args: ["/Library/Developer/CommandLineTools/usr/bin/swiftc","-L","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug","-o","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.xctest/Contents/MacOS/RoomViewCapturePackageTests","-module-name","RoomViewCapturePackageTests","-Xlinker","-no_warn_duplicate_libraries","-Xlinker","-bundle","-Xlinker","-rpath","-Xlinker","@loader_path/../../../","@/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCapturePackageTests.product/Objects.LinkFileList","-target","arm64-apple-macosx12.0","-Xlinker","-add_ast_path","-Xlinker","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules/RoomViewCapture.swiftmodule","-Xlinker","-add_ast_path","-Xlinker","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules/RoomViewCapturePackageTests.swiftmodule","-Xlinker","-add_ast_path","-Xlinker","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules/RoomViewCaptureTests.swiftmodule","-F","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-sdk","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-g","-Xlinker","-rpath","-Xlinker","/Library/Developer/CommandLineTools/Library/Developer/Frameworks"]
+
+  "C.RoomViewCaptureTests-arm64-apple-macosx16.0-debug.module":
+    tool: shell
+    inputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/Tests/RoomViewCaptureTests.swift","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules/RoomViewCapture.swiftmodule","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCaptureTests.build/sources"]
+    outputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCaptureTests.build/RoomViewCaptureTests.swift.o","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules/RoomViewCaptureTests.swiftmodule"]
+    description: "Compiling Swift Module 'RoomViewCaptureTests' (1 sources)"
+    args: ["/Library/Developer/CommandLineTools/usr/bin/swiftc","-module-name","RoomViewCaptureTests","-emit-dependencies","-emit-module","-emit-module-path","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules/RoomViewCaptureTests.swiftmodule","-output-file-map","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCaptureTests.build/output-file-map.json","-parse-as-library","-incremental","-c","@/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/RoomViewCaptureTests.build/sources","-I","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx12.0","-enable-batch-mode","-index-store-path","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-Xfrontend","-enable-cross-import-overlays","-j18","-DSWIFT_PACKAGE","-DDEBUG","-module-cache-path","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-parse-as-library","-swift-version","5","-F","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-sdk","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-g","-Xcc","-isysroot","-Xcc","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-Xcc","-fPIC","-Xcc","-g","-package-name","roomviewcapture"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/Sources/","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/Tests/","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/Package.swift","/Users/henrydegrasse/Development/GauntletAi/Capstone/roomView/ios/RoomViewCapture/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+

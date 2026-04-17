@@ -19,3 +19,32 @@ export type IngestFixtureRequest = RoomPlanCaptureRequest;
 export type CanonicalSceneFixture = Scene;
 export type CaptureResponseShape = RoomPlanCaptureResponse;
 export type SceneFixtureManifest = FixtureManifest;
+
+export {
+  buildInitialSceneFromRoomPlanCapture,
+  ingestRoomPlanCaptureRequest,
+  RoomPlanCaptureError,
+  RoomPlanCaptureService,
+} from "./roomplan-ingest";
+export {
+  createRoomPlanApiServer,
+  DEFAULT_ROOMPLAN_CAPTURE_STORAGE_DIRECTORY,
+} from "./server";
+export type {
+  BuildInitialSceneOptions,
+  IngestedCaptureArtifacts,
+  RoomPlanCaptureSceneArtifacts,
+  RoomPlanCaptureServiceOptions,
+} from "./roomplan-ingest";
+export type { RoomPlanApiServerOptions } from "./server";
+export {
+  decomposeIngestedCaptureForStorage,
+  hydrateSceneFromStoredRecords,
+} from "./roomplan-persistence";
+export type {
+  PersistedCameraBookmarkRecord,
+  PersistedDerivedStateCacheRecord,
+  PersistedInitialSceneRecords,
+  PersistedPhotorealEntryRecord,
+  PersistedSceneHeadRecord,
+} from "./roomplan-persistence";

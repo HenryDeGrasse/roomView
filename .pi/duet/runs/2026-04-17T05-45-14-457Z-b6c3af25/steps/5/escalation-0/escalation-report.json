@@ -1,0 +1,5 @@
+{
+  "stepId": "step-5",
+  "reason": "Relay deadlock after 16 rounds. Controller status: independent verification diverged",
+  "category": "other"
+}

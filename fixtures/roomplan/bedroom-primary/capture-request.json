@@ -496,6 +496,35 @@
           "table_lamp"
         ]
       }
+    ],
+    "fixed_elements": [
+      {
+        "id": "fixed-radiator-1",
+        "category": "radiator",
+        "pose": {
+          "position": {
+            "x": 3.1,
+            "y": 3.32,
+            "z": 0.25
+          },
+          "yaw_degrees": 180
+        },
+        "obb": {
+          "center": {
+            "x": 3.1,
+            "y": 3.32,
+            "z": 0.25
+          },
+          "size_x": 1.0,
+          "size_y": 0.18,
+          "size_z": 0.5,
+          "yaw_degrees": 180
+        },
+        "attributes": [
+          "under_window"
+        ],
+        "host_surface_id": "rp-wall-north"
+      }
     ]
   },
   "capture_metadata": {
