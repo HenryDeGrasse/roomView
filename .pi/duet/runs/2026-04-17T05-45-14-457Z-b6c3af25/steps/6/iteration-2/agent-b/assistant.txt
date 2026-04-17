@@ -1,0 +1,18 @@
+Reviewed the step-6 diff in `apps/api/src/server.ts` and `apps/web/src/{index,server}.ts`.
+
+Verified:
+- `POST /handoffs/redeem` works.
+- Authenticated `GET /scenes/{scene_id}` rejects unauthenticated reads and succeeds with a redeemed session.
+- Redeemed session reads still work after API restart via persisted server state.
+- Web shell serves the three panes, redeems/live-loads from the API, and supports fixture-backed local loading via `/dev/fixtures/*`.
+- Pane content is rendered from server-returned scene JSON; no client-side scene reconstruction logic was introduced.
+
+Checks run:
+- `npm run check` ✅
+- `cd ios/RoomViewCapture && swift test` ✅
+- Manual API smoke tests for capture → redeem → authenticated scene read → restart → authenticated scene read ✅
+- Manual web smoke tests for `/` and fixture route ✅
+
+No material defects found in the current diff.
+
+Verdict: approve

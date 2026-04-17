@@ -2,5 +2,8 @@
   "name": "@roomview/web",
   "version": "0.1.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "start": "npx --yes tsx ./src/server.ts"
+  }
 }

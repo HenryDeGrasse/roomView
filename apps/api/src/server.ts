@@ -2,7 +2,11 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import type { RoomPlanCaptureRequest } from "@roomview/contracts";
+import type {
+  HandoffRedeemRequest,
+  RoomPlanCaptureRequest,
+  SceneReadResponse,
+} from "@roomview/contracts";
 
 import {
   RoomPlanCaptureError,
@@ -17,8 +21,22 @@ export const DEFAULT_ROOMPLAN_CAPTURE_STORAGE_DIRECTORY = resolve(
   "roomplan-captures"
 );
 
+const DEFAULT_SESSION_TTL_MS = 1000 * 60 * 60 * 8;
+
 export interface RoomPlanApiServerOptions extends RoomPlanCaptureServiceOptions {
   storage_directory?: string;
+}
+
+interface SceneSessionRecord {
+  session_id: string;
+  scene_id: string;
+  expires_at: string;
+}
+
+interface RoomPlanApiRequestContext {
+  service: RoomPlanCaptureService;
+  session_ttl_ms: number;
+  sceneSessionsById: Map<string, SceneSessionRecord>;
 }
 
 export function createRoomPlanApiServer(options: RoomPlanApiServerOptions = {}): Server {
@@ -26,22 +44,61 @@ export function createRoomPlanApiServer(options: RoomPlanApiServerOptions = {}):
     ...options,
     storage_directory: options.storage_directory ?? DEFAULT_ROOMPLAN_CAPTURE_STORAGE_DIRECTORY,
   });
+  const context: RoomPlanApiRequestContext = {
+    service,
+    session_ttl_ms: options.session_ttl_ms ?? DEFAULT_SESSION_TTL_MS,
+    sceneSessionsById: new Map(),
+  };
 
   return createServer((request, response) => {
-    void handleRequest(request, response, service);
+    void handleRequest(request, response, context);
   });
 }
 
 async function handleRequest(
   request: IncomingMessage,
   response: ServerResponse,
-  service: RoomPlanCaptureService
+  context: RoomPlanApiRequestContext
 ): Promise<void> {
   try {
-    if (request.method === "POST" && request.url === "/captures/roomplan") {
+    applyCorsHeaders(response);
+
+    if (request.method === "OPTIONS") {
+      response.statusCode = 204;
+      response.end();
+      return;
+    }
+
+    const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
+
+    if (request.method === "POST" && requestUrl.pathname === "/captures/roomplan") {
       const captureRequest = await readJsonBody<RoomPlanCaptureRequest>(request);
-      const captureResponse = service.postRoomPlanCapture(captureRequest);
+      const captureResponse = context.service.postRoomPlanCapture(captureRequest);
       sendJson(response, 200, captureResponse);
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/handoffs/redeem") {
+      const redeemRequest = await readJsonBody<HandoffRedeemRequest>(request);
+      const redeemResponse = context.service.redeemHandoff(redeemRequest);
+      context.sceneSessionsById.set(redeemResponse.session_id, {
+        session_id: redeemResponse.session_id,
+        scene_id: redeemResponse.scene_id,
+        expires_at: redeemResponse.expires_at,
+      });
+      sendJson(response, 200, redeemResponse);
+      return;
+    }
+
+    const sceneId = extractSceneId(requestUrl.pathname);
+    if (request.method === "GET" && sceneId) {
+      requireAuthenticatedSceneSession(request, sceneId, context);
+      const scene = context.service.getScene(sceneId);
+      if (!scene) {
+        throw new RoomPlanCaptureError("TARGET_NOT_FOUND", `Scene ${sceneId} was not found.`);
+      }
+      const readResponse: SceneReadResponse = { scene };
+      sendJson(response, 200, readResponse);
       return;
     }
 
@@ -70,6 +127,71 @@ async function handleRequest(
   }
 }
 
+function requireAuthenticatedSceneSession(
+  request: IncomingMessage,
+  scene_id: string,
+  context: RoomPlanApiRequestContext
+): SceneSessionRecord {
+  const sessionId = readSessionId(request);
+  if (!sessionId) {
+    throw new RoomPlanCaptureError("AUTH_REQUIRED", "Scene read requires an authenticated scene session.");
+  }
+
+  const now = new Date().toISOString();
+  const cached = context.sceneSessionsById.get(sessionId);
+  if (cached) {
+    if (isExpired(cached.expires_at, now)) {
+      context.sceneSessionsById.delete(sessionId);
+      throw new RoomPlanCaptureError("AUTH_REQUIRED", "The scene session has expired. Redeem a new handoff.");
+    }
+    if (cached.scene_id !== scene_id) {
+      throw new RoomPlanCaptureError("SCENE_ACCESS_DENIED", "The scene session is not valid for this scene.");
+    }
+    return cached;
+  }
+
+  const persisted = context.service.getPersistedInitialSceneRecords(scene_id);
+  const redeemedSessionId = persisted?.handoff_grant.redeemed_session_id ?? null;
+  const redeemedAt = persisted?.handoff_grant.redeemed_at ?? null;
+  if (!persisted || !redeemedSessionId || !redeemedAt || redeemedSessionId !== sessionId) {
+    throw new RoomPlanCaptureError("SCENE_ACCESS_DENIED", "The scene session is invalid for this scene.");
+  }
+
+  const hydratedSession: SceneSessionRecord = {
+    session_id: sessionId,
+    scene_id,
+    expires_at: addMilliseconds(redeemedAt, context.session_ttl_ms),
+  };
+  if (isExpired(hydratedSession.expires_at, now)) {
+    throw new RoomPlanCaptureError("AUTH_REQUIRED", "The scene session has expired. Redeem a new handoff.");
+  }
+
+  context.sceneSessionsById.set(sessionId, hydratedSession);
+  return hydratedSession;
+}
+
+function extractSceneId(pathname: string): string | null {
+  const match = pathname.match(/^\/scenes\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function readSessionId(request: IncomingMessage): string | null {
+  const authorization = request.headers.authorization;
+  if (authorization) {
+    const match = authorization.match(/^Bearer\s+(.+)$/i);
+    if (match?.[1]) {
+      return match[1].trim();
+    }
+  }
+
+  const sessionHeader = request.headers["x-session-id"];
+  if (typeof sessionHeader === "string" && sessionHeader.trim().length > 0) {
+    return sessionHeader.trim();
+  }
+
+  return null;
+}
+
 async function readJsonBody<T>(request: IncomingMessage): Promise<T> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
@@ -85,13 +207,22 @@ async function readJsonBody<T>(request: IncomingMessage): Promise<T> {
 }
 
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
+  applyCorsHeaders(response);
   response.statusCode = statusCode;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   response.end(JSON.stringify(payload));
 }
 
+function applyCorsHeaders(response: ServerResponse): void {
+  response.setHeader("Access-Control-Allow-Origin", "*");
+  response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Session-Id");
+}
+
 function statusCodeForCaptureError(error: RoomPlanCaptureError): number {
   switch (error.reason_code) {
+    case "AUTH_REQUIRED":
+      return 401;
     case "INVALID_CAPTURE":
     case "ROOM_TYPE_NOT_SUPPORTED":
     case "MULTI_ROOM_NOT_SUPPORTED":
@@ -105,6 +236,14 @@ function statusCodeForCaptureError(error: RoomPlanCaptureError): number {
   }
 }
 
+function addMilliseconds(timestamp: string, ms: number): string {
+  return new Date(new Date(timestamp).getTime() + ms).toISOString();
+}
+
+function isExpired(expiresAt: string, now: string): boolean {
+  return new Date(expiresAt).getTime() <= new Date(now).getTime();
+}
+
 function isMainModule(): boolean {
   return process.argv[1] ? import.meta.url === pathToFileURL(process.argv[1]).href : false;
 }
@@ -115,6 +254,7 @@ if (isMainModule()) {
     handoff_base_url: process.env.ROOMVIEW_HANDOFF_BASE_URL,
     token_secret: process.env.ROOMVIEW_TOKEN_SECRET,
     storage_directory: process.env.ROOMVIEW_API_STORAGE_DIRECTORY,
+    session_ttl_ms: process.env.ROOMVIEW_SESSION_TTL_MS ? Number(process.env.ROOMVIEW_SESSION_TTL_MS) : undefined,
   });
 
   server.listen(port, () => {

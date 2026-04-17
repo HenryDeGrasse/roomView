@@ -1,5 +1,14 @@
 import type { FixtureManifest, Scene } from "@roomview/contracts";
 
+export {
+  createRoomViewEditorServer,
+  DEFAULT_WEB_EDITOR_PORT,
+} from "./server";
+export type {
+  EditorFixtureSource,
+  RoomViewEditorServerOptions,
+} from "./server";
+
 export const DEFAULT_FIXTURE_SCENE_ID = "fixture-bedroom-primary";
 
 export interface EditorShellBootstrap {
