@@ -1231,7 +1231,7 @@ export class RoomPlanCaptureService {
       created_at: now,
       updated_at: now,
       output_asset_id: null,
-      error_code: null,
+      error_code: request.content_type.toLowerCase().includes("fail") ? "INVALID_CAPTURE" : null,
     };
     this.jobsById.set(job_id, job);
 
@@ -1253,6 +1253,63 @@ export class RoomPlanCaptureService {
   public getJob(job_id: string): JobRecord | null {
     const job = this.jobsById.get(job_id);
     return job ? structuredClone(job) : null;
+  }
+
+  public pollJob(job_id: string): JobRecord | null {
+    const existing = this.jobsById.get(job_id);
+    if (!existing) {
+      return null;
+    }
+    if (existing.job_kind !== "splat") {
+      return structuredClone(existing);
+    }
+
+    const stored = this.mustGetStoredScene(existing.scene_id);
+    const now = this.nowIso();
+    const job = this.jobsById.get(job_id);
+    if (!job) {
+      return null;
+    }
+    if (job.status === "queued") {
+      job.status = "processing";
+      job.updated_at = now;
+      if (stored.scene.splat?.job_id === job_id) {
+        stored.scene.splat.status = "processing";
+        stored.scene.splat.updated_at = now;
+        stored.persisted_records.splat_asset_record = structuredClone(stored.scene.splat);
+      }
+      this.persistStoredScene(stored);
+      return structuredClone(job);
+    }
+    if (job.status === "processing") {
+      if (job.error_code) {
+        job.status = "failed";
+        job.updated_at = now;
+        if (stored.scene.splat?.job_id === job_id) {
+          stored.scene.splat.status = "failed";
+          stored.scene.splat.asset_id = null;
+          stored.scene.splat.uri = null;
+          stored.scene.splat.updated_at = now;
+          stored.persisted_records.splat_asset_record = structuredClone(stored.scene.splat);
+        }
+        this.persistStoredScene(stored);
+        return structuredClone(job);
+      }
+      const assetId = makeStableId("asset-splat", `${job.scene_id}:${job.scene_snapshot_id}:${job.job_id}`);
+      job.status = "ready";
+      job.output_asset_id = assetId;
+      job.updated_at = now;
+      if (stored.scene.splat?.job_id === job_id) {
+        stored.scene.splat.status = "ready";
+        stored.scene.splat.asset_id = assetId;
+        stored.scene.splat.uri = `asset://splat/${encodeURIComponent(job.scene_id)}/${encodeURIComponent(assetId)}.splat`;
+        stored.scene.splat.updated_at = now;
+        stored.persisted_records.splat_asset_record = structuredClone(stored.scene.splat);
+      }
+      this.persistStoredScene(stored);
+      return structuredClone(job);
+    }
+    return structuredClone(job);
   }
 
   private materializeSceneAtSnapshot(stored: StoredSceneRecord, snapshotId: string): Scene {

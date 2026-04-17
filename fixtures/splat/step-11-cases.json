@@ -1,0 +1,24 @@
+{
+  "cases": [
+    {
+      "case_id": "scene-usable-without-upload",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "notes": "A queued splat sidecar without an uploaded video must not block the editable scene or change scene version."
+    },
+    {
+      "case_id": "upload-and-poll-ready",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "notes": "Uploading with a valid one-time token should create a queued splat job that deterministically progresses to ready across job polls."
+    },
+    {
+      "case_id": "upload-failure-stays-nonmutating",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "notes": "A simulated failed splat job must leave the RoomPlan scene editable and must not increment scene version."
+    },
+    {
+      "case_id": "video-token-guardrails",
+      "fixture_request_path": "fixtures/roomplan/bedroom-primary/capture-request.json",
+      "notes": "Video upload tokens are scene-scoped, one-time, and expire independently of editable scene state."
+    }
+  ]
+}

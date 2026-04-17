@@ -370,6 +370,7 @@ function renderEditorShellHtml(input: {
         selectionId: null,
         activeBookmarkId: null,
         lastPhotorealJobId: null,
+        splatPollHandle: null,
         loadedFrom: null,
         chatMessages: [],
         pendingPlannerResponse: null,
@@ -420,6 +421,7 @@ function renderEditorShellHtml(input: {
           state.sessionId = redeemResponse.session_id;
           state.sceneId = redeemResponse.scene_id;
           state.loadedFrom = "live";
+          clearSplatPolling();
           resetChatState();
           await loadLiveScene();
         } catch (error) {
@@ -442,6 +444,7 @@ function renderEditorShellHtml(input: {
           state.activeBookmarkId = state.scene.bookmarks[0]?.bookmark_id || null;
           state.loadedFrom = "fixture";
           state.quickRender = await loadFixtureQuickRender(fixtureSelect.value);
+          clearSplatPolling();
           resetChatState();
           renderScene();
           setStatus("Loaded fixture " + fixtureSelect.value + ".");
@@ -527,6 +530,18 @@ function renderEditorShellHtml(input: {
       }
 
       async function loadLiveScene() {
+        const scene = await fetchLiveScene();
+        state.scene = scene;
+        state.selectionId = firstSelectableEntityId(state.scene);
+        state.activeBookmarkId = state.scene.bookmarks.some((bookmark) => bookmark.bookmark_id === state.activeBookmarkId)
+          ? state.activeBookmarkId
+          : state.scene.bookmarks[0]?.bookmark_id || null;
+        state.quickRender = await loadLiveQuickRender();
+        renderScene();
+        setStatus("Loaded live scene " + state.scene.head.scene_id + " via authenticated read.");
+      }
+
+      async function fetchLiveScene() {
         const response = await fetch(new URL("/scenes/" + encodeURIComponent(state.sceneId), state.apiBaseUrl).toString(), {
           headers: {
             Authorization: "Bearer " + state.sessionId,
@@ -536,14 +551,21 @@ function renderEditorShellHtml(input: {
         if (!response.ok) {
           throw new Error(payload.message || payload.reason_code || "Scene read failed.");
         }
-        state.scene = payload.scene;
-        state.selectionId = firstSelectableEntityId(state.scene);
-        state.activeBookmarkId = state.scene.bookmarks.some((bookmark) => bookmark.bookmark_id === state.activeBookmarkId)
-          ? state.activeBookmarkId
-          : state.scene.bookmarks[0]?.bookmark_id || null;
-        state.quickRender = await loadLiveQuickRender();
-        renderScene();
-        setStatus("Loaded live scene " + state.scene.head.scene_id + " via authenticated read.");
+        return payload.scene;
+      }
+
+      async function refreshLiveSceneForSplat() {
+        if (!state.sceneId || !state.sessionId) {
+          return;
+        }
+        const selectionId = state.selectionId;
+        const activeBookmarkId = state.activeBookmarkId;
+        const scene = await fetchLiveScene();
+        state.scene = scene;
+        state.selectionId = findSelectedEntity(scene, selectionId) ? selectionId : firstSelectableEntityId(scene);
+        state.activeBookmarkId = scene.bookmarks.some((bookmark) => bookmark.bookmark_id === activeBookmarkId)
+          ? activeBookmarkId
+          : scene.bookmarks[0]?.bookmark_id || null;
       }
 
       async function loadLiveQuickRender() {
@@ -728,7 +750,7 @@ function renderEditorShellHtml(input: {
           appendChatMessage(
             "assistant",
             "Preview ready",
-            response.preview.explanation + "\n\n" + JSON.stringify(response.preview.ops, null, 2),
+            response.preview.explanation + "\\n\\n" + JSON.stringify(response.preview.ops, null, 2),
             "success"
           );
           return;
@@ -852,13 +874,57 @@ function renderEditorShellHtml(input: {
         layoutPane.innerHTML = renderLayoutPane(state.scene, state.selectionId);
         renderPane.innerHTML = renderRenderPane(state.scene, state.quickRender, state.selectionId, state.loadedFrom);
         renderChatPanel();
+        ensureSplatPolling();
       }
 
       function renderEmptyState() {
+        clearSplatPolling();
         scanPane.innerHTML = emptyPane("Redeem a handoff or load a fixture to populate the read-only scan pane.");
         layoutPane.innerHTML = emptyPane("Selection state appears here once the server returns a scene.");
         renderPane.innerHTML = emptyPane("Quick-render inputs and derived cache details appear here once a scene is loaded.");
         renderChatPanel();
+      }
+
+      function clearSplatPolling() {
+        if (state.splatPollHandle !== null) {
+          clearTimeout(state.splatPollHandle);
+          state.splatPollHandle = null;
+        }
+      }
+
+      function ensureSplatPolling() {
+        clearSplatPolling();
+        if (!state.sessionId || !state.scene || !state.scene.splat) {
+          return;
+        }
+        const splat = state.scene.splat;
+        if (splat.status === "ready" || splat.status === "failed") {
+          return;
+        }
+        state.splatPollHandle = setTimeout(async () => {
+          try {
+            if (!state.scene?.splat) {
+              return;
+            }
+            if (!state.scene.splat.job_id) {
+              await refreshLiveSceneForSplat();
+            } else {
+              const jobResponse = await getSceneJson("/jobs/" + encodeURIComponent(state.scene.splat.job_id));
+              if (state.scene) {
+                state.scene.splat = jobResponse.splat_asset_record || state.scene.splat;
+              }
+              if (jobResponse.job.status === "ready") {
+                setStatus("Splat asset is ready for scan pane preview.");
+              }
+              if (jobResponse.job.status === "failed") {
+                setStatus("Splat job failed. The RoomPlan preview remains available.", true);
+              }
+            }
+          } catch (error) {
+            setStatus(error.message || "Splat job polling failed.", true);
+          }
+          renderScene();
+        }, 1200);
       }
 
       function renderChatPanel() {
@@ -910,6 +976,7 @@ function renderEditorShellHtml(input: {
 
       function renderScanPane(scene) {
         const room = scene.snapshot.state.room;
+        const scanMode = scene.splat?.status === "ready" ? "splat" : "roomplan_preview";
         const summary = {
           scene_id: scene.head.scene_id,
           scene_version: scene.head.current_scene_version,
@@ -921,10 +988,24 @@ function renderEditorShellHtml(input: {
           openings: room.shell.openings.length,
           fixed_elements: room.shell.fixed_elements.length,
           objects: room.objects.length,
+          scan_mode: scanMode,
           splat_status: scene.splat ? scene.splat.status : null,
+          splat_job_id: scene.splat?.job_id ?? null,
+          splat_asset_id: scene.splat?.asset_id ?? null,
+          splat_uri: scene.splat?.uri ?? null,
         };
+        const statusMessage = !scene.splat
+          ? 'No optional splat sidecar is attached. The RoomPlan preview remains the scan source.'
+          : scene.splat.status === 'ready'
+            ? 'Splat ready — scan pane has swapped from the RoomPlan placeholder to the splat asset sidecar.'
+            : scene.splat.status === 'failed'
+              ? 'Splat failed — the editor stays on the RoomPlan preview and the editable scene remains unchanged.'
+              : scene.splat.job_id
+                ? 'Splat upload accepted — polling the background job while the RoomPlan preview stays interactive.'
+                : 'Waiting for an optional companion-app video upload token to be used. The RoomPlan preview stays active.';
         return [
-          '<div class="badge">Read-only scan source</div>',
+          '<div class="badge">' + escapeHtml(scanMode === 'splat' ? 'Splat asset' : 'RoomPlan preview') + '</div>',
+          '<p class="muted">' + escapeHtml(statusMessage) + '</p>',
           '<dl>',
           '<div><dt>Scene</dt><dd>' + escapeHtml(scene.head.scene_id) + '</dd></div>',
           '<div><dt>Snapshot</dt><dd>' + escapeHtml(scene.snapshot.snapshot_id) + '</dd></div>',

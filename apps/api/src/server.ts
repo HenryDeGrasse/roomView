@@ -13,6 +13,7 @@ import type {
   SceneReadResponse,
   ScenePreviewRequest,
   UndoLastChangeRequest,
+  VideoUploadRequest,
 } from "@roomview/contracts";
 
 import {
@@ -89,6 +90,14 @@ async function handleRequest(
       return;
     }
 
+    const captureVideoSceneId = extractCaptureVideoSceneId(requestUrl.pathname);
+    if (request.method === "POST" && captureVideoSceneId) {
+      const uploadRequest = await readJsonBody<VideoUploadRequest>(request);
+      const uploadResponse = context.service.postCaptureVideo(captureVideoSceneId, uploadRequest);
+      sendJson(response, 200, uploadResponse);
+      return;
+    }
+
     if (request.method === "POST" && requestUrl.pathname === "/handoffs/redeem") {
       const redeemRequest = await readJsonBody<HandoffRedeemRequest>(request);
       const redeemResponse = context.service.redeemHandoff(redeemRequest);
@@ -157,16 +166,18 @@ async function handleRequest(
 
     const jobId = extractJobId(requestUrl.pathname);
     if (request.method === "GET" && jobId) {
-      const job = context.service.getJob(jobId);
-      if (!job) {
+      const knownJob = context.service.getJob(jobId);
+      if (!knownJob) {
         throw new RoomPlanCaptureError("TARGET_NOT_FOUND", `Job ${jobId} was not found.`);
       }
-      requireAuthenticatedSceneSession(request, job.scene_id, context);
-      const scene = context.service.getScene(job.scene_id);
+      requireAuthenticatedSceneSession(request, knownJob.scene_id, context);
+      const job = context.service.pollJob(jobId) ?? knownJob;
+      const scene = context.service.getScene(knownJob.scene_id);
       const photorealEntry = scene?.photoreal_gallery.find((entry) => entry.asset_id === job.output_asset_id) ?? null;
       const jobResponse: JobReadResponse = {
         job,
         photoreal_entry: photorealEntry,
+        splat_asset_record: scene?.splat ?? null,
       };
       sendJson(response, 200, jobResponse);
       return;
@@ -254,6 +265,11 @@ function requireAuthenticatedSceneSession(
 
   context.sceneSessionsById.set(sessionId, hydratedSession);
   return hydratedSession;
+}
+
+function extractCaptureVideoSceneId(pathname: string): string | null {
+  const match = pathname.match(/^\/captures\/([^/]+)\/video$/);
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
 function extractReadableSceneId(pathname: string): string | null {

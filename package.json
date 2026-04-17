@@ -14,6 +14,7 @@
     "verify:mutation-pipeline": "npx --yes tsx ./scripts/verify-mutation-pipeline.mts",
     "verify:planner": "npx --yes tsx ./scripts/verify-planner-transcripts.mts",
     "verify:photoreal": "npx --yes tsx ./scripts/verify-photoreal-sidecars.mts",
-    "check": "npm run verify:fixtures && npm run verify:replays && npm run verify:quick-render && npm run verify:mutation-pipeline && npm run verify:planner && npm run verify:photoreal"
+    "verify:splat": "npx --yes tsx ./scripts/verify-splat-jobs.mts",
+    "check": "npm run verify:fixtures && npm run verify:replays && npm run verify:quick-render && npm run verify:mutation-pipeline && npm run verify:planner && npm run verify:photoreal && npm run verify:splat"
   }
 }

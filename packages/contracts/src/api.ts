@@ -13,7 +13,7 @@ import type {
   Vector3D,
 } from "./primitives";
 import type { MaterialState } from "./primitives";
-import type { CameraBookmark, EditableObjectClass, PhotorealEntry, Scene } from "./scene";
+import type { CameraBookmark, EditableObjectClass, PhotorealEntry, Scene, SplatAssetRecord } from "./scene";
 import type { CuratedAssetManifest, QuickRenderScene } from "./render";
 
 export const COMMAND_KIND_VALUES = ["generate_photoreal", "undo_last_change"] as const;
@@ -376,6 +376,7 @@ export interface JobRecord {
 export interface JobReadResponse {
   job: JobRecord;
   photoreal_entry?: PhotorealEntry | null;
+  splat_asset_record?: SplatAssetRecord | null;
 }
 
 export interface HandoffGrantRecord {

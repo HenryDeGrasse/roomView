@@ -1,0 +1,34 @@
+Reviewed the step-11 diff in:
+- `apps/api/src/roomplan-ingest.ts`
+- `apps/api/src/server.ts`
+- `apps/web/src/server.ts`
+- `packages/contracts/src/api.ts`
+- `scripts/verify-splat-jobs.mts`
+- `fixtures/splat/step-11-cases.json`
+
+I found 2 material defects and fixed them:
+
+1. `apps/api/src/server.ts`
+- `GET /jobs/:job_id` was calling `pollJob()` before auth.
+- Because splat polling mutates job state, an unauthenticated request could advance a queued job to processing/ready/failed.
+- Fixed by looking up the job with `getJob()`, authenticating against `scene_id`, then polling.
+
+2. `apps/web/src/server.ts`
+- The injected editor script still contained literal `+` diff markers and one unescaped `"\n\n"` inside the outer HTML template.
+- That broke the browser script, which would prevent the scan-pane polling/swap behavior from running.
+- Removed the stray `+` markers and escaped the newline sequence correctly.
+
+Verification run:
+- `npm run check` ✅
+- `cd ios/RoomViewCapture && swift test` ✅
+- manual API smoke: unauthenticated `/jobs/:job_id` no longer mutates splat state ✅
+- web shell smoke: fetched `/`, extracted `<script>`, `node --check` passes ✅
+
+Assessment:
+- Scene-scoped one-time video upload tokens work
+- splat jobs are created and polled asynchronously
+- splat sidecar state remains non-versioning/non-editable-source-of-truth
+- failure/no-upload paths keep the editor usable
+- web scan pane logic is now syntactically valid and can swap to the splat asset when ready
+
+Verdict: changes_made
