@@ -1,1 +1,0 @@
-Warning: Unknown tool "". Valid tools: read, bash, edit, write, grep, find, ls

@@ -1,3 +1,0 @@
-Confirmed the specific rejection cause is resolved: `ios/RoomViewCapture/.build/` is no longer present, so the stray SwiftPM-generated artifact is no longer polluting the step output. I did not make any additional changes.
-
-Verdict: approve

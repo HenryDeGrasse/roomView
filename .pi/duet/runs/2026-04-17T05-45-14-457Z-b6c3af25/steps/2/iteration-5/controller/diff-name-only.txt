@@ -1,6 +1,0 @@
-.pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/cost.json
-.pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/sessions/continuous/relay-a/2026-04-17T05-55-31-026Z_4bc9dc66-46dd-4021-90d7-3292663466b7.jsonl
-.pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/sessions/continuous/relay-b/2026-04-17T06-01-44-350Z_402c3b1e-92d1-4654-8280-32e884a22413.jsonl
-.pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/state.json
-docs/mvp_duet.md
-.pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/steps/2

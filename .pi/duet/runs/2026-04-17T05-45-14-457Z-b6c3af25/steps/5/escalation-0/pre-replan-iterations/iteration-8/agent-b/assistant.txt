@@ -1,7 +1,0 @@
-Fixed the concrete defect by removing the regenerated SwiftPM build artifacts at `ios/RoomViewCapture/.build/`.
-
-Why: the previous round reintroduced generated build output while adding/verifying the native RoomPlan flow. Those files are not step-5 source and would pollute the diff/handoff again.
-
-Assessment: only the stray generated artifact was removed; no source logic was changed.
-
-Verdict: changes_made

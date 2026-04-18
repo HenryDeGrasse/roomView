@@ -1,8 +1,0 @@
-{
-  "round": 1,
-  "agentVerdict": "changes_made",
-  "controllerState": "continue",
-  "controllerStatus": "next relay round required",
-  "verificationStatus": "not_run",
-  "handoffSummary": "The previous relay agent made changes. Review the diff, verify the step, and approve if correct."
-}

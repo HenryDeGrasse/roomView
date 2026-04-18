@@ -7,3 +7,4 @@ build/
 .env.*
 !.env.example
 apps/api/data/
+.pi/duet/runs/

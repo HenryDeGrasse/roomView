@@ -1,9 +1,0 @@
-{
-  "round": 3,
-  "agentVerdict": "approve",
-  "controllerState": "approved",
-  "controllerStatus": "approved",
-  "blockers": [],
-  "gatesPassed": true,
-  "verificationStatus": "not_run"
-}

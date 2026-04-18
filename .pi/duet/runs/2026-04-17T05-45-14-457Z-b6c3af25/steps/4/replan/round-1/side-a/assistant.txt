@@ -1,5 +1,0 @@
-Wrote the updated plan to:
-
-`.pi/duet/runs/2026-04-17T05-45-14-457Z-b6c3af25/draft-plan.json`
-
-Reasoning: the repo currently only contains `docs/mvp_duet.md`, so I revised step 4 onward to start with bootstrapping real implementation surfaces and fixture-driven development before iOS/backend work. I then preserved the PRD’s canonical terminology and kept the remaining steps aligned to the MVP flow: ingest, scene reads/editor shell, quick render, deterministic mutation pipeline, chat planning, photoreal, splats, and hardening.
