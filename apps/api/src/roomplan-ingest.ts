@@ -74,6 +74,10 @@ import {
   simulateScenePreview,
 } from "./mutation-engine";
 import { planDeterministicTurn } from "./planner";
+import {
+  resolvePhotorealMetadata,
+  summarizeClientConditioning,
+} from "./photoreal-providers";
 import { ObservabilityRecorder, type ObservabilitySnapshot } from "./observability";
 import {
   FileSystemRoomPlanCaptureRecordStore,
@@ -909,6 +913,24 @@ export class RoomPlanCaptureService {
           });
           const entry_id = makeStableId("photoreal", entrySeed);
           const asset_id = makeStableId("asset-photoreal", entrySeed);
+          const clientConditioning = summarizeClientConditioning(request.conditioning ?? null);
+          const providerResult = resolvePhotorealMetadata({
+            scene_id,
+            scene_snapshot_id: snapshot.snapshot_id,
+            scene_version: snapshot.scene_version,
+            entry_id,
+            camera_pose: resolvedCamera.camera_pose,
+            fov: resolvedCamera.fov,
+            prompt_modifiers: request.prompt_modifiers,
+            conditioning_summary: {
+              asset_binding_count: conditioning.asset_bindings.length,
+              surface_count: conditioning.surfaces.length,
+              object_count: conditioning.objects.length,
+              scene_version: conditioning.scene_version,
+              scene_snapshot_id: conditioning.scene_snapshot_id,
+            },
+            client_conditioning: clientConditioning,
+          });
           const photorealEntry: PhotorealEntry = {
             entry_id,
             asset_id,
@@ -919,13 +941,9 @@ export class RoomPlanCaptureService {
             fov: resolvedCamera.fov,
             prompt_modifiers: [...request.prompt_modifiers],
             provider_metadata: {
-              provider: "deterministic_stub",
-              uri: `asset://photoreal/${encodeURIComponent(scene_id)}/${encodeURIComponent(snapshot.snapshot_id)}/${encodeURIComponent(entry_id)}.png`,
-              conditioning_scene_version: conditioning.scene_version,
-              conditioning_snapshot_id: conditioning.scene_snapshot_id,
-              conditioning_asset_binding_count: conditioning.asset_bindings.length,
-              conditioning_surface_count: conditioning.surfaces.length,
-              conditioning_object_count: conditioning.objects.length,
+              provider: providerResult.provider,
+              uri: providerResult.uri,
+              ...(providerResult.extra ?? {}),
             },
             created_at: now,
           };
