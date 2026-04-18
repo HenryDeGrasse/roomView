@@ -7,4 +7,16 @@ build/
 .env.*
 !.env.example
 apps/api/data/
+.claude/
 .pi/duet/runs/
+.pi/todos/
+experiments/phase0/.venv/
+experiments/phase0/results/*
+!experiments/phase0/results/README.md
+experiments/phase0/rooms/*
+!experiments/phase0/rooms/README.md
+ios/**/.build/
+ios/**/DerivedData/
+ios/**/*.xcworkspace/xcuserdata/
+ios/**/*.xcodeproj/xcuserdata/
+ios/**/.swiftpm/
