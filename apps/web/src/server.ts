@@ -1,6 +1,6 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type { FixtureManifest, FixtureDescriptor, QuickRenderResponse, SceneReadResponse } from "../../../packages/contracts/src/index.ts";
@@ -9,7 +9,11 @@ import {
   CURATED_ASSET_MANIFEST,
 } from "../../../packages/contracts/src/index.ts";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const serverDir = dirname(fileURLToPath(import.meta.url));
+const webAppRoot = resolve(serverDir, "..");
+const repoRoot = resolve(serverDir, "..", "..", "..");
+const viewerModulePath = resolve(serverDir, "viewer.js");
+const vendorThreeRoot = resolve(webAppRoot, "public", "vendor", "three");
 const DEFAULT_FIXTURE_SCENE_ID = "fixture-bedroom-primary";
 const DEFAULT_FIXTURE_MANIFEST_PATH = "fixtures/manifest.json";
 export const DEFAULT_WEB_EDITOR_PORT = 4173;
@@ -38,6 +42,22 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
 
     if (request.method === "GET" && requestUrl.pathname === "/") {
       sendHtml(response, renderEditorShellHtml({ defaultApiBaseUrl, fixtureSources }));
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/viewer.js") {
+      sendStaticFile(response, viewerModulePath, "application/javascript; charset=utf-8");
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname.startsWith("/vendor/three/")) {
+      const rel = requestUrl.pathname.slice("/vendor/three/".length);
+      const resolved = resolve(vendorThreeRoot, rel);
+      if (!resolved.startsWith(vendorThreeRoot + sep) && resolved !== vendorThreeRoot) {
+        sendJson(response, 400, { message: "Invalid vendor path." });
+        return;
+      }
+      sendStaticFile(response, resolved, "application/javascript; charset=utf-8");
       return;
     }
 
@@ -113,6 +133,14 @@ function renderEditorShellHtml(input: {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>RoomView MVP Editor</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/vendor/three/three.module.js",
+          "three/addons/": "/vendor/three/addons/"
+        }
+      }
+    </script>
     <style>
       :root {
         color-scheme: dark;
@@ -282,6 +310,16 @@ function renderEditorShellHtml(input: {
         font-size: 12px;
       }
       .hidden { display: none; }
+      .render-viewer {
+        height: 380px;
+        width: 100%;
+        border-radius: 12px;
+        overflow: hidden;
+        background: #07090f;
+        margin-bottom: 14px;
+        position: relative;
+      }
+      .render-viewer canvas { display: block; width: 100%; height: 100%; }
       @media (max-width: 1100px) {
         main { grid-template-columns: 1fr; }
         .pane { min-height: 0; }
@@ -375,6 +413,8 @@ function renderEditorShellHtml(input: {
         chatMessages: [],
         pendingPlannerResponse: null,
         requestCounter: 0,
+        viewer: null,
+        viewerLoading: null,
       };
 
       const statusNode = document.getElementById("status");
@@ -872,13 +912,75 @@ function renderEditorShellHtml(input: {
         }
         scanPane.innerHTML = renderScanPane(state.scene);
         layoutPane.innerHTML = renderLayoutPane(state.scene, state.selectionId);
-        renderPane.innerHTML = renderRenderPane(state.scene, state.quickRender, state.selectionId, state.loadedFrom);
+        ensureRenderPaneSkeleton();
+        document.getElementById('render-info-mount').innerHTML = renderRenderPaneInfo(state.scene, state.quickRender, state.selectionId, state.loadedFrom);
+        syncViewer();
         renderChatPanel();
         ensureSplatPolling();
       }
 
+      function ensureRenderPaneSkeleton() {
+        if (document.getElementById('render-info-mount') && document.getElementById('render-viewer-mount')) {
+          return;
+        }
+        renderPane.innerHTML = '<div class="render-viewer" id="render-viewer-mount"></div><div id="render-info-mount"></div>';
+      }
+
+      function syncViewer() {
+        const room = state.scene && state.scene.snapshot && state.scene.snapshot.state && state.scene.snapshot.state.room;
+        if (!room) {
+          return;
+        }
+        if (state.viewer) {
+          try {
+            state.viewer.setRoom(room);
+          } catch (err) {
+            console.error('viewer.setRoom failed', err);
+          }
+          return;
+        }
+        if (state.viewerLoading) {
+          return;
+        }
+        state.viewerLoading = (async () => {
+          try {
+            const mod = await import('/viewer.js');
+            const mount = document.getElementById('render-viewer-mount');
+            if (!mount) {
+              return null;
+            }
+            const api = mod.mountViewer(mount);
+            state.viewer = api;
+            if (state.scene && state.scene.snapshot) {
+              api.setRoom(state.scene.snapshot.state.room);
+            }
+            return api;
+          } catch (err) {
+            console.error('3D viewer failed to load', err);
+            setStatus('3D viewer failed to load; info panel below still reflects current scene state.', true);
+            state.viewer = null;
+            return null;
+          } finally {
+            state.viewerLoading = null;
+          }
+        })();
+      }
+
+      function disposeViewer() {
+        if (!state.viewer) {
+          return;
+        }
+        try {
+          state.viewer.dispose();
+        } catch (err) {
+          console.error('viewer.dispose failed', err);
+        }
+        state.viewer = null;
+      }
+
       function renderEmptyState() {
         clearSplatPolling();
+        disposeViewer();
         scanPane.innerHTML = emptyPane("Redeem a handoff or load a fixture to populate the read-only scan pane.");
         layoutPane.innerHTML = emptyPane("Selection state appears here once the server returns a scene.");
         renderPane.innerHTML = emptyPane("Quick-render inputs and derived cache details appear here once a scene is loaded.");
@@ -1058,7 +1160,7 @@ function renderEditorShellHtml(input: {
         return scene.bookmarks.find((bookmark) => bookmark.bookmark_id === state.activeBookmarkId) || scene.bookmarks[0];
       }
 
-      function renderRenderPane(scene, quickRender, selectionId, loadedFrom) {
+      function renderRenderPaneInfo(scene, quickRender, selectionId, loadedFrom) {
         const selection = findSelectedEntity(scene, selectionId);
         const selectedBinding = quickRender
           ? quickRender.asset_bindings.find((binding) => binding.bound_to === selectionId) || null
@@ -1160,6 +1262,23 @@ function sendHtml(response: ServerResponse, html: string): void {
   response.statusCode = 200;
   response.setHeader("Content-Type", "text/html; charset=utf-8");
   response.end(html);
+}
+
+function sendStaticFile(response: ServerResponse, absolutePath: string, contentType: string): void {
+  try {
+    const stat = statSync(absolutePath);
+    if (!stat.isFile()) {
+      sendJson(response, 404, { message: "Not found." });
+      return;
+    }
+    const body = readFileSync(absolutePath);
+    response.statusCode = 200;
+    response.setHeader("Content-Type", contentType);
+    response.setHeader("Content-Length", String(body.byteLength));
+    response.end(body);
+  } catch {
+    sendJson(response, 404, { message: "Not found." });
+  }
 }
 
 function isMainModule(): boolean {
