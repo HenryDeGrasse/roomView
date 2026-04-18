@@ -31,3 +31,7 @@ To regenerate canonical fixture scenes from the shared RoomPlan ingest module:
 ```bash
 npm run fixtures:update
 ```
+
+## AI chat planner setup
+
+To enable the OpenRouter-backed chat planner for live API sessions, copy `.env.example` to `.env` and fill in `OPENROUTER_API_KEY`. The API server automatically loads repo-root `.env` when it starts.

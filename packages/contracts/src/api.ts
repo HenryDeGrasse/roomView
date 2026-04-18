@@ -129,6 +129,11 @@ export interface HandoffRedeemResponse {
   expires_at: ISO8601Timestamp;
 }
 
+export interface PlannerConversationMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export interface OperationPlanRequest {
   request_id: string;
   idempotency_key: string;
@@ -138,6 +143,7 @@ export interface OperationPlanRequest {
     selected_entity_ids: EntityId[];
   };
   user_prompt: string;
+  conversation_history?: PlannerConversationMessage[];
 }
 
 export interface OperationPlanPreview {

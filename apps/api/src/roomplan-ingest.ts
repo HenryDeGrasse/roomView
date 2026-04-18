@@ -73,6 +73,7 @@ import {
   SceneMutationError,
   simulateScenePreview,
 } from "./mutation-engine";
+import { OpenRouterPlanner, type AiPlannerResult, type OpenRouterPlannerOptions } from "./ai-planner";
 import { planDeterministicTurn } from "./planner";
 import {
   resolvePhotorealMetadata,
@@ -398,6 +399,13 @@ export interface RoomPlanCaptureServiceOptions {
   token_secret?: string;
   storage_directory?: string;
   observability?: ObservabilityRecorder;
+  planner_mode?: "deterministic" | "openrouter";
+  openrouter_api_key?: string;
+  openrouter_model?: string;
+  openrouter_base_url?: string;
+  planner_site_url?: string;
+  planner_app_name?: string;
+  planner_timeout_ms?: number;
 }
 
 interface StoredSceneRecord {
@@ -711,6 +719,8 @@ export class RoomPlanCaptureService {
   private readonly tokenSecret: string;
   private readonly durableStore: FileSystemRoomPlanCaptureRecordStore | null;
   private readonly observability: ObservabilityRecorder;
+  private readonly plannerMode: "deterministic" | "openrouter";
+  private readonly openRouterPlanner: OpenRouterPlanner | null;
 
   private readonly scenesById = new Map<string, StoredSceneRecord>();
   private readonly sceneIdByClientCaptureId = new Map<string, string>();
@@ -729,6 +739,10 @@ export class RoomPlanCaptureService {
       ? new FileSystemRoomPlanCaptureRecordStore(options.storage_directory)
       : null;
     this.observability = options.observability ?? new ObservabilityRecorder();
+    this.plannerMode = options.planner_mode ?? (options.openrouter_api_key ? "openrouter" : "deterministic");
+    this.openRouterPlanner = this.plannerMode === "openrouter" && options.openrouter_api_key
+      ? new OpenRouterPlanner(buildOpenRouterPlannerOptions(options))
+      : null;
 
     for (const record of this.durableStore?.loadAll() ?? []) {
       this.hydrateStoredScene(record);
@@ -1019,6 +1033,62 @@ export class RoomPlanCaptureService {
 
         const now = this.nowIso();
         const planned = planDeterministicTurn(stored.scene, request);
+        let response: PlannerResponse;
+        if (planned.response_kind === "preview_request") {
+          try {
+            const preview = this.createScenePreview(scene_id, planned.preview_request);
+            response = {
+              response_kind: "operation_plan_preview",
+              preview: preview.preview,
+            };
+          } catch (error) {
+            if (error instanceof RoomPlanCaptureError) {
+              response = {
+                response_kind: "rejection",
+                request_id: request.request_id,
+                reason_code: error.reason_code,
+                message: error.message,
+              };
+            } else {
+              throw error;
+            }
+          }
+        } else {
+          response = planned;
+        }
+
+        this.recordIdempotentResponse(stored, `plan:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 200, response, now);
+        return response;
+      }
+    );
+  }
+
+  public async planSceneOperationInteractive(scene_id: string, request: OperationPlanRequest): Promise<PlannerResponse> {
+    return this.observeAsync(
+      "planner.plan",
+      {
+        scene_id,
+        request_id: request.request_id,
+        idempotency_key: request.idempotency_key,
+        planner_mode: this.plannerMode,
+      },
+      async () => {
+        const stored = this.mustGetStoredScene(scene_id);
+        const existing = this.getIdempotentResponse<PlannerResponse>(stored, `plan:${scene_id}`, request.idempotency_key, request as Record<string, unknown>);
+        if (existing) {
+          return existing;
+        }
+
+        const now = this.nowIso();
+        let planned: AiPlannerResult;
+        try {
+          planned = this.openRouterPlanner
+            ? await this.openRouterPlanner.plan(stored.scene, request, now)
+            : planDeterministicTurn(stored.scene, request);
+        } catch (error) {
+          planned = planDeterministicTurn(stored.scene, request);
+        }
+
         let response: PlannerResponse;
         if (planned.response_kind === "preview_request") {
           try {
@@ -1736,12 +1806,37 @@ export class RoomPlanCaptureService {
     }
   }
 
+  private async observeAsync<T>(operation: string, fields: Record<string, unknown>, execute: () => Promise<T>): Promise<T> {
+    const span = this.observability.start(operation, fields);
+    try {
+      const result = await execute();
+      span.finish("ok");
+      return result;
+    } catch (error) {
+      span.finish("error", {
+        reason_code: this.extractReasonCode(error),
+      });
+      throw error;
+    }
+  }
+
   private extractReasonCode(error: unknown): string | null {
     if (error && typeof error === "object" && "reason_code" in error && typeof (error as { reason_code: unknown }).reason_code === "string") {
       return (error as { reason_code: string }).reason_code;
     }
     return null;
   }
+}
+
+function buildOpenRouterPlannerOptions(options: RoomPlanCaptureServiceOptions): OpenRouterPlannerOptions {
+  return {
+    apiKey: options.openrouter_api_key ?? "",
+    model: options.openrouter_model,
+    baseUrl: options.openrouter_base_url,
+    siteUrl: options.planner_site_url,
+    appName: options.planner_app_name,
+    timeoutMs: options.planner_timeout_ms,
+  };
 }
 
 function validateRoomPlanCaptureRequest(request: RoomPlanCaptureRequest): void {

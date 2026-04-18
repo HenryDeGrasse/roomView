@@ -504,6 +504,8 @@ const NAMED_COLORS = {
   cherry: 0x8b3a3a,
   maple: 0xd4a66a,
   pine: 0xd8b98a,
+  blue: 0x2563eb,
+  green: 0x22c55e,
   soft_white: 0xf2efe8,
   warm_white: 0xf3ead5,
   off_white: 0xeeeae0,
@@ -524,8 +526,14 @@ const NAMED_COLORS = {
 
 function materialColor(materialState, fallback) {
   if (!materialState?.color) return fallback;
-  const key = String(materialState.color).toLowerCase();
-  return NAMED_COLORS[key] ?? fallback;
+  const raw = String(materialState.color).toLowerCase().trim();
+  const key = raw.replace(/\s+/g, '_');
+  if (NAMED_COLORS[key] !== undefined) return NAMED_COLORS[key];
+  try {
+    return new THREE.Color(raw).getHex();
+  } catch {
+    return fallback;
+  }
 }
 
 const CLASS_PALETTE = {
@@ -546,7 +554,7 @@ const CLASS_PALETTE = {
 
 function objectColor(object) {
   const named = object.material_state?.color
-    ? NAMED_COLORS[String(object.material_state.color).toLowerCase()]
+    ? materialColor(object.material_state, CLASS_PALETTE[object.class] ?? 0x7f7f7f)
     : undefined;
   if (named !== undefined) return named;
   return CLASS_PALETTE[object.class] ?? 0x7f7f7f;

@@ -431,7 +431,7 @@ function renderEditorShellHtml(input: {
         </section>
         <section class="card">
           <h2>Chat planner</h2>
-          <p class="muted">Use layout selection as context for prompts like “this wall” or “that chair.” Live API sessions enable preview/apply.</p>
+          <p class="muted">Use layout selection as context for prompts like “this wall” or “that chair.” Live API sessions enable the AI planner plus preview/apply.</p>
           <label for="chat-selection">Current selection</label>
           <div id="chat-selection" class="chat-selection">No scene loaded.</div>
           <label for="chat-input">Prompt</label>
@@ -906,6 +906,7 @@ function renderEditorShellHtml(input: {
               selected_entity_ids: state.selectionId ? [state.selectionId] : [],
             },
             user_prompt: prompt,
+            conversation_history: buildConversationHistory(),
           };
           const response = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/plan", request);
           handlePlannerResponse(response);
@@ -1012,6 +1013,15 @@ function renderEditorShellHtml(input: {
 
       function appendChatMessage(role, title, body, tone = "") {
         state.chatMessages.push({ role, title, body, tone });
+      }
+
+      function buildConversationHistory() {
+        return state.chatMessages.slice(-12).map((entry) => ({
+          role: entry.role === 'user' ? 'user' : 'assistant',
+          content: entry.role === 'user'
+            ? entry.body
+            : (entry.title ? entry.title + ': ' : '') + entry.body,
+        }));
       }
 
       function parseHandoffToken(rawValue) {

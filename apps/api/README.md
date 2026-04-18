@@ -20,3 +20,7 @@ Key bootstrap assets:
 - `../../fixtures/evals/observability-operations.json`
 - `../../fixtures/demo/mvp-sequence.json`
 - `../../docs/demo-runbook.md`
+
+## AI planner
+
+When `OPENROUTER_API_KEY` is present in the repo-root `.env`, the `/plan` endpoint upgrades from the deterministic rule-based planner to an OpenRouter-backed conversational planner that can inspect scene state, ask clarifying questions, and propose validated typed previews while still relying on the existing server-authoritative preview/apply pipeline.

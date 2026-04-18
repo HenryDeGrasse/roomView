@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -27,8 +28,11 @@ import {
   type RoomPlanCaptureServiceOptions,
 } from "./roomplan-ingest";
 
+const serverDir = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(serverDir, "..", "..", "..");
+
 export const DEFAULT_ROOMPLAN_CAPTURE_STORAGE_DIRECTORY = resolve(
-  dirname(fileURLToPath(import.meta.url)),
+  serverDir,
   "..",
   "data",
   "roomplan-captures"
@@ -124,7 +128,7 @@ async function handleRequest(
     if (request.method === "POST" && mutationSceneId && requestUrl.pathname.endsWith("/plan")) {
       requireAuthenticatedSceneSession(request, mutationSceneId, context);
       const planRequest = await readJsonBody<OperationPlanRequest>(request);
-      const planResponse = context.service.planSceneOperation(mutationSceneId, planRequest);
+      const planResponse = await context.service.planSceneOperationInteractive(mutationSceneId, planRequest);
       sendJson(response, 200, planResponse);
       return;
     }
@@ -375,6 +379,35 @@ function statusCodeForCaptureError(error: RoomPlanCaptureError): number {
   }
 }
 
+function loadDotEnv(): void {
+  const candidates = [
+    resolve(process.cwd(), ".env"),
+    resolve(repoRoot, ".env"),
+  ];
+  for (const path of candidates) {
+    if (!existsSync(path)) {
+      continue;
+    }
+    const raw = readFileSync(path, "utf8");
+    for (const line of raw.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        continue;
+      }
+      const separatorIndex = trimmed.indexOf("=");
+      if (separatorIndex <= 0) {
+        continue;
+      }
+      const key = trimmed.slice(0, separatorIndex).trim();
+      const value = trimmed.slice(separatorIndex + 1).trim().replace(/^['\"]|['\"]$/g, "");
+      if (!(key in process.env)) {
+        process.env[key] = value;
+      }
+    }
+    return;
+  }
+}
+
 function addMilliseconds(timestamp: string, ms: number): string {
   return new Date(new Date(timestamp).getTime() + ms).toISOString();
 }
@@ -388,12 +421,20 @@ function isMainModule(): boolean {
 }
 
 if (isMainModule()) {
+  loadDotEnv();
   const port = Number(process.env.PORT ?? 3000);
   const server = createRoomPlanApiServer({
     handoff_base_url: process.env.ROOMVIEW_HANDOFF_BASE_URL,
     token_secret: process.env.ROOMVIEW_TOKEN_SECRET,
     storage_directory: process.env.ROOMVIEW_API_STORAGE_DIRECTORY,
     session_ttl_ms: process.env.ROOMVIEW_SESSION_TTL_MS ? Number(process.env.ROOMVIEW_SESSION_TTL_MS) : undefined,
+    planner_mode: process.env.ROOMVIEW_PLANNER_MODE === "deterministic" ? "deterministic" : process.env.OPENROUTER_API_KEY ? "openrouter" : undefined,
+    openrouter_api_key: process.env.OPENROUTER_API_KEY,
+    openrouter_model: process.env.OPENROUTER_MODEL,
+    openrouter_base_url: process.env.OPENROUTER_BASE_URL,
+    planner_site_url: process.env.ROOMVIEW_SITE_URL,
+    planner_app_name: process.env.ROOMVIEW_APP_NAME,
+    planner_timeout_ms: process.env.ROOMVIEW_PLANNER_TIMEOUT_MS ? Number(process.env.ROOMVIEW_PLANNER_TIMEOUT_MS) : undefined,
   });
 
   server.listen(port, () => {

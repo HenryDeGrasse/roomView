@@ -42,6 +42,8 @@ export {
 } from "./mutation-engine";
 export { planDeterministicTurn } from "./planner";
 export type { DeterministicPlannerResult } from "./planner";
+export { OpenRouterPlanner } from "./ai-planner";
+export type { AiPlannerResult, OpenRouterPlannerOptions, PreviewRequestResult } from "./ai-planner";
 export {
   createConsoleObservabilitySink,
   ObservabilityRecorder,
