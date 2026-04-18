@@ -120,6 +120,7 @@ export interface Scene {
   bookmarks: CameraBookmark[];
   photoreal_gallery: PhotorealEntry[];
   splat: SplatAssetRecord | null;
+  captured_frames: CapturedFrame[];
 }
 
 export interface SceneState {
@@ -268,6 +269,34 @@ export interface CameraBookmark {
   fov: number;
   created_at: ISO8601Timestamp;
   updated_at: ISO8601Timestamp;
+}
+
+export interface CameraIntrinsics {
+  fx: number;
+  fy: number;
+  cx: number;
+  cy: number;
+  width: number;
+  height: number;
+}
+
+export interface CapturedFrameAsset {
+  asset_id: AssetId;
+  uri: string;
+  content_type: string;
+}
+
+export interface CapturedFrame {
+  frame_id: string;
+  scene_id: SceneId;
+  captured_at: ISO8601Timestamp;
+  bookmark_id: BookmarkId | null;
+  camera_pose: Pose3D;
+  camera_transform: number[];
+  intrinsics: CameraIntrinsics;
+  rgb: CapturedFrameAsset;
+  depth: CapturedFrameAsset;
+  confidence: CapturedFrameAsset | null;
 }
 
 export interface PhotorealEntry {

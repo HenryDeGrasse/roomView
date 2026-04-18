@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type {
   ApplyPlanRequest,
+  CaptureFramesRequest,
   CreateBookmarkRequest,
   GeneratePhotorealRequest,
   HandoffRedeemRequest,
@@ -92,6 +93,21 @@ async function handleRequest(
 
     const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
 
+    const photorealArtifactPath = extractPhotorealArtifactPath(requestUrl.pathname);
+    if (request.method === "GET" && photorealArtifactPath) {
+      const artifact = context.service.getPhotorealArtifact(photorealArtifactPath.scene_id, photorealArtifactPath.asset_id);
+      if (!artifact) {
+        sendJson(response, 404, { message: "Not found." });
+        return;
+      }
+      applyCorsHeaders(response);
+      response.statusCode = 200;
+      response.setHeader("Content-Type", artifact.content_type);
+      response.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      response.end(artifact.bytes);
+      return;
+    }
+
     if (request.method === "POST" && requestUrl.pathname === "/captures/roomplan") {
       const captureRequest = await readJsonBody<RoomPlanCaptureRequest>(request);
       const captureResponse = context.service.postRoomPlanCapture(captureRequest);
@@ -104,6 +120,14 @@ async function handleRequest(
       const uploadRequest = await readJsonBody<VideoUploadRequest>(request);
       const uploadResponse = context.service.postCaptureVideo(captureVideoSceneId, uploadRequest);
       sendJson(response, 200, uploadResponse);
+      return;
+    }
+
+    const captureFramesSceneId = extractCaptureFramesSceneId(requestUrl.pathname);
+    if (request.method === "POST" && captureFramesSceneId) {
+      const framesRequest = await readJsonBody<CaptureFramesRequest>(request);
+      const framesResponse = context.service.postCaptureFrames(captureFramesSceneId, framesRequest);
+      sendJson(response, 200, framesResponse);
       return;
     }
 
@@ -281,6 +305,11 @@ function extractCaptureVideoSceneId(pathname: string): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function extractCaptureFramesSceneId(pathname: string): string | null {
+  const match = pathname.match(/^\/captures\/([^/]+)\/frames$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 function extractReadableSceneId(pathname: string): string | null {
   const patterns = [
     /^\/scenes\/([^/]+)$/,
@@ -316,6 +345,17 @@ function extractMutationSceneId(pathname: string): string | null {
 function extractJobId(pathname: string): string | null {
   const match = pathname.match(/^\/jobs\/([^/]+)$/);
   return match ? decodeURIComponent(match[1]) : null;
+}
+
+function extractPhotorealArtifactPath(pathname: string): { scene_id: string; asset_id: string } | null {
+  const match = pathname.match(/^\/artifacts\/photoreal\/([^/]+)\/([^/]+)$/);
+  if (!match?.[1] || !match[2]) {
+    return null;
+  }
+  return {
+    scene_id: decodeURIComponent(match[1]),
+    asset_id: decodeURIComponent(match[2]),
+  };
 }
 
 function readSessionId(request: IncomingMessage): string | null {

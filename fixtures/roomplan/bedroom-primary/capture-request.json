@@ -28,8 +28,8 @@
       "north_source": "scan_forward"
     },
     "dimensions": {
-      "width_m": 4.0,
-      "length_m": 3.5,
+      "width_m": 5.6,
+      "length_m": 4.6,
       "ceiling_height_m": 2.6
     },
     "surfaces": [
@@ -43,16 +43,16 @@
               "y": 0
             },
             {
-              "x": 4.0,
+              "x": 5.6,
               "y": 0
             },
             {
-              "x": 4.0,
-              "y": 3.5
+              "x": 5.6,
+              "y": 4.6
             },
             {
               "x": 0,
-              "y": 3.5
+              "y": 4.6
             }
           ]
         },
@@ -68,16 +68,16 @@
               "y": 0
             },
             {
-              "x": 4.0,
+              "x": 5.6,
               "y": 0
             },
             {
-              "x": 4.0,
-              "y": 3.5
+              "x": 5.6,
+              "y": 4.6
             },
             {
               "x": 0,
-              "y": 3.5
+              "y": 4.6
             }
           ]
         },
@@ -114,11 +114,11 @@
               "y": 0
             },
             {
-              "x": 4.0,
+              "x": 5.6,
               "y": 0
             },
             {
-              "x": 4.0,
+              "x": 5.6,
               "y": 2.6
             },
             {
@@ -130,7 +130,7 @@
         "frame": {
           "origin": {
             "x": 0,
-            "y": 3.5,
+            "y": 4.6,
             "z": 0
           },
           "u_axis": {
@@ -160,11 +160,11 @@
               "y": 0
             },
             {
-              "x": 3.5,
+              "x": 4.6,
               "y": 0
             },
             {
-              "x": 3.5,
+              "x": 4.6,
               "y": 2.6
             },
             {
@@ -175,8 +175,8 @@
         },
         "frame": {
           "origin": {
-            "x": 4.0,
-            "y": 3.5,
+            "x": 5.6,
+            "y": 4.6,
             "z": 0
           },
           "u_axis": {
@@ -206,11 +206,11 @@
               "y": 0
             },
             {
-              "x": 4.0,
+              "x": 5.6,
               "y": 0
             },
             {
-              "x": 4.0,
+              "x": 5.6,
               "y": 2.6
             },
             {
@@ -221,7 +221,7 @@
         },
         "frame": {
           "origin": {
-            "x": 4.0,
+            "x": 5.6,
             "y": 0,
             "z": 0
           },
@@ -252,11 +252,11 @@
               "y": 0
             },
             {
-              "x": 3.5,
+              "x": 4.6,
               "y": 0
             },
             {
-              "x": 3.5,
+              "x": 4.6,
               "y": 2.6
             },
             {
@@ -295,7 +295,7 @@
         "category": "door",
         "host_surface_id": "rp-wall-south",
         "rect": {
-          "min_u": 2.9,
+          "min_u": 0.2,
           "min_v": 0.0,
           "width": 0.9,
           "height": 2.1
@@ -306,7 +306,7 @@
         "category": "window",
         "host_surface_id": "rp-wall-north",
         "rect": {
-          "min_u": 2.45,
+          "min_u": 3.4,
           "min_v": 0.85,
           "width": 1.2,
           "height": 1.1
@@ -319,22 +319,22 @@
         "category": "bed",
         "pose": {
           "position": {
-            "x": 1.15,
-            "y": 2.65,
+            "x": 1.0,
+            "y": 3.4,
             "z": 0.0
           },
-          "yaw_degrees": 180
+          "yaw_degrees": 90
         },
         "obb": {
           "center": {
-            "x": 1.15,
-            "y": 2.65,
+            "x": 1.0,
+            "y": 3.4,
             "z": 0.3
           },
           "size_x": 2.0,
           "size_y": 1.6,
           "size_z": 0.6,
-          "yaw_degrees": 180
+          "yaw_degrees": 90
         },
         "attributes": [
           "queen"
@@ -345,22 +345,22 @@
         "category": "nightstand",
         "pose": {
           "position": {
-            "x": 0.35,
-            "y": 2.95,
+            "x": 1.0,
+            "y": 1.8,
             "z": 0.0
           },
-          "yaw_degrees": 180
+          "yaw_degrees": 90
         },
         "obb": {
           "center": {
-            "x": 0.35,
-            "y": 2.95,
+            "x": 1.0,
+            "y": 1.8,
             "z": 0.3
           },
           "size_x": 0.5,
           "size_y": 0.5,
           "size_z": 0.6,
-          "yaw_degrees": 180
+          "yaw_degrees": 90
         },
         "attributes": [
           "left_of_bed"
@@ -371,22 +371,22 @@
         "category": "desk",
         "pose": {
           "position": {
-            "x": 3.1,
-            "y": 3.0,
+            "x": 4.85,
+            "y": 3.2,
             "z": 0.0
           },
-          "yaw_degrees": 180
+          "yaw_degrees": 90
         },
         "obb": {
           "center": {
-            "x": 3.1,
-            "y": 3.0,
+            "x": 4.85,
+            "y": 3.2,
             "z": 0.37
           },
           "size_x": 1.2,
           "size_y": 0.6,
           "size_z": 0.74,
-          "yaw_degrees": 180
+          "yaw_degrees": 90
         },
         "attributes": [
           "under_window"
@@ -397,22 +397,22 @@
         "category": "chair",
         "pose": {
           "position": {
-            "x": 3.1,
-            "y": 2.3,
+            "x": 4.1,
+            "y": 3.2,
             "z": 0.0
           },
-          "yaw_degrees": 0
+          "yaw_degrees": 270
         },
         "obb": {
           "center": {
-            "x": 3.1,
-            "y": 2.3,
+            "x": 4.1,
+            "y": 3.2,
             "z": 0.45
           },
           "size_x": 0.55,
           "size_y": 0.55,
           "size_z": 0.9,
-          "yaw_degrees": 0
+          "yaw_degrees": 270
         },
         "attributes": [
           "desk_chair"
@@ -423,22 +423,22 @@
         "category": "dresser",
         "pose": {
           "position": {
-            "x": 0.45,
-            "y": 1.0,
+            "x": 1.2,
+            "y": 0.45,
             "z": 0.0
           },
-          "yaw_degrees": 90
+          "yaw_degrees": 0
         },
         "obb": {
           "center": {
-            "x": 0.45,
-            "y": 1.0,
+            "x": 1.2,
+            "y": 0.45,
             "z": 0.45
           },
           "size_x": 1.2,
           "size_y": 0.5,
           "size_z": 0.9,
-          "yaw_degrees": 90
+          "yaw_degrees": 0
         },
         "attributes": [
           "six_drawer"
@@ -449,16 +449,16 @@
         "category": "rug",
         "pose": {
           "position": {
-            "x": 2.05,
-            "y": 1.8,
+            "x": 2.45,
+            "y": 2.55,
             "z": 0.0
           },
           "yaw_degrees": 0
         },
         "obb": {
           "center": {
-            "x": 2.05,
-            "y": 1.8,
+            "x": 2.45,
+            "y": 2.55,
             "z": 0.01
           },
           "size_x": 2.4,
@@ -475,22 +475,22 @@
         "category": "lamp",
         "pose": {
           "position": {
-            "x": 0.35,
-            "y": 2.95,
+            "x": 1.0,
+            "y": 1.8,
             "z": 0.62
           },
-          "yaw_degrees": 180
+          "yaw_degrees": 90
         },
         "obb": {
           "center": {
-            "x": 0.35,
-            "y": 2.95,
+            "x": 1.0,
+            "y": 1.8,
             "z": 0.82
           },
           "size_x": 0.2,
           "size_y": 0.2,
           "size_z": 0.4,
-          "yaw_degrees": 180
+          "yaw_degrees": 90
         },
         "attributes": [
           "table_lamp"
@@ -503,16 +503,16 @@
         "category": "radiator",
         "pose": {
           "position": {
-            "x": 3.1,
-            "y": 3.32,
+            "x": 4.0,
+            "y": 4.42,
             "z": 0.25
           },
           "yaw_degrees": 180
         },
         "obb": {
           "center": {
-            "x": 3.1,
-            "y": 3.32,
+            "x": 4.0,
+            "y": 4.42,
             "z": 0.25
           },
           "size_x": 1.0,

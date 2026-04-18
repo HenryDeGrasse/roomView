@@ -168,6 +168,29 @@ export function planDeterministicTurn(scene: Scene, request: OperationPlanReques
     );
   }
 
+  if (matchesResize(prompt)) {
+    const targetResolution = resolveObjectTarget(scene, request, prompt);
+    if (targetResolution.kind !== "resolved") {
+      return targetResolution.response;
+    }
+    if (!canResizeObject(targetResolution.object)) {
+      return createRejection(request.request_id, "UNSUPPORTED_CLASS", `${targetResolution.object.class} cannot be resized in the MVP yet.`);
+    }
+    const resizeTarget = buildResizeTarget(targetResolution.object, prompt);
+    return createPreviewRequest(
+      request,
+      resizeTarget.explanation,
+      [
+        {
+          op: "resize_object",
+          object_id: targetResolution.object.object_id,
+          size_x: resizeTarget.size_x,
+          size_y: resizeTarget.size_y,
+        },
+      ]
+    );
+  }
+
   if (matchesMove(prompt)) {
     const targetResolution = resolveObjectTarget(scene, request, prompt);
     if (targetResolution.kind !== "resolved") {
@@ -214,6 +237,7 @@ export function planDeterministicTurn(scene: Scene, request: OperationPlanReques
   return createClarification(request.request_id, "I can help with deterministic edit previews. Which action do you want?", [
     "lock this",
     "paint this wall blue",
+    "make this desk bigger",
     "replace this rug with something warm and earthy",
     "move the desk under the window",
     "undo that",
@@ -518,6 +542,117 @@ function extractStyleTags(prompt: string, fallback: string[]): string[] {
   return Array.from(new Set(tags.length > 0 ? tags : fallback));
 }
 
+function canResizeObject(object: SceneObject): boolean {
+  return ["bed", "nightstand", "desk", "chair", "table", "dresser", "bookshelf", "sofa", "rug", "storage"].includes(object.class);
+}
+
+function buildResizeTarget(object: SceneObject, prompt: string): { size_x: number; size_y: number; explanation: string } {
+  const direction = isShrinkIntent(prompt) ? -1 : 1;
+  const mode = resizeMode(prompt);
+  const percentDelta = extractPercentageDelta(prompt);
+  const metricDelta = extractMetricDelta(prompt);
+
+  let sizeX = object.obb.size_x;
+  let sizeY = object.obb.size_y;
+
+  if (metricDelta !== null) {
+    if (mode === "uniform") {
+      sizeX += direction * metricDelta;
+      sizeY += direction * metricDelta;
+    } else {
+      const key = mode === "dominant" ? dominantFootprintDimensionKey(object) : secondaryFootprintDimensionKey(object);
+      if (key === "size_x") {
+        sizeX += direction * metricDelta;
+      } else {
+        sizeY += direction * metricDelta;
+      }
+    }
+  } else {
+    const scale = 1 + direction * (percentDelta ?? 0.15);
+    if (mode === "uniform") {
+      sizeX *= scale;
+      sizeY *= scale;
+    } else {
+      const key = mode === "dominant" ? dominantFootprintDimensionKey(object) : secondaryFootprintDimensionKey(object);
+      if (key === "size_x") {
+        sizeX *= scale;
+      } else {
+        sizeY *= scale;
+      }
+    }
+  }
+
+  return {
+    size_x: clampResizeDimension(sizeX),
+    size_y: clampResizeDimension(sizeY),
+    explanation: describeResizeIntent(object, prompt),
+  };
+}
+
+function resizeMode(prompt: string): "uniform" | "dominant" | "secondary" {
+  if (prompt.includes("wider") || prompt.includes("narrower") || prompt.includes("longer") || prompt.includes("shorter")) {
+    return "dominant";
+  }
+  if (prompt.includes("deeper") || prompt.includes("shallower")) {
+    return "secondary";
+  }
+  return "uniform";
+}
+
+function dominantFootprintDimensionKey(object: SceneObject): "size_x" | "size_y" {
+  return object.obb.size_x >= object.obb.size_y ? "size_x" : "size_y";
+}
+
+function secondaryFootprintDimensionKey(object: SceneObject): "size_x" | "size_y" {
+  return dominantFootprintDimensionKey(object) === "size_x" ? "size_y" : "size_x";
+}
+
+function clampResizeDimension(value: number): number {
+  return roundNumber(Math.min(8, Math.max(0.15, value)));
+}
+
+function extractPercentageDelta(prompt: string): number | null {
+  const match = prompt.match(/(\d+(?:\.\d+)?)\s*(?:%|percent)/);
+  if (!match) {
+    return null;
+  }
+  return roundNumber(Number.parseFloat(match[1]) / 100);
+}
+
+function extractMetricDelta(prompt: string): number | null {
+  const centimeters = prompt.match(/(\d+(?:\.\d+)?)\s*(?:cm|centimeter|centimeters)/);
+  if (centimeters) {
+    return roundNumber(Number.parseFloat(centimeters[1]) / 100);
+  }
+  const meters = prompt.match(/(\d+(?:\.\d+)?)\s*(?:m|meter|meters)/);
+  if (meters) {
+    return roundNumber(Number.parseFloat(meters[1]));
+  }
+  return null;
+}
+
+function describeResizeIntent(object: SceneObject, prompt: string): string {
+  if (prompt.includes("wider") || prompt.includes("longer")) {
+    return `Make ${describeObject(object)} wider.`;
+  }
+  if (prompt.includes("narrower") || prompt.includes("shorter")) {
+    return `Make ${describeObject(object)} narrower.`;
+  }
+  if (prompt.includes("deeper")) {
+    return `Make ${describeObject(object)} deeper.`;
+  }
+  if (prompt.includes("shallower")) {
+    return `Make ${describeObject(object)} shallower.`;
+  }
+  return isShrinkIntent(prompt)
+    ? `Make ${describeObject(object)} smaller.`
+    : `Make ${describeObject(object)} bigger.`;
+}
+
+function isShrinkIntent(prompt: string): boolean {
+  return prompt.includes("smaller") || prompt.includes("shrink") || prompt.includes("narrower") || prompt.includes("shorter") || prompt.includes("shallower");
+}
+
 function extractColor(prompt: string): string | null {
   for (const color of COLOR_KEYWORDS) {
     if (prompt.includes(color)) {
@@ -553,6 +688,10 @@ function matchesFlooringSwap(prompt: string): boolean {
 
 function matchesReplace(prompt: string): boolean {
   return prompt.includes("replace") || prompt.includes("swap this") || prompt.includes("swap the");
+}
+
+function matchesResize(prompt: string): boolean {
+  return prompt.includes("resize") || prompt.includes("bigger") || prompt.includes("larger") || prompt.includes("smaller") || prompt.includes("shrink") || prompt.includes("wider") || prompt.includes("narrower") || prompt.includes("deeper") || prompt.includes("shallower") || prompt.includes("longer") || prompt.includes("shorter");
 }
 
 function matchesMove(prompt: string): boolean {

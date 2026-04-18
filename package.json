@@ -7,6 +7,13 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "npx --yes tsx ./scripts/dev-stack.mts",
+    "dev:api": "PORT=${PORT:-3000} npx --yes tsx ./apps/api/src/server.ts",
+    "dev:web": "PORT=${PORT:-4288} ROOMVIEW_API_BASE_URL=${ROOMVIEW_API_BASE_URL:-http://127.0.0.1:3000} npx --yes tsx ./apps/web/src/server.ts",
+    "dev:handoff": "npx --yes tsx ./scripts/dev-handoff.mts",
+    "dev:stop": "npx --yes tsx ./scripts/dev-stop.mts",
+    "phase0:render:dry": "uv run ./scripts/phase0-render-bench.py --dry-run",
+    "phase0:render": "uv run ./scripts/phase0-render-bench.py",
     "fixtures:update": "npx --yes tsx ./scripts/update-roomplan-fixtures.mts",
     "verify:fixtures": "node ./scripts/verify-fixtures.mjs",
     "verify:replays": "npx --yes tsx ./scripts/verify-roomplan-replays.mts",
@@ -18,6 +25,7 @@
     "verify:observability": "npx --yes tsx ./scripts/verify-observability.mts",
     "verify:demo": "npx --yes tsx ./scripts/verify-mvp-demo.mts",
     "verify:unit": "npx --yes tsx ./scripts/verify-unit.mts",
-    "check": "npm run verify:fixtures && npm run verify:replays && npm run verify:quick-render && npm run verify:mutation-pipeline && npm run verify:planner && npm run verify:photoreal && npm run verify:splat && npm run verify:observability && npm run verify:demo && npm run verify:unit"
+    "verify:capture-bundle": "npx --yes tsx ./scripts/import-capture-bundle.mts --synthetic",
+    "check": "npm run verify:fixtures && npm run verify:replays && npm run verify:quick-render && npm run verify:mutation-pipeline && npm run verify:planner && npm run verify:photoreal && npm run verify:splat && npm run verify:observability && npm run verify:demo && npm run verify:unit && npm run verify:capture-bundle"
   }
 }

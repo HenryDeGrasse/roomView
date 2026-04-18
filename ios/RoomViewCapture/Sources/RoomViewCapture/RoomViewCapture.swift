@@ -494,9 +494,9 @@ public enum RoomViewCaptureCompanionError: Error, Equatable, Sendable {
 
 @available(macOS 12.0, iOS 15.0, *)
 public final class RoomPlanCaptureUploader: @unchecked Sendable {
-    private let baseURL: URL
-    private let session: URLSession
-    private let configuration: CaptureBootstrapConfiguration
+    internal let baseURL: URL
+    internal let session: URLSession
+    internal let configuration: CaptureBootstrapConfiguration
 
     public init(
         baseURL: URL,

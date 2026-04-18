@@ -381,6 +381,15 @@ function renderEditorShellHtml(input: {
         filter: brightness(1.25);
         cursor: pointer;
       }
+      .layout-svg-mount svg [data-object-id]:hover {
+        cursor: grab;
+      }
+      .layout-svg-mount svg [data-transform-handle="rotate"] {
+        cursor: crosshair;
+      }
+      .layout-svg-mount svg [data-transform-handle="resize"] {
+        cursor: nwse-resize;
+      }
       .layout-svg-mount svg .rv-selected {
         stroke: #fbbf24 !important;
         stroke-width: 0.08 !important;
@@ -399,6 +408,10 @@ function renderEditorShellHtml(input: {
         margin: 4px 0 12px;
         font-size: 12px;
         color: #a7f3d0;
+      }
+      .pane-body:focus-visible {
+        outline: 2px solid #60a5fa;
+        outline-offset: -2px;
       }
       @media (max-width: 1100px) {
         main { grid-template-columns: 1fr; }
@@ -431,18 +444,15 @@ function renderEditorShellHtml(input: {
         </section>
         <section class="card">
           <h2>Chat planner</h2>
-          <p class="muted">Use layout selection as context for prompts like “this wall” or “that chair.” Live API sessions enable the AI planner plus preview/apply.</p>
+          <p class="muted">Use layout selection as context for prompts like “this wall” or “that chair.” Live API sessions auto-apply validated edits and keep Undo one click away.</p>
           <label for="chat-selection">Current selection</label>
           <div id="chat-selection" class="chat-selection">No scene loaded.</div>
           <label for="chat-input">Prompt</label>
           <textarea id="chat-input" placeholder="Try: move the desk under the window"></textarea>
           <div class="actions">
             <button id="chat-send-button" type="button">Plan from chat</button>
+            <button id="undo-button" class="secondary" type="button">Undo last change</button>
             <button id="chat-clear-button" class="secondary" type="button">Clear thread</button>
-          </div>
-          <div id="chat-action-buttons" class="actions hidden">
-            <button id="chat-accept-button" type="button">Accept preview</button>
-            <button id="chat-reject-button" class="secondary" type="button">Reject preview</button>
           </div>
           <div id="chat-options" class="list"></div>
           <div id="chat-thread" class="chat-thread"></div>
@@ -456,7 +466,7 @@ function renderEditorShellHtml(input: {
       <section class="pane">
         <header>
           <h2>Scan pane</h2>
-          <p>Read-only RoomPlan-derived shell and capture summary.</p>
+          <p>Read-only capture preview (RoomPlan shell or splat sidecar) and scan summary.</p>
         </header>
         <div id="scan-pane" class="pane-body"></div>
       </section>
@@ -479,6 +489,12 @@ function renderEditorShellHtml(input: {
     <script id="roomview-bootstrap" type="application/json">${bootstrapJson}</script>
     <script>
       const bootstrap = JSON.parse(document.getElementById("roomview-bootstrap").textContent);
+      function createClientRequestNamespace() {
+        if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+          return globalThis.crypto.randomUUID();
+        }
+        return "rv-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+      }
       const state = {
         apiBaseUrl: bootstrap.defaultApiBaseUrl,
         scene: null,
@@ -493,6 +509,11 @@ function renderEditorShellHtml(input: {
         chatMessages: [],
         pendingPlannerResponse: null,
         requestCounter: 0,
+        clientRequestNamespace: createClientRequestNamespace(),
+        sceneActionInFlight: false,
+        dragPreviewRoom: null,
+        dragPreviewSyncHandle: null,
+        dragPreviewLastSyncedAt: 0,
         viewer: null,
         viewerLoading: null,
         layoutView: null,
@@ -513,10 +534,8 @@ function renderEditorShellHtml(input: {
       const chatSelection = document.getElementById("chat-selection");
       const chatInput = document.getElementById("chat-input");
       const chatSendButton = document.getElementById("chat-send-button");
+      const undoButton = document.getElementById("undo-button");
       const chatClearButton = document.getElementById("chat-clear-button");
-      const chatActionButtons = document.getElementById("chat-action-buttons");
-      const chatAcceptButton = document.getElementById("chat-accept-button");
-      const chatRejectButton = document.getElementById("chat-reject-button");
       const chatOptions = document.getElementById("chat-options");
       const chatThread = document.getElementById("chat-thread");
 
@@ -555,6 +574,7 @@ function renderEditorShellHtml(input: {
 
       fixtureButton.addEventListener("click", async () => {
         try {
+          stopDragPreview({ restoreCanonical: false });
           setStatus("Loading development fixture…");
           const response = await fetch("/dev/fixtures/" + encodeURIComponent(fixtureSelect.value));
           const payload = await response.json();
@@ -564,7 +584,7 @@ function renderEditorShellHtml(input: {
           state.scene = payload.scene;
           state.sceneId = payload.scene.head.scene_id;
           state.sessionId = null;
-          state.selectionId = firstSelectableEntityId(state.scene);
+          state.selectionId = normalizeSelectionId(state.scene, state.selectionId);
           state.activeBookmarkId = state.scene.bookmarks[0]?.bookmark_id || null;
           state.loadedFrom = "fixture";
           state.quickRender = await loadFixtureQuickRender(fixtureSelect.value);
@@ -577,14 +597,100 @@ function renderEditorShellHtml(input: {
         }
       });
 
+      layoutPane.tabIndex = 0;
+      layoutPane.addEventListener("pointerdown", () => {
+        layoutPane.focus({ preventScroll: true });
+      });
+
       layoutPane.addEventListener("click", (event) => {
+        const actionButton = event.target instanceof HTMLElement ? event.target.closest("button[data-layout-action]") : null;
+        if (actionButton) {
+          const action = actionButton.getAttribute("data-layout-action");
+          if (action === "size-up") {
+            void resizeSelectedObject(1.15);
+            return;
+          }
+          if (action === "size-down") {
+            void resizeSelectedObject(0.85);
+            return;
+          }
+          if (action === "rotate-ccw") {
+            void rotateSelectedObject(-15);
+            return;
+          }
+          if (action === "rotate-cw") {
+            void rotateSelectedObject(15);
+            return;
+          }
+        }
         const button = event.target instanceof HTMLElement ? event.target.closest("button[data-entity-id]") : null;
         if (!button) {
           return;
         }
-        state.selectionId = button.getAttribute("data-entity-id");
-        renderScene();
+        setSelection(button.getAttribute("data-entity-id"));
       });
+
+      layoutPane.addEventListener("keydown", (event) => {
+        if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isEditableTextTarget(event.target)) {
+          return;
+        }
+        const step = event.shiftKey ? 0.25 : 0.1;
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          void moveSelectedObjectBy({ x: 0, y: step, z: 0 });
+          return;
+        }
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          void moveSelectedObjectBy({ x: 0, y: -step, z: 0 });
+          return;
+        }
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          void moveSelectedObjectBy({ x: -step, y: 0, z: 0 });
+          return;
+        }
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          void moveSelectedObjectBy({ x: step, y: 0, z: 0 });
+          return;
+        }
+        if (event.key === "q" || event.key === "Q" || event.key === "[") {
+          event.preventDefault();
+          void rotateSelectedObject(-15);
+          return;
+        }
+        if (event.key === "e" || event.key === "E" || event.key === "]") {
+          event.preventDefault();
+          void rotateSelectedObject(15);
+          return;
+        }
+        if (event.key === "+" || event.key === "=") {
+          event.preventDefault();
+          void resizeSelectedObject(1.15);
+          return;
+        }
+        if (event.key === "-" || event.key === "_") {
+          event.preventDefault();
+          void resizeSelectedObject(0.85);
+        }
+      });
+
+      layoutPane.addEventListener("wheel", (event) => {
+        if (!event.shiftKey || event.metaKey || event.ctrlKey || event.altKey || !state.sessionId) {
+          return;
+        }
+        const targetObject = event.target instanceof Element ? event.target.closest("[data-object-id]") : null;
+        const objectId = targetObject ? targetObject.getAttribute("data-object-id") : null;
+        if (!objectId) {
+          return;
+        }
+        if (state.selectionId !== objectId) {
+          setSelection(objectId);
+        }
+        event.preventDefault();
+        void rotateSelectedObject(event.deltaY < 0 ? 15 : -15);
+      }, { passive: false });
 
       renderPane.addEventListener("click", (event) => {
         const actionButton = event.target instanceof HTMLElement ? event.target.closest("button[data-render-action]") : null;
@@ -619,16 +725,8 @@ function renderEditorShellHtml(input: {
         renderChatPanel();
       });
 
-      chatAcceptButton.addEventListener("click", () => {
-        void acceptPendingPlannerResponse();
-      });
-
-      chatRejectButton.addEventListener("click", () => {
-        if (state.pendingPlannerResponse) {
-          appendChatMessage("assistant", "Preview rejected", "The pending preview was discarded.", "error");
-        }
-        state.pendingPlannerResponse = null;
-        renderChatPanel();
+      undoButton.addEventListener("click", () => {
+        void undoLastChange("toolbar");
       });
 
       chatOptions.addEventListener("click", (event) => {
@@ -658,9 +756,10 @@ function renderEditorShellHtml(input: {
       }
 
       async function loadLiveScene() {
+        stopDragPreview({ restoreCanonical: false });
         const scene = await fetchLiveScene();
         state.scene = scene;
-        state.selectionId = firstSelectableEntityId(state.scene);
+        state.selectionId = normalizeSelectionId(state.scene, state.selectionId);
         state.activeBookmarkId = state.scene.bookmarks.some((bookmark) => bookmark.bookmark_id === state.activeBookmarkId)
           ? state.activeBookmarkId
           : state.scene.bookmarks[0]?.bookmark_id || null;
@@ -686,11 +785,12 @@ function renderEditorShellHtml(input: {
         if (!state.sceneId || !state.sessionId) {
           return;
         }
+        stopDragPreview({ restoreCanonical: false });
         const selectionId = state.selectionId;
         const activeBookmarkId = state.activeBookmarkId;
         const scene = await fetchLiveScene();
         state.scene = scene;
-        state.selectionId = findSelectedEntity(scene, selectionId) ? selectionId : firstSelectableEntityId(scene);
+        state.selectionId = normalizeSelectionId(scene, selectionId);
         state.activeBookmarkId = scene.bookmarks.some((bookmark) => bookmark.bookmark_id === activeBookmarkId)
           ? activeBookmarkId
           : scene.bookmarks[0]?.bookmark_id || null;
@@ -763,6 +863,624 @@ function renderEditorShellHtml(input: {
         return payload;
       }
 
+      function upsertGalleryEntry(entry) {
+        if (!state.scene || !entry || !entry.entry_id) return;
+        const existingIndex = state.scene.photoreal_gallery.findIndex((candidate) => candidate.entry_id === entry.entry_id);
+        if (existingIndex >= 0) {
+          state.scene.photoreal_gallery[existingIndex] = entry;
+        } else {
+          state.scene.photoreal_gallery = [...state.scene.photoreal_gallery, entry];
+        }
+      }
+
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      async function waitForPhotorealJob(jobId, options) {
+        const timeoutMs = options && options.timeoutMs ? options.timeoutMs : 120000;
+        const intervalMs = options && options.intervalMs ? options.intervalMs : 1500;
+        const startedAt = Date.now();
+        while (true) {
+          const jobResponse = await getSceneJson('/jobs/' + encodeURIComponent(jobId));
+          if (jobResponse.photoreal_entry) {
+            upsertGalleryEntry(jobResponse.photoreal_entry);
+          }
+          if (jobResponse.job.status === 'ready' || jobResponse.job.status === 'failed') {
+            return jobResponse;
+          }
+          if ((Date.now() - startedAt) >= timeoutMs) {
+            throw new Error('Timed out waiting for photoreal job ' + jobId + '.');
+          }
+          await sleep(intervalMs);
+        }
+      }
+
+      function resolveGalleryImageUrl(providerUri) {
+        if (typeof providerUri !== 'string' || providerUri.length === 0) return null;
+        if (providerUri.startsWith('data:')) return providerUri;
+        if (providerUri.startsWith('/')) {
+          return new URL(providerUri, state.apiBaseUrl).toString();
+        }
+        if (providerUri.startsWith('http://') || providerUri.startsWith('https://')) {
+          return providerUri;
+        }
+        return null;
+      }
+
+      function cloneValue(value) {
+        if (typeof structuredClone === "function") {
+          return structuredClone(value);
+        }
+        return JSON.parse(JSON.stringify(value));
+      }
+
+      function roundCoord(value) {
+        return Math.round(value * 1000) / 1000;
+      }
+
+      function nextClientRequestKey(prefix) {
+        return prefix + "-" + state.clientRequestNamespace + "-" + (++state.requestCounter);
+      }
+
+      function createPreviewRequestEnvelope(prefix) {
+        const key = nextClientRequestKey(prefix);
+        return {
+          request_id: key,
+          idempotency_key: key,
+        };
+      }
+
+      function isEditableTextTarget(target) {
+        if (!(target instanceof HTMLElement)) {
+          return false;
+        }
+        if (target.isContentEditable) {
+          return true;
+        }
+        const tagName = target.tagName;
+        return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
+      }
+
+      function canResizeLayoutObject(selected) {
+        return Boolean(selected && ["bed", "nightstand", "desk", "chair", "table", "dresser", "bookshelf", "sofa", "rug", "storage"].includes(selected.class));
+      }
+
+      function setSelection(selectionId) {
+        state.selectionId = selectionId || null;
+        if (state.layoutView) {
+          try {
+            state.layoutView.setSelection(state.selectionId);
+          } catch (err) {
+            console.error("layoutView.setSelection failed", err);
+          }
+        }
+        if (state.viewer) {
+          try {
+            state.viewer.setSelection(state.selectionId);
+          } catch (err) {
+            console.error("viewer.setSelection failed", err);
+          }
+        }
+        if (state.scene && document.getElementById("layout-info-mount")) {
+          document.getElementById("layout-info-mount").innerHTML = renderLayoutPaneInfo(state.scene, state.selectionId, Boolean(state.sessionId));
+        }
+        if (state.scene && document.getElementById("render-info-mount")) {
+          document.getElementById("render-info-mount").innerHTML = renderRenderPaneInfo(state.scene, state.quickRender, state.selectionId, state.loadedFrom);
+        }
+        renderChatPanel();
+      }
+
+      function syncViewerRoom(room) {
+        if (!state.viewer || !room || !state.scene) {
+          return;
+        }
+        state.viewer.setRoom(room, {
+          editing_asset_refs: state.scene.snapshot.editing_asset_refs || [],
+        });
+        state.viewer.setSelection(state.selectionId);
+      }
+
+      function stopDragPreview(options = {}) {
+        if (state.dragPreviewSyncHandle !== null) {
+          clearTimeout(state.dragPreviewSyncHandle);
+          state.dragPreviewSyncHandle = null;
+        }
+        state.dragPreviewLastSyncedAt = 0;
+        state.dragPreviewRoom = null;
+        if (options.restoreCanonical) {
+          if (state.layoutView && typeof state.layoutView.clearDragPreview === "function") {
+            state.layoutView.clearDragPreview();
+          }
+          if (state.scene) {
+            try {
+              syncViewerRoom(state.scene.snapshot.state.room);
+            } catch (err) {
+              console.error("viewer canonical restore failed", err);
+            }
+          }
+        }
+      }
+
+      function syncDragPreviewNow() {
+        if (state.dragPreviewSyncHandle !== null) {
+          clearTimeout(state.dragPreviewSyncHandle);
+          state.dragPreviewSyncHandle = null;
+        }
+        if (!state.dragPreviewRoom) {
+          return;
+        }
+        state.dragPreviewLastSyncedAt = Date.now();
+        try {
+          syncViewerRoom(state.dragPreviewRoom);
+        } catch (err) {
+          console.error("drag preview sync failed", err);
+        }
+      }
+
+      function scheduleDragPreviewSync(force = false) {
+        if (!state.dragPreviewRoom || !state.viewer) {
+          return;
+        }
+        const elapsed = Date.now() - state.dragPreviewLastSyncedAt;
+        if (force || elapsed >= 50) {
+          syncDragPreviewNow();
+          return;
+        }
+        if (state.dragPreviewSyncHandle !== null) {
+          return;
+        }
+        state.dragPreviewSyncHandle = setTimeout(() => {
+          syncDragPreviewNow();
+        }, Math.max(0, 50 - elapsed));
+      }
+
+      function translateDraftObject(object, delta) {
+        object.pose.position = {
+          x: roundCoord(object.pose.position.x + delta.x),
+          y: roundCoord(object.pose.position.y + delta.y),
+          z: roundCoord(object.pose.position.z + delta.z),
+        };
+        object.obb.center = {
+          x: roundCoord(object.obb.center.x + delta.x),
+          y: roundCoord(object.obb.center.y + delta.y),
+          z: roundCoord(object.obb.center.z + delta.z),
+        };
+      }
+
+      function collectMoveWithParentDescendantIds(objects, parentId, into = []) {
+        for (const candidate of objects || []) {
+          if (candidate.parent_id !== parentId || candidate.child_movement_policy !== "move_with_parent") {
+            continue;
+          }
+          into.push(candidate.object_id);
+          collectMoveWithParentDescendantIds(objects, candidate.object_id, into);
+        }
+        return into;
+      }
+
+      function buildDraggedRoom(scene, detail) {
+        const room = cloneValue(scene.snapshot.state.room);
+        const object = room.objects.find((candidate) => candidate.object_id === detail.objectId);
+        if (!object) {
+          return null;
+        }
+        const delta = {
+          x: roundCoord(detail.target_position.x - object.pose.position.x),
+          y: roundCoord(detail.target_position.y - object.pose.position.y),
+          z: roundCoord(detail.target_position.z - object.pose.position.z),
+        };
+        translateDraftObject(object, delta);
+        if (detail.include_children) {
+          const descendantIds = collectMoveWithParentDescendantIds(room.objects, detail.objectId);
+          for (const childId of descendantIds) {
+            const child = room.objects.find((candidate) => candidate.object_id === childId);
+            if (child) {
+              translateDraftObject(child, delta);
+            }
+          }
+        }
+        return room;
+      }
+
+      function updateDragPreview(detail, force = false) {
+        if (!state.scene || !detail?.moved) {
+          return;
+        }
+        const room = buildDraggedRoom(state.scene, detail);
+        if (!room) {
+          return;
+        }
+        state.dragPreviewRoom = room;
+        scheduleDragPreviewSync(force);
+      }
+
+      async function undoLastChange(source = "manual") {
+        if (!state.scene || !state.sceneId) {
+          return;
+        }
+        if (!state.sessionId) {
+          setStatus("Undo requires a redeemed live scene session.", true);
+          return;
+        }
+        if (state.sceneActionInFlight) {
+          return;
+        }
+        state.sceneActionInFlight = true;
+        renderChatPanel();
+        try {
+          const undoResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/undo", {
+            expected_scene_version: state.scene.head.current_scene_version,
+            idempotency_key: nextClientRequestKey(source + "-undo"),
+          });
+          stopDragPreview({ restoreCanonical: false });
+          state.scene = undoResponse.scene;
+          state.quickRender = await loadLiveQuickRender();
+          appendChatMessage("assistant", "Undo applied", "Restored the last undoable change in scene version " + undoResponse.applied_scene_version + ".", "success");
+          setStatus("Undo created scene version " + undoResponse.applied_scene_version + ".");
+          renderScene();
+        } catch (error) {
+          appendChatMessage("assistant", "Undo failed", (error.reasonCode ? error.reasonCode + ": " : "") + (error.message || "Request failed."), "error");
+          setStatus(error.message || "Undo failed.", true);
+          renderChatPanel();
+        } finally {
+          state.sceneActionInFlight = false;
+          renderChatPanel();
+        }
+      }
+
+      function getSelectedLayoutObject() {
+        if (!state.scene || !state.selectionId) {
+          return null;
+        }
+        const selected = findSelectedEntity(state.scene, state.selectionId);
+        if (!selected || !selected.object_id || !selected.pose || !selected.obb) {
+          return null;
+        }
+        return selected;
+      }
+
+      async function moveSelectedObjectBy(delta) {
+        if (!state.scene || !state.sceneId || !state.sessionId) {
+          return;
+        }
+        if (state.sceneActionInFlight) {
+          return;
+        }
+        const selected = getSelectedLayoutObject();
+        if (!selected) {
+          return;
+        }
+        const includeChildren = collectMoveWithParentDescendantIds(state.scene.snapshot.state.room.objects, selected.object_id).length > 0;
+        await commitDraggedMove({
+          objectId: selected.object_id,
+          target_position: {
+            x: roundCoord(selected.pose.position.x + delta.x),
+            y: roundCoord(selected.pose.position.y + delta.y),
+            z: roundCoord(selected.pose.position.z + (delta.z || 0)),
+          },
+          include_children: includeChildren,
+          moved: true,
+          cancelled: false,
+        });
+      }
+
+      async function resizeSelectedObject(scaleFactor) {
+        if (!state.scene || !state.sceneId || !state.sessionId) {
+          return;
+        }
+        if (state.sceneActionInFlight) {
+          return;
+        }
+        const selected = getSelectedLayoutObject();
+        if (!selected) {
+          return;
+        }
+        if (!canResizeLayoutObject(selected)) {
+          setStatus("That object type cannot be resized yet.", true);
+          return;
+        }
+        state.sceneActionInFlight = true;
+        renderChatPanel();
+        try {
+          const previewEnvelope = createPreviewRequestEnvelope("layout-resize-preview");
+          const previewResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/preview", {
+            request_id: previewEnvelope.request_id,
+            idempotency_key: previewEnvelope.idempotency_key,
+            expected_scene_version: state.scene.head.current_scene_version,
+            ops: [{
+              op: "resize_object",
+              object_id: selected.object_id,
+              size_x: roundCoord(selected.obb.size_x * scaleFactor),
+              size_y: roundCoord(selected.obb.size_y * scaleFactor),
+            }],
+            explanation: scaleFactor >= 1 ? "Make object larger from layout pane." : "Make object smaller from layout pane.",
+          });
+          const applyResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/apply", {
+            preview_id: previewResponse.preview.preview_id,
+            apply_token: previewResponse.preview.apply_token,
+            canonical_plan_hash: previewResponse.preview.canonical_plan_hash,
+            expected_scene_version: state.scene.head.current_scene_version,
+            idempotency_key: nextClientRequestKey("layout-resize-apply"),
+          });
+          state.scene = applyResponse.scene;
+          state.quickRender = await loadLiveQuickRender();
+          appendChatMessage("assistant", "Layout resize applied", (scaleFactor >= 1 ? "Resized up " : "Resized down ") + selected.object_id + " and committed scene version " + applyResponse.applied_scene_version + ".", "success");
+          setStatus("Resized object in the layout pane. Use Undo last change to revert it.");
+          renderScene();
+        } catch (error) {
+          appendChatMessage("assistant", "Layout resize failed", (error.reasonCode ? error.reasonCode + ": " : "") + (error.message || "Request failed."), "error");
+          setStatus(error.message || "Resize failed.", true);
+          renderChatPanel();
+        } finally {
+          state.sceneActionInFlight = false;
+          renderChatPanel();
+        }
+      }
+
+      async function commitLayoutTransform(detail) {
+        if (!detail || !detail.action) {
+          return;
+        }
+        if (detail.action === "move") {
+          await commitDraggedMove(detail);
+          return;
+        }
+        if (detail.action === "rotate") {
+          await commitRotatedHandle(detail);
+          return;
+        }
+        if (detail.action === "resize") {
+          await commitResizedHandle(detail);
+        }
+      }
+
+      async function commitRotatedHandle(detail) {
+        if (!detail.moved) {
+          stopDragPreview({ restoreCanonical: true });
+          return;
+        }
+        if (!state.scene || !state.sceneId || !state.sessionId) {
+          stopDragPreview({ restoreCanonical: true });
+          return;
+        }
+        if (state.sceneActionInFlight) {
+          stopDragPreview({ restoreCanonical: true });
+          setStatus("Another scene action is already in flight.", true);
+          return;
+        }
+        state.sceneActionInFlight = true;
+        renderChatPanel();
+        try {
+          const previewEnvelope = createPreviewRequestEnvelope("layout-rotate-preview");
+          const previewResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/preview", {
+            request_id: previewEnvelope.request_id,
+            idempotency_key: previewEnvelope.idempotency_key,
+            expected_scene_version: state.scene.head.current_scene_version,
+            ops: [{
+              op: "rotate_object",
+              object_id: detail.objectId,
+              yaw_degrees: roundCoord(detail.yaw_degrees),
+            }],
+            explanation: "Rotate object from layout handle.",
+          });
+          const applyResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/apply", {
+            preview_id: previewResponse.preview.preview_id,
+            apply_token: previewResponse.preview.apply_token,
+            canonical_plan_hash: previewResponse.preview.canonical_plan_hash,
+            expected_scene_version: state.scene.head.current_scene_version,
+            idempotency_key: nextClientRequestKey("layout-rotate-apply"),
+          });
+          state.scene = applyResponse.scene;
+          state.quickRender = await loadLiveQuickRender();
+          appendChatMessage("assistant", "Layout rotate applied", "Rotated " + detail.objectId + " and committed scene version " + applyResponse.applied_scene_version + ".", "success");
+          setStatus("Rotated object in the layout pane. Use Undo last change to revert it.");
+          renderScene();
+        } catch (error) {
+          stopDragPreview({ restoreCanonical: true });
+          appendChatMessage("assistant", "Layout rotate failed", (error.reasonCode ? error.reasonCode + ": " : "") + (error.message || "Request failed."), "error");
+          setStatus(error.message || "Rotation failed.", true);
+          renderChatPanel();
+        } finally {
+          state.sceneActionInFlight = false;
+          renderChatPanel();
+        }
+      }
+
+      async function commitResizedHandle(detail) {
+        if (!detail.moved) {
+          stopDragPreview({ restoreCanonical: true });
+          return;
+        }
+        if (!state.scene || !state.sceneId || !state.sessionId) {
+          stopDragPreview({ restoreCanonical: true });
+          return;
+        }
+        if (state.sceneActionInFlight) {
+          stopDragPreview({ restoreCanonical: true });
+          setStatus("Another scene action is already in flight.", true);
+          return;
+        }
+        state.sceneActionInFlight = true;
+        renderChatPanel();
+        try {
+          const previewEnvelope = createPreviewRequestEnvelope("layout-resize-preview");
+          const previewResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/preview", {
+            request_id: previewEnvelope.request_id,
+            idempotency_key: previewEnvelope.idempotency_key,
+            expected_scene_version: state.scene.head.current_scene_version,
+            ops: [{
+              op: "resize_object",
+              object_id: detail.objectId,
+              size_x: roundCoord(detail.size_x),
+              size_y: roundCoord(detail.size_y),
+            }],
+            explanation: "Resize object from layout handle.",
+          });
+          const applyResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/apply", {
+            preview_id: previewResponse.preview.preview_id,
+            apply_token: previewResponse.preview.apply_token,
+            canonical_plan_hash: previewResponse.preview.canonical_plan_hash,
+            expected_scene_version: state.scene.head.current_scene_version,
+            idempotency_key: nextClientRequestKey("layout-resize-apply"),
+          });
+          state.scene = applyResponse.scene;
+          state.quickRender = await loadLiveQuickRender();
+          appendChatMessage("assistant", "Layout resize applied", "Resized " + detail.objectId + " and committed scene version " + applyResponse.applied_scene_version + ".", "success");
+          setStatus("Resized object in the layout pane. Use Undo last change to revert it.");
+          renderScene();
+        } catch (error) {
+          stopDragPreview({ restoreCanonical: true });
+          appendChatMessage("assistant", "Layout resize failed", (error.reasonCode ? error.reasonCode + ": " : "") + (error.message || "Request failed."), "error");
+          setStatus(error.message || "Resize failed.", true);
+          renderChatPanel();
+        } finally {
+          state.sceneActionInFlight = false;
+          renderChatPanel();
+        }
+      }
+
+      async function commitDraggedMove(detail) {
+        if (!detail || !detail.objectId) {
+          return;
+        }
+        if (!detail.moved) {
+          stopDragPreview({ restoreCanonical: true });
+          return;
+        }
+        if (!state.scene || !state.sceneId) {
+          stopDragPreview({ restoreCanonical: true });
+          return;
+        }
+        if (!state.sessionId) {
+          stopDragPreview({ restoreCanonical: true });
+          setStatus("Drag-to-move requires a redeemed live scene session.", true);
+          return;
+        }
+        if (state.sceneActionInFlight) {
+          stopDragPreview({ restoreCanonical: true });
+          setStatus("Another scene action is already in flight.", true);
+          return;
+        }
+        state.sceneActionInFlight = true;
+        renderChatPanel();
+        try {
+          updateDragPreview(detail, true);
+          const previewEnvelope = createPreviewRequestEnvelope("layout-drag-preview");
+          const previewResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/preview", {
+            request_id: previewEnvelope.request_id,
+            idempotency_key: previewEnvelope.idempotency_key,
+            expected_scene_version: state.scene.head.current_scene_version,
+            ops: [{
+              op: "move_object",
+              object_id: detail.objectId,
+              target_position: detail.target_position,
+              include_children: detail.include_children === true,
+            }],
+            explanation: "Move object from layout drag.",
+          });
+          const applyResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/apply", {
+            preview_id: previewResponse.preview.preview_id,
+            apply_token: previewResponse.preview.apply_token,
+            canonical_plan_hash: previewResponse.preview.canonical_plan_hash,
+            expected_scene_version: state.scene.head.current_scene_version,
+            idempotency_key: nextClientRequestKey("layout-drag-apply"),
+          });
+          stopDragPreview({ restoreCanonical: false });
+          state.scene = applyResponse.scene;
+          state.quickRender = await loadLiveQuickRender();
+          appendChatMessage("assistant", "Layout move applied", "Moved " + detail.objectId + " and committed scene version " + applyResponse.applied_scene_version + ".", "success");
+          setStatus("Moved object in the layout pane. Use Undo last change to revert it.");
+          renderScene();
+        } catch (error) {
+          stopDragPreview({ restoreCanonical: true });
+          appendChatMessage("assistant", "Layout move failed", (error.reasonCode ? error.reasonCode + ": " : "") + (error.message || "Request failed."), "error");
+          setStatus(error.message || "Move failed.", true);
+          renderChatPanel();
+        } finally {
+          state.sceneActionInFlight = false;
+          renderChatPanel();
+        }
+      }
+
+      async function rotateSelectedObject(deltaDegrees) {
+        if (!state.scene || !state.sceneId || !state.selectionId) {
+          return;
+        }
+        if (!state.sessionId) {
+          setStatus("Rotation requires a redeemed live scene session.", true);
+          return;
+        }
+        const selected = getSelectedLayoutObject();
+        if (!selected) {
+          setStatus("Select an object in the layout pane before rotating it.", true);
+          return;
+        }
+        if (state.sceneActionInFlight) {
+          setStatus("Another scene action is already in flight.", true);
+          return;
+        }
+        state.sceneActionInFlight = true;
+        renderChatPanel();
+        try {
+          const previewEnvelope = createPreviewRequestEnvelope("layout-rotate-preview");
+          const previewResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/preview", {
+            request_id: previewEnvelope.request_id,
+            idempotency_key: previewEnvelope.idempotency_key,
+            expected_scene_version: state.scene.head.current_scene_version,
+            ops: [{
+              op: "rotate_object",
+              object_id: selected.object_id,
+              yaw_degrees: roundCoord(selected.pose.yaw_degrees + deltaDegrees),
+            }],
+            explanation: deltaDegrees > 0 ? "Rotate object clockwise from layout pane." : "Rotate object counter-clockwise from layout pane.",
+          });
+          const applyResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/apply", {
+            preview_id: previewResponse.preview.preview_id,
+            apply_token: previewResponse.preview.apply_token,
+            canonical_plan_hash: previewResponse.preview.canonical_plan_hash,
+            expected_scene_version: state.scene.head.current_scene_version,
+            idempotency_key: nextClientRequestKey("layout-rotate-apply"),
+          });
+          state.scene = applyResponse.scene;
+          state.quickRender = await loadLiveQuickRender();
+          appendChatMessage("assistant", "Layout rotate applied", "Rotated " + selected.object_id + " and committed scene version " + applyResponse.applied_scene_version + ".", "success");
+          setStatus("Rotated object in the layout pane. Use Undo last change to revert it.");
+          renderScene();
+        } catch (error) {
+          appendChatMessage("assistant", "Layout rotate failed", (error.reasonCode ? error.reasonCode + ": " : "") + (error.message || "Request failed."), "error");
+          setStatus(error.message || "Rotation failed.", true);
+          renderChatPanel();
+        } finally {
+          state.sceneActionInFlight = false;
+          renderChatPanel();
+        }
+      }
+
+      function resolveCurrentRenderCamera() {
+        const liveView = state.viewer && typeof state.viewer.getCurrentCameraView === 'function'
+          ? state.viewer.getCurrentCameraView()
+          : null;
+        if (liveView && liveView.camera_pose && typeof liveView.fov === 'number') {
+          return {
+            bookmark_id: null,
+            camera_pose: liveView.camera_pose,
+            fov: liveView.fov,
+            source: 'viewer',
+          };
+        }
+        const bookmark = resolveActiveBookmark(state.scene);
+        if (!bookmark) {
+          return null;
+        }
+        return {
+          bookmark_id: bookmark.bookmark_id,
+          camera_pose: bookmark.camera_pose,
+          fov: bookmark.fov,
+          source: 'bookmark',
+        };
+      }
+
       async function saveActiveBookmark() {
         if (!state.scene || !state.sceneId) {
           return;
@@ -772,19 +1490,20 @@ function renderEditorShellHtml(input: {
           return;
         }
         const sourceBookmark = resolveActiveBookmark(state.scene);
-        if (!sourceBookmark) {
+        const currentCamera = resolveCurrentRenderCamera();
+        if (!sourceBookmark && !currentCamera) {
           setStatus("No bookmark camera is available to save yet.", true);
           return;
         }
-        const name = window.prompt("Bookmark name", sourceBookmark.name + " copy");
+        const name = window.prompt("Bookmark name", (sourceBookmark?.name || 'Current camera') + " copy");
         if (!name) {
           return;
         }
         try {
           const bookmarkResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/bookmarks", {
             name,
-            camera_pose: sourceBookmark.camera_pose,
-            fov: sourceBookmark.fov,
+            camera_pose: currentCamera ? currentCamera.camera_pose : sourceBookmark.camera_pose,
+            fov: currentCamera ? currentCamera.fov : sourceBookmark.fov,
           });
           state.scene = bookmarkResponse.scene;
           state.activeBookmarkId = bookmarkResponse.bookmark.bookmark_id;
@@ -805,27 +1524,32 @@ function renderEditorShellHtml(input: {
           return;
         }
         const styles = ['modern', 'cozy_warm', 'minimal_scandi', 'rustic_earthy'];
-        const bookmark = resolveActiveBookmark(state.scene);
+        const cameraView = resolveCurrentRenderCamera();
         const conditioning = safeCaptureConditioning();
         setStatus('Generating ' + styles.length + ' style variants in parallel...');
         const results = await Promise.allSettled(styles.map(async (style) => {
-          const key = 'render-photoreal-style-' + style + '-' + (++state.requestCounter);
-          return postSceneJson('/scenes/' + encodeURIComponent(state.sceneId) + '/photoreal', {
+          const key = nextClientRequestKey('render-photoreal-style-' + style);
+          const queued = await postSceneJson('/scenes/' + encodeURIComponent(state.sceneId) + '/photoreal', {
             scene_snapshot_id: state.scene.snapshot.snapshot_id,
-            bookmark_id: bookmark ? bookmark.bookmark_id : undefined,
+            bookmark_id: cameraView && cameraView.source === 'bookmark' ? cameraView.bookmark_id : undefined,
+            camera_pose: cameraView ? cameraView.camera_pose : undefined,
+            fov: cameraView ? cameraView.fov : undefined,
             prompt_modifiers: [style],
             idempotency_key: key,
             conditioning,
           });
+          if (queued.photoreal_entry) {
+            upsertGalleryEntry(queued.photoreal_entry);
+          }
+          return waitForPhotorealJob(queued.job_id);
         }));
         let added = 0;
         for (const r of results) {
           if (r.status === 'fulfilled' && r.value?.photoreal_entry) {
             const entry = r.value.photoreal_entry;
-            if (!state.scene.photoreal_gallery.some((e) => e.entry_id === entry.entry_id)) {
-              state.scene.photoreal_gallery = [...state.scene.photoreal_gallery, entry];
-              added += 1;
-            }
+            const existed = state.scene.photoreal_gallery.some((e) => e.entry_id === entry.entry_id);
+            upsertGalleryEntry(entry);
+            if (!existed) added += 1;
           }
         }
         const failed = results.filter((r) => r.status === 'rejected').length;
@@ -848,27 +1572,37 @@ function renderEditorShellHtml(input: {
           return;
         }
         try {
-          const bookmark = resolveActiveBookmark(state.scene);
+          const cameraView = resolveCurrentRenderCamera();
           const conditioning = safeCaptureConditioning();
           const photorealResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/photoreal", {
             scene_snapshot_id: state.scene.snapshot.snapshot_id,
-            bookmark_id: bookmark ? bookmark.bookmark_id : undefined,
+            bookmark_id: cameraView && cameraView.source === 'bookmark' ? cameraView.bookmark_id : undefined,
+            camera_pose: cameraView ? cameraView.camera_pose : undefined,
+            fov: cameraView ? cameraView.fov : undefined,
             prompt_modifiers: [],
-            idempotency_key: "render-photoreal-" + (++state.requestCounter),
+            idempotency_key: nextClientRequestKey("render-photoreal"),
             conditioning,
           });
-          const jobResponse = await getSceneJson("/jobs/" + encodeURIComponent(photorealResponse.job_id));
+          if (photorealResponse.photoreal_entry) {
+            upsertGalleryEntry(photorealResponse.photoreal_entry);
+          }
+          renderScene();
+          const jobResponse = await waitForPhotorealJob(photorealResponse.job_id);
           state.lastPhotorealJobId = photorealResponse.job_id;
-          if (!state.scene.photoreal_gallery.some((entry) => entry.entry_id === photorealResponse.photoreal_entry.entry_id)) {
-            state.scene.photoreal_gallery = [...state.scene.photoreal_gallery, photorealResponse.photoreal_entry];
+          if (jobResponse.photoreal_entry) {
+            upsertGalleryEntry(jobResponse.photoreal_entry);
           }
           appendChatMessage(
             "assistant",
-            "Photoreal ready",
+            jobResponse.job.status === 'ready' ? 'Photoreal ready' : 'Photoreal failed',
             "Generated gallery asset " + photorealResponse.photoreal_entry.entry_id + " for scene version " + photorealResponse.photoreal_entry.scene_version + ". Job status: " + jobResponse.job.status + ".",
-            "success"
+            jobResponse.job.status === 'ready' ? 'success' : 'error'
           );
-          setStatus("Photoreal gallery updated for immutable scene version " + photorealResponse.photoreal_entry.scene_version + ".");
+          setStatus(
+            jobResponse.job.status === 'ready'
+              ? ("Photoreal gallery updated for immutable scene version " + photorealResponse.photoreal_entry.scene_version + ".")
+              : 'Photoreal generation failed.'
+          );
           renderScene();
         } catch (error) {
           appendChatMessage("assistant", "Photoreal failed", (error.reasonCode ? error.reasonCode + ": " : "") + (error.message || "Request failed."), "error");
@@ -881,6 +1615,10 @@ function renderEditorShellHtml(input: {
         const prompt = rawPrompt.trim();
         if (!prompt) {
           setStatus("Type a prompt before planning from chat.", true);
+          return;
+        }
+        if (state.sceneActionInFlight) {
+          setStatus("Wait for the current scene action to finish before sending another prompt.", true);
           return;
         }
         appendChatMessage("user", "You", prompt);
@@ -897,9 +1635,10 @@ function renderEditorShellHtml(input: {
           return;
         }
         try {
+          const requestEnvelope = createPreviewRequestEnvelope("chat-request");
           const request = {
-            request_id: "chat-request-" + (++state.requestCounter),
-            idempotency_key: "chat-request-" + state.requestCounter,
+            request_id: requestEnvelope.request_id,
+            idempotency_key: requestEnvelope.idempotency_key,
             scene_id: state.sceneId,
             expected_scene_version: state.scene.head.current_scene_version,
             selection_context: {
@@ -909,32 +1648,32 @@ function renderEditorShellHtml(input: {
             conversation_history: buildConversationHistory(),
           };
           const response = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/plan", request);
-          handlePlannerResponse(response);
+          await handlePlannerResponse(response);
         } catch (error) {
           appendChatMessage("assistant", "Planner", error.message || "Failed to create a planner response.", "error");
         }
         renderChatPanel();
       }
 
-      function handlePlannerResponse(response) {
-        state.pendingPlannerResponse = response;
+      async function handlePlannerResponse(response) {
         if (response.response_kind === "operation_plan_preview") {
-          appendChatMessage(
-            "assistant",
-            "Preview ready",
-            response.preview.explanation + "\\n\\n" + JSON.stringify(response.preview.ops, null, 2),
-            "success"
-          );
+          state.pendingPlannerResponse = null;
+          setStatus("Applying validated edit…");
+          await applyPlannerPreview(response.preview);
           return;
         }
         if (response.response_kind === "command_request") {
-          appendChatMessage("assistant", "Command ready", response.command.explanation, "success");
+          state.pendingPlannerResponse = null;
+          setStatus("Running planner command…");
+          await executePlannerCommand(response.command);
           return;
         }
         if (response.response_kind === "clarification_request") {
+          state.pendingPlannerResponse = response;
           appendChatMessage("assistant", "Need clarification", response.prompt);
           return;
         }
+        state.pendingPlannerResponse = null;
         appendChatMessage(
           "assistant",
           "Planner rejection",
@@ -943,67 +1682,45 @@ function renderEditorShellHtml(input: {
         );
       }
 
-      async function acceptPendingPlannerResponse() {
-        if (!state.pendingPlannerResponse || !state.scene || !state.sceneId) {
+      async function applyPlannerPreview(preview) {
+        if (!preview || !state.scene || !state.sceneId) {
           return;
         }
-        try {
-          if (state.pendingPlannerResponse.response_kind === "operation_plan_preview") {
-            const preview = state.pendingPlannerResponse.preview;
-            const applyResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/apply", {
-              preview_id: preview.preview_id,
-              apply_token: preview.apply_token,
-              canonical_plan_hash: preview.canonical_plan_hash,
-              expected_scene_version: state.scene.head.current_scene_version,
-              idempotency_key: "chat-apply-" + (++state.requestCounter),
-            });
-            state.scene = applyResponse.scene;
-            state.quickRender = await loadLiveQuickRender();
-            appendChatMessage("assistant", "Preview applied", "Committed scene version " + applyResponse.applied_scene_version + ".", "success");
-            setStatus("Applied planner preview to scene version " + applyResponse.applied_scene_version + ".");
-            state.pendingPlannerResponse = null;
-            renderScene();
-            return;
-          }
-          if (state.pendingPlannerResponse.response_kind === "command_request") {
-            if (state.pendingPlannerResponse.command.command_kind === "undo_last_change") {
-              const undoResponse = await postSceneJson(state.pendingPlannerResponse.command.endpoint, {
-                expected_scene_version: state.scene.head.current_scene_version,
-                idempotency_key: "chat-undo-" + (++state.requestCounter),
-              });
-              state.scene = undoResponse.scene;
-              state.quickRender = await loadLiveQuickRender();
-              appendChatMessage("assistant", "Undo applied", "Restored the last undoable change in scene version " + undoResponse.applied_scene_version + ".", "success");
-              setStatus("Undo created scene version " + undoResponse.applied_scene_version + ".");
-              state.pendingPlannerResponse = null;
-              renderScene();
-              return;
-            }
-            const bookmark = resolveActiveBookmark(state.scene);
-            const conditioning = safeCaptureConditioning();
-            const photorealResponse = await postSceneJson(state.pendingPlannerResponse.command.endpoint, {
-              scene_snapshot_id: state.scene.snapshot.snapshot_id,
-              bookmark_id: bookmark ? bookmark.bookmark_id : undefined,
-              prompt_modifiers: [],
-              idempotency_key: "chat-photoreal-" + (++state.requestCounter),
-              conditioning,
-            });
-            const jobResponse = await getSceneJson("/jobs/" + encodeURIComponent(photorealResponse.job_id));
-            state.lastPhotorealJobId = photorealResponse.job_id;
-            if (!state.scene.photoreal_gallery.some((entry) => entry.entry_id === photorealResponse.photoreal_entry.entry_id)) {
-              state.scene.photoreal_gallery = [...state.scene.photoreal_gallery, photorealResponse.photoreal_entry];
-            }
-            appendChatMessage("assistant", "Photoreal ready", "Generated gallery asset " + photorealResponse.photoreal_entry.entry_id + " with job status " + jobResponse.job.status + ".", "success");
-            setStatus("Photoreal gallery updated for immutable scene version " + photorealResponse.photoreal_entry.scene_version + ".");
-            state.pendingPlannerResponse = null;
-            renderScene();
-            return;
-          }
-        } catch (error) {
-          appendChatMessage("assistant", "Command failed", (error.reasonCode ? error.reasonCode + ": " : "") + (error.message || "Request failed."), "error");
-          setStatus(error.message || "Planner action failed.", true);
-        }
+        state.sceneActionInFlight = true;
         renderChatPanel();
+        try {
+          const applyResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/apply", {
+            preview_id: preview.preview_id,
+            apply_token: preview.apply_token,
+            canonical_plan_hash: preview.canonical_plan_hash,
+            expected_scene_version: state.scene.head.current_scene_version,
+            idempotency_key: nextClientRequestKey("chat-apply"),
+          });
+          stopDragPreview({ restoreCanonical: false });
+          state.scene = applyResponse.scene;
+          state.quickRender = await loadLiveQuickRender();
+          appendChatMessage("assistant", "Edit applied", preview.explanation + "\\n\\nCommitted scene version " + applyResponse.applied_scene_version + ". Use Undo last change to revert it.", "success");
+          setStatus("Applied planner edit to scene version " + applyResponse.applied_scene_version + ". Use Undo last change to revert it.");
+          renderScene();
+        } catch (error) {
+          appendChatMessage("assistant", "Apply failed", (error.reasonCode ? error.reasonCode + ": " : "") + (error.message || "Request failed."), "error");
+          setStatus(error.message || "Planner apply failed.", true);
+          renderChatPanel();
+        } finally {
+          state.sceneActionInFlight = false;
+          renderChatPanel();
+        }
+      }
+
+      async function executePlannerCommand(command) {
+        if (!command) {
+          return;
+        }
+        if (command.command_kind === "undo_last_change") {
+          await undoLastChange("chat");
+          return;
+        }
+        await generatePhotorealFromActiveBookmark();
       }
 
       function resetChatState() {
@@ -1043,9 +1760,11 @@ function renderEditorShellHtml(input: {
         return value;
       }
 
-      function firstSelectableEntityId(scene) {
-        const room = scene.snapshot.state.room;
-        return room.objects[0]?.object_id || room.shell.openings[0]?.opening_id || room.shell.surfaces[0]?.surface_id || null;
+      function normalizeSelectionId(scene, selectionId) {
+        if (!scene || !selectionId) {
+          return null;
+        }
+        return findSelectedEntity(scene, selectionId) ? selectionId : null;
       }
 
       function renderScene() {
@@ -1057,7 +1776,7 @@ function renderEditorShellHtml(input: {
         document.getElementById('scan-info-mount').innerHTML = renderScanPaneInfo(state.scene);
         syncScanView();
         ensureLayoutPaneSkeleton();
-        document.getElementById('layout-info-mount').innerHTML = renderLayoutPaneInfo(state.scene, state.selectionId);
+        document.getElementById('layout-info-mount').innerHTML = renderLayoutPaneInfo(state.scene, state.selectionId, Boolean(state.sessionId));
         syncLayoutView();
         ensureRenderPaneSkeleton();
         document.getElementById('render-info-mount').innerHTML = renderRenderPaneInfo(state.scene, state.quickRender, state.selectionId, state.loadedFrom);
@@ -1163,6 +1882,7 @@ function renderEditorShellHtml(input: {
           try {
             state.layoutView.setRoom(room, derived);
             state.layoutView.setSelection(state.selectionId);
+            state.layoutView.setDragEnabled(Boolean(state.sessionId));
           } catch (err) {
             console.error('layoutView.setRoom failed', err);
           }
@@ -1176,14 +1896,25 @@ function renderEditorShellHtml(input: {
             if (!mount) return null;
             const view = mod.mountLayoutView(mount);
             view.setOnSelect((id) => {
-              state.selectionId = id;
-              renderScene();
+              setSelection(id);
+            });
+            view.setOnDragStart((detail) => {
+              setSelection(detail.objectId);
+            });
+            view.setOnDragMove((detail) => {
+              if (detail?.action === 'move') {
+                updateDragPreview(detail);
+              }
+            });
+            view.setOnDragEnd((detail) => {
+              void commitLayoutTransform(detail);
             });
             state.layoutView = view;
             const liveScene = state.scene;
             if (liveScene && liveScene.snapshot) {
               view.setRoom(liveScene.snapshot.state.room, liveScene.derived_state_cache || null);
               view.setSelection(state.selectionId);
+              view.setDragEnabled(Boolean(state.sessionId));
             }
             return view;
           } catch (err) {
@@ -1236,8 +1967,7 @@ function renderEditorShellHtml(input: {
             }
             const api = mod.mountViewer(mount);
             api.setOnSelect((id) => {
-              state.selectionId = id;
-              renderScene();
+              setSelection(id);
             });
             installAssetUriResolver(api);
             state.viewer = api;
@@ -1272,6 +2002,7 @@ function renderEditorShellHtml(input: {
       }
 
       function renderEmptyState() {
+        stopDragPreview({ restoreCanonical: false });
         clearSplatPolling();
         disposeViewer();
         disposeLayoutView();
@@ -1327,16 +2058,9 @@ function renderEditorShellHtml(input: {
       function renderChatPanel() {
         chatSelection.textContent = describeSelectionLabel(state.scene, state.selectionId);
         const isLive = Boolean(state.sessionId);
-        chatSendButton.disabled = !state.scene;
+        chatSendButton.disabled = !state.scene || state.sceneActionInFlight;
+        undoButton.disabled = !state.scene || !isLive || state.sceneActionInFlight;
         const pending = state.pendingPlannerResponse;
-        const canAccept = Boolean(
-          pending &&
-          (pending.response_kind === "operation_plan_preview" || pending.response_kind === "command_request") &&
-          isLive
-        );
-        chatActionButtons.classList.toggle("hidden", !canAccept);
-        chatAcceptButton.disabled = !canAccept;
-        chatRejectButton.disabled = !canAccept;
 
         if (pending && pending.response_kind === "clarification_request") {
           chatOptions.innerHTML = pending.options.map((option) => {
@@ -1344,12 +2068,12 @@ function renderEditorShellHtml(input: {
           }).join('');
         } else {
           chatOptions.innerHTML = pending && !isLive
-            ? '<p class="muted">Planner previews apply only after redeeming a live API handoff.</p>'
+            ? '<p class="muted">Planner actions apply only after redeeming a live API handoff.</p>'
             : '';
         }
 
         chatThread.innerHTML = state.chatMessages.length === 0
-          ? '<p class="muted">Chat transcripts, previews, clarifications, and reason-code messages appear here.</p>'
+          ? '<p class="muted">Chat transcripts, auto-applied edits, clarifications, and reason-code messages appear here.</p>'
           : state.chatMessages.map((entry) => {
               const tone = entry.tone ? ' ' + entry.tone : '';
               return '<div class="chat-entry' + tone + '"><strong>' + escapeHtml(entry.title) + '</strong><pre>' + escapeHtml(entry.body) + '</pre></div>';
@@ -1374,6 +2098,7 @@ function renderEditorShellHtml(input: {
       function renderScanPaneInfo(scene) {
         const room = scene.snapshot.state.room;
         const scanMode = scene.splat?.status === "ready" ? "splat" : "roomplan_preview";
+        const capturedFrames = Array.isArray(scene.captured_frames) ? scene.captured_frames : [];
         const summary = {
           scene_id: scene.head.scene_id,
           scene_version: scene.head.current_scene_version,
@@ -1390,16 +2115,17 @@ function renderEditorShellHtml(input: {
           splat_job_id: scene.splat?.job_id ?? null,
           splat_asset_id: scene.splat?.asset_id ?? null,
           splat_uri: scene.splat?.uri ?? null,
+          captured_frame_count: capturedFrames.length,
         };
         const statusMessage = !scene.splat
-          ? 'No optional splat sidecar is attached. The RoomPlan preview remains the scan source.'
+          ? 'No optional splat sidecar is attached. The scan pane stays on the read-only RoomPlan preview.'
           : scene.splat.status === 'ready'
-            ? 'Splat ready — scan pane has swapped from the RoomPlan placeholder to the splat asset sidecar.'
+            ? 'Splat ready — scan pane has swapped from the RoomPlan placeholder to the read-only splat sidecar.'
             : scene.splat.status === 'failed'
-              ? 'Splat failed — the editor stays on the RoomPlan preview and the editable scene remains unchanged.'
+              ? 'Splat failed — the editor stays on the read-only RoomPlan preview and the editable scene remains unchanged.'
               : scene.splat.job_id
-                ? 'Splat upload accepted — polling the background job while the RoomPlan preview stays interactive.'
-                : 'Waiting for an optional companion-app video upload token to be used. The RoomPlan preview stays active.';
+                ? 'Splat upload accepted — polling the background job while the read-only RoomPlan preview stays interactive.'
+                : 'Waiting for an optional companion-app video upload token to be used. The read-only RoomPlan preview stays active.';
         return [
           '<div class="badge">' + escapeHtml(scanMode === 'splat' ? 'Splat asset' : 'RoomPlan preview') + '</div>',
           '<p class="muted">' + escapeHtml(statusMessage) + '</p>',
@@ -1408,16 +2134,57 @@ function renderEditorShellHtml(input: {
           '<div><dt>Snapshot</dt><dd>' + escapeHtml(scene.snapshot.snapshot_id) + '</dd></div>',
           '<div><dt>Selection summary</dt><dd>' + escapeHtml(scene.derived_state_cache?.selection_context_summary || 'Unavailable') + '</dd></div>',
           '</dl>',
+          renderCapturedViewsStrip(capturedFrames),
           '<div style="margin-top:12px"><pre>' + escapeHtml(JSON.stringify(summary, null, 2)) + '</pre></div>'
         ].join('');
       }
 
-      function renderLayoutPaneInfo(scene, selectionId) {
+      function renderCapturedViewsStrip(capturedFrames) {
+        if (!capturedFrames || capturedFrames.length === 0) {
+          return '<div class="badge" style="margin-top:12px">Captured views</div>'
+            + '<p class="muted">No captured evidence frames uploaded yet. The iPhone app attaches these after a scan completes.</p>';
+        }
+        const items = capturedFrames.map((frame) => {
+          const rgbUrl = resolveGalleryImageUrl(frame.rgb?.uri || null);
+          const depthUrl = resolveGalleryImageUrl(frame.depth?.uri || null);
+          const confidenceUrl = resolveGalleryImageUrl(frame.confidence?.uri || null);
+          const imageHtml = rgbUrl
+            ? '<img src="' + escapeHtml(rgbUrl) + '" alt="Captured frame ' + escapeHtml(frame.frame_id) + '" style="width:100%;border-radius:10px;margin:0 0 8px 0;display:block;background:#0b1020;object-fit:cover" />'
+            : '<div class="muted" style="margin-bottom:8px">RGB unavailable</div>';
+          const links = [
+            depthUrl ? '<a href="' + escapeHtml(depthUrl) + '" target="_blank" rel="noopener" style="color:#93c5fd">depth</a>' : null,
+            confidenceUrl ? '<a href="' + escapeHtml(confidenceUrl) + '" target="_blank" rel="noopener" style="color:#93c5fd">confidence</a>' : null,
+          ].filter(Boolean).join(' · ') || '<span class="muted">no sidecars</span>';
+          const bookmark = frame.bookmark_id ? 'bookmark ' + escapeHtml(frame.bookmark_id) : '<span class="muted">no bookmark</span>';
+          return '<div class="gallery-item">' + imageHtml
+            + '<strong>' + escapeHtml(frame.frame_id) + '</strong>'
+            + '<p class="muted" style="margin:4px 0 6px 0">' + escapeHtml(frame.captured_at || '') + '</p>'
+            + '<p style="font-size:12px;margin:0">' + links + '</p>'
+            + '<p style="font-size:12px;margin:4px 0 0 0">' + bookmark + '</p>'
+            + '</div>';
+        }).join('');
+        return '<div class="badge" style="margin-top:12px">Captured views · ' + capturedFrames.length + '</div>'
+          + '<div class="gallery-grid">' + items + '</div>';
+      }
+
+      function renderLayoutPaneInfo(scene, selectionId, hasLiveSession) {
         const room = scene.snapshot.state.room;
         const selected = findSelectedEntity(scene, selectionId);
         const derived = scene.derived_state_cache || null;
         const violationsBlock = renderViolationsSummary(derived);
         const scoresBlock = renderSoftScores(derived);
+        const canResizeSelection = canResizeLayoutObject(selected);
+        const selectedObjectControls = selected && selected.object_id && selected.pose
+          ? '<section style="margin-bottom:16px"><div class="badge">Selected object controls</div>'
+            + (hasLiveSession
+              ? (canResizeSelection
+                  ? '<div class="actions" style="margin-top:8px"><button type="button" class="secondary" data-layout-action="size-down">Smaller -15%</button><button type="button" class="secondary" data-layout-action="size-up">Bigger +15%</button></div>'
+                  : '<p class="muted" style="margin-top:8px">Resize is enabled for beds, desks, rugs, sofas, tables, dressers, bookshelves, storage, chairs, and nightstands.</p>')
+                + '<div class="actions" style="margin-top:8px"><button type="button" class="secondary" data-layout-action="rotate-ccw">Rotate -15°</button><button type="button" class="secondary" data-layout-action="rotate-cw">Rotate +15°</button></div><p class="muted" style="margin-top:8px">Selected objects now show on-canvas rotate and resize handles. You can also click the layout pane to focus it, then use Arrow keys to nudge by 10 cm, Shift + Arrow for 25 cm, Q / E to rotate, + / - to resize, or Shift + mouse wheel over the selected object to rotate in place.</p>'
+              : '<p class="muted">Redeem a live scene handoff to rotate objects from the layout pane.</p>')
+            + '</section>'
+          : '';
+        const legendBlock = '<div class="layout-scores">Green dashed lines = door-to-furniture clearance paths. Blue dashed fills = the selected object\\'s recommended access zone. Red overlays = hard-violation regions. Constraint overlays are clipped to the room boundary.</div>';
         const groups = [
           {
             title: 'Objects',
@@ -1433,7 +2200,7 @@ function renderEditorShellHtml(input: {
           }
         ];
 
-        return violationsBlock + scoresBlock + groups.map((group) => {
+        return violationsBlock + scoresBlock + legendBlock + selectedObjectControls + groups.map((group) => {
           const buttons = group.items.length === 0
             ? '<p class="muted">No ' + group.title.toLowerCase() + ' in scene.</p>'
             : '<div class="list">' + group.items.map((item) => {
@@ -1523,9 +2290,14 @@ function renderEditorShellHtml(input: {
           ? '<p class="muted">No photoreal outputs yet. Use the buttons below to generate one from the active bookmark, or request a grid of style variants.</p>'
           : '<div class="gallery-grid">' + [...scene.photoreal_gallery].reverse().map((entry) => {
               const providerUri = entry.provider_metadata?.uri || '<none>';
+              const imageUrl = resolveGalleryImageUrl(entry.provider_metadata?.uri || null);
+              const providerStatus = entry.provider_metadata?.status || 'ready';
               const styleTag = Array.isArray(entry.prompt_modifiers) && entry.prompt_modifiers.length > 0 ? entry.prompt_modifiers.join(', ') : null;
               const styleBadge = styleTag ? '<div class="badge" style="background:rgba(251,191,36,0.15);color:#fcd34d;margin-bottom:6px">' + escapeHtml(styleTag) + '</div>' : '';
-              return '<div class="gallery-item">' + styleBadge + '<strong>' + escapeHtml(entry.entry_id) + '</strong><pre>' + escapeHtml(JSON.stringify({ scene_version: entry.scene_version, scene_snapshot_id: entry.scene_snapshot_id, bookmark_id: entry.bookmark_id, asset_id: entry.asset_id, provider_uri: providerUri, created_at: entry.created_at }, null, 2)) + '</pre></div>';
+              const imageHtml = imageUrl
+                ? '<img src="' + escapeHtml(imageUrl) + '" alt="Photoreal render ' + escapeHtml(entry.entry_id) + '" style="width:100%;border-radius:12px;margin:0 0 10px 0;display:block;background:#0b1020;object-fit:cover" />'
+                : '';
+              return '<div class="gallery-item">' + styleBadge + '<div class="badge" style="margin-bottom:6px">' + escapeHtml(String(providerStatus)) + '</div>' + imageHtml + '<strong>' + escapeHtml(entry.entry_id) + '</strong><pre>' + escapeHtml(JSON.stringify({ scene_version: entry.scene_version, scene_snapshot_id: entry.scene_snapshot_id, bookmark_id: entry.bookmark_id, asset_id: entry.asset_id, provider_uri: providerUri, created_at: entry.created_at }, null, 2)) + '</pre></div>';
             }).join('') + '</div>';
         const details = {
           loaded_from: loadedFrom,
@@ -1553,7 +2325,7 @@ function renderEditorShellHtml(input: {
           '<div><dt>Version sync</dt><dd>' + escapeHtml(versionSynchronized ? 'synchronized' : 'mismatch') + '</dd></div>',
           '</dl>',
           '<section class="render-section"><div class="badge">Bookmarks</div>' + bookmarkList + '</section>',
-          '<section class="render-section"><div class="actions"><button type="button" data-render-action="save-bookmark">Save active bookmark</button><button type="button" class="secondary" data-render-action="generate-photoreal">Generate photoreal</button><button type="button" class="secondary" data-render-action="generate-style-grid">Generate 4 styles</button></div><p class="muted" style="margin-top:10px">Buttons are live only after redeeming an authenticated scene handoff. “Generate 4 styles” fires parallel /photoreal requests with different prompt modifiers ([stretch.md Track 2 v1.3] Photoreal style exploration).</p></section>',
+          '<section class="render-section"><div class="actions"><button type="button" data-render-action="save-bookmark">Save current camera as bookmark</button><button type="button" class="secondary" data-render-action="generate-photoreal">Generate photoreal</button><button type="button" class="secondary" data-render-action="generate-style-grid">Generate 4 styles</button></div><p class="muted" style="margin-top:10px">Buttons are live only after redeeming an authenticated scene handoff. Photoreal generation now uses the current render-camera position when available, not just the last saved bookmark. “Generate 4 styles” fires parallel /photoreal requests with different prompt modifiers ([stretch.md Track 2 v1.3] Photoreal style exploration).</p></section>',
           '<section class="render-section"><div class="badge">Photoreal gallery</div>' + gallery + '</section>',
           '<section class="render-section">' + renderBomStrip(scene) + '</section>',
           '<div style="margin-top:12px"><pre>' + escapeHtml(JSON.stringify(details, null, 2)) + '</pre></div>'

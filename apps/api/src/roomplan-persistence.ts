@@ -1,5 +1,6 @@
 import type {
   CameraBookmark,
+  CapturedFrame,
   DerivedState,
   HandoffGrantRecord,
   ISO8601Timestamp,
@@ -36,12 +37,15 @@ export interface PersistedPhotorealEntryRecord extends PhotorealEntry {
   scene_id: SceneId;
 }
 
+export type PersistedCapturedFrameRecord = CapturedFrame;
+
 export interface PersistedInitialSceneRecords {
   scene_head: PersistedSceneHeadRecord;
   scene_snapshot: SceneSnapshot;
   derived_state_cache: PersistedDerivedStateCacheRecord | null;
   camera_bookmarks: PersistedCameraBookmarkRecord[];
   photoreal_entries: PersistedPhotorealEntryRecord[];
+  captured_frames: PersistedCapturedFrameRecord[];
   splat_asset_record: SplatAssetRecord | null;
   handoff_grant: HandoffGrantRecord;
   video_upload_token_record: VideoUploadTokenRecord | null;
@@ -78,6 +82,7 @@ export function decomposeIngestedCaptureForStorage(
       ...structuredClone(entry),
       scene_id: scene.head.scene_id,
     })),
+    captured_frames: (scene.captured_frames ?? []).map((frame) => structuredClone(frame)),
     splat_asset_record: scene.splat ? structuredClone(scene.splat) : null,
     handoff_grant: structuredClone(artifacts.handoff_grant),
     video_upload_token_record: artifacts.video_upload_token_record
@@ -99,5 +104,6 @@ export function hydrateSceneFromStoredRecords(records: PersistedInitialSceneReco
     bookmarks: records.camera_bookmarks.map(({ scene_id: _sceneId, ...bookmark }) => structuredClone(bookmark)),
     photoreal_gallery: records.photoreal_entries.map(({ scene_id: _sceneId, ...entry }) => structuredClone(entry)),
     splat: records.splat_asset_record ? structuredClone(records.splat_asset_record) : null,
+    captured_frames: (records.captured_frames ?? []).map((frame) => structuredClone(frame)),
   };
 }

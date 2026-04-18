@@ -54,16 +54,16 @@
                 "y": 0
               },
               {
-                "x": 4,
+                "x": 5.6,
                 "y": 0
               },
               {
-                "x": 4,
-                "y": 3.5
+                "x": 5.6,
+                "y": 4.6
               },
               {
                 "x": 0,
-                "y": 3.5
+                "y": 4.6
               }
             ]
           },
@@ -80,16 +80,16 @@
                     "y": 0
                   },
                   {
-                    "x": 4,
+                    "x": 5.6,
                     "y": 0
                   },
                   {
-                    "x": 4,
-                    "y": 3.5
+                    "x": 5.6,
+                    "y": 4.6
                   },
                   {
                     "x": 0,
-                    "y": 3.5
+                    "y": 4.6
                   }
                 ]
               },
@@ -121,16 +121,16 @@
                     "y": 0
                   },
                   {
-                    "x": 4,
+                    "x": 5.6,
                     "y": 0
                   },
                   {
-                    "x": 4,
-                    "y": 3.5
+                    "x": 5.6,
+                    "y": 4.6
                   },
                   {
                     "x": 0,
-                    "y": 3.5
+                    "y": 4.6
                   }
                 ]
               },
@@ -183,11 +183,11 @@
                     "y": 0
                   },
                   {
-                    "x": 4,
+                    "x": 5.6,
                     "y": 0
                   },
                   {
-                    "x": 4,
+                    "x": 5.6,
                     "y": 2.6
                   },
                   {
@@ -199,7 +199,7 @@
               "surface_frame": {
                 "origin": {
                   "x": 0,
-                  "y": 3.5,
+                  "y": 4.6,
                   "z": 0
                 },
                 "u_axis": {
@@ -245,11 +245,11 @@
                     "y": 0
                   },
                   {
-                    "x": 3.5,
+                    "x": 4.6,
                     "y": 0
                   },
                   {
-                    "x": 3.5,
+                    "x": 4.6,
                     "y": 2.6
                   },
                   {
@@ -260,8 +260,8 @@
               },
               "surface_frame": {
                 "origin": {
-                  "x": 4,
-                  "y": 3.5,
+                  "x": 5.6,
+                  "y": 4.6,
                   "z": 0
                 },
                 "u_axis": {
@@ -307,11 +307,11 @@
                     "y": 0
                   },
                   {
-                    "x": 4,
+                    "x": 5.6,
                     "y": 0
                   },
                   {
-                    "x": 4,
+                    "x": 5.6,
                     "y": 2.6
                   },
                   {
@@ -322,7 +322,7 @@
               },
               "surface_frame": {
                 "origin": {
-                  "x": 4,
+                  "x": 5.6,
                   "y": 0,
                   "z": 0
                 },
@@ -369,11 +369,11 @@
                     "y": 0
                   },
                   {
-                    "x": 3.5,
+                    "x": 4.6,
                     "y": 0
                   },
                   {
-                    "x": 3.5,
+                    "x": 4.6,
                     "y": 2.6
                   },
                   {
@@ -477,7 +477,7 @@
               "host_surface_id": "surface-scene-capture-bedroom-primary-237afd5b-s-c3714655",
               "type": "door",
               "rect": {
-                "min_u": 2.9,
+                "min_u": 0.2,
                 "min_v": 0,
                 "width": 0.9,
                 "height": 2.1
@@ -485,19 +485,19 @@
               "swing_zone": {
                 "vertices": [
                   {
-                    "x": 1.1,
+                    "x": 5.4,
                     "y": 0
                   },
                   {
-                    "x": 0.2,
+                    "x": 4.5,
                     "y": 0
                   },
                   {
-                    "x": 0.2,
+                    "x": 4.5,
                     "y": 0.9
                   },
                   {
-                    "x": 1.1,
+                    "x": 5.4,
                     "y": 0.9
                   }
                 ]
@@ -505,19 +505,19 @@
               "keepout_zone": {
                 "vertices": [
                   {
-                    "x": 1.1,
+                    "x": 5.4,
                     "y": 0
                   },
                   {
-                    "x": 0.2,
+                    "x": 4.5,
                     "y": 0
                   },
                   {
-                    "x": 0.2,
+                    "x": 4.5,
                     "y": 1
                   },
                   {
-                    "x": 1.1,
+                    "x": 5.4,
                     "y": 1
                   }
                 ]
@@ -535,7 +535,7 @@
               "host_surface_id": "surface-scene-capture-bedroom-primary-237afd5b-s-7fcf8657",
               "type": "window",
               "rect": {
-                "min_u": 2.45,
+                "min_u": 3.4,
                 "min_v": 0.85,
                 "width": 1.2,
                 "height": 1.1
@@ -544,20 +544,20 @@
               "keepout_zone": {
                 "vertices": [
                   {
-                    "x": 2.45,
-                    "y": 3.5
+                    "x": 3.4,
+                    "y": 4.6
                   },
                   {
-                    "x": 3.65,
-                    "y": 3.5
+                    "x": 4.6,
+                    "y": 4.6
                   },
                   {
-                    "x": 3.65,
-                    "y": 3.1
+                    "x": 4.6,
+                    "y": 4.2
                   },
                   {
-                    "x": 2.45,
-                    "y": 3.1
+                    "x": 3.4,
+                    "y": 4.2
                   }
                 ]
               },
@@ -576,16 +576,16 @@
               "class": "radiator",
               "pose": {
                 "position": {
-                  "x": 3.1,
-                  "y": 3.32,
+                  "x": 4,
+                  "y": 4.42,
                   "z": 0.25
                 },
                 "yaw_degrees": 180
               },
               "obb": {
                 "center": {
-                  "x": 3.1,
-                  "y": 3.32,
+                  "x": 4,
+                  "y": 4.42,
                   "z": 0.25
                 },
                 "size_x": 1,
@@ -604,20 +604,20 @@
                 "contact_patch": {
                   "vertices": [
                     {
-                      "x": 3.6,
-                      "y": 3.41
+                      "x": 4.5,
+                      "y": 4.51
                     },
                     {
-                      "x": 2.6,
-                      "y": 3.41
+                      "x": 3.5,
+                      "y": 4.51
                     },
                     {
-                      "x": 2.6,
-                      "y": 3.23
+                      "x": 3.5,
+                      "y": 4.33
                     },
                     {
-                      "x": 3.6,
-                      "y": 3.23
+                      "x": 4.5,
+                      "y": 4.33
                     }
                   ]
                 }
@@ -625,20 +625,20 @@
               "keepout_zone": {
                 "vertices": [
                   {
-                    "x": 3.698,
-                    "y": 3.428
+                    "x": 4.598,
+                    "y": 4.528
                   },
                   {
-                    "x": 2.502,
-                    "y": 3.428
+                    "x": 3.402,
+                    "y": 4.528
                   },
                   {
-                    "x": 2.502,
-                    "y": 3.212
+                    "x": 3.402,
+                    "y": 4.312
                   },
                   {
-                    "x": 3.698,
-                    "y": 3.212
+                    "x": 4.598,
+                    "y": 4.312
                   }
                 ]
               },
@@ -662,27 +662,27 @@
             "child_movement_policy": "independent",
             "pose": {
               "position": {
-                "x": 1.15,
-                "y": 2.65,
+                "x": 1,
+                "y": 3.4,
                 "z": 0
               },
-              "yaw_degrees": 180
+              "yaw_degrees": 90
             },
             "obb": {
               "center": {
-                "x": 1.15,
-                "y": 2.65,
+                "x": 1,
+                "y": 3.4,
                 "z": 0.3
               },
               "size_x": 2,
               "size_y": 1.6,
               "size_z": 0.6,
-              "yaw_degrees": 180
+              "yaw_degrees": 90
             },
             "mobility": "movable",
             "host": {
               "relation_type": "flush_to_wall",
-              "host_surface_id": "surface-scene-capture-bedroom-primary-237afd5b-s-7fcf8657",
+              "host_surface_id": "surface-scene-capture-bedroom-primary-237afd5b-s-e4f32e43",
               "anchor_rect": null
             },
             "support": {
@@ -691,20 +691,20 @@
               "contact_patch": {
                 "vertices": [
                   {
-                    "x": 2.15,
-                    "y": 3.45
+                    "x": 1.8,
+                    "y": 2.4
                   },
                   {
-                    "x": 0.15,
-                    "y": 3.45
+                    "x": 1.8,
+                    "y": 4.4
                   },
                   {
-                    "x": 0.15,
-                    "y": 1.85
+                    "x": 0.2,
+                    "y": 4.4
                   },
                   {
-                    "x": 2.15,
-                    "y": 1.85
+                    "x": 0.2,
+                    "y": 2.4
                   }
                 ]
               }
@@ -739,49 +739,45 @@
             "child_movement_policy": "independent",
             "pose": {
               "position": {
-                "x": 0.35,
-                "y": 2.95,
+                "x": 1,
+                "y": 1.8,
                 "z": 0
               },
-              "yaw_degrees": 180
+              "yaw_degrees": 90
             },
             "obb": {
               "center": {
-                "x": 0.35,
-                "y": 2.95,
+                "x": 1,
+                "y": 1.8,
                 "z": 0.3
               },
               "size_x": 0.5,
               "size_y": 0.5,
               "size_z": 0.6,
-              "yaw_degrees": 180
+              "yaw_degrees": 90
             },
             "mobility": "movable",
-            "host": {
-              "relation_type": "flush_to_wall",
-              "host_surface_id": "surface-scene-capture-bedroom-primary-237afd5b-s-e4f32e43",
-              "anchor_rect": null
-            },
+            "host": null,
             "support": {
               "support_kind": "floor",
               "support_entity_id": "surface-scene-capture-bedroom-primary-237afd5b-s-8477afc7",
               "contact_patch": {
                 "vertices": [
                   {
-                    "x": 0.6,
-                    "y": 3.2
+                    "x": 1.25,
+                    "y": 1.55
                   },
                   {
-                    "x": 0.1,
-                    "y": 3.2
+                    "x": 1.25,
+                    "y": 2.05
                   },
                   {
-                    "x": 0.1,
-                    "y": 2.7
+                    "x": 0.75,
+                    "y": 2.05
                   },
                   {
-                    "x": 0.6,
-                    "y": 2.7
+                    "x": 0.75,
+                    "y": 1.55
                   }
                 ]
               }
@@ -816,27 +812,27 @@
             "child_movement_policy": "independent",
             "pose": {
               "position": {
-                "x": 3.1,
-                "y": 3,
+                "x": 4.85,
+                "y": 3.2,
                 "z": 0
               },
-              "yaw_degrees": 180
+              "yaw_degrees": 90
             },
             "obb": {
               "center": {
-                "x": 3.1,
-                "y": 3,
+                "x": 4.85,
+                "y": 3.2,
                 "z": 0.37
               },
               "size_x": 1.2,
               "size_y": 0.6,
               "size_z": 0.74,
-              "yaw_degrees": 180
+              "yaw_degrees": 90
             },
             "mobility": "movable",
             "host": {
               "relation_type": "flush_to_wall",
-              "host_surface_id": "surface-scene-capture-bedroom-primary-237afd5b-s-7fcf8657",
+              "host_surface_id": "surface-scene-capture-bedroom-primary-237afd5b-s-3b9a62c1",
               "anchor_rect": null
             },
             "support": {
@@ -845,20 +841,20 @@
               "contact_patch": {
                 "vertices": [
                   {
-                    "x": 3.7,
-                    "y": 3.3
+                    "x": 5.15,
+                    "y": 2.6
                   },
                   {
-                    "x": 2.5,
-                    "y": 3.3
+                    "x": 5.15,
+                    "y": 3.8
                   },
                   {
-                    "x": 2.5,
-                    "y": 2.7
+                    "x": 4.55,
+                    "y": 3.8
                   },
                   {
-                    "x": 3.7,
-                    "y": 2.7
+                    "x": 4.55,
+                    "y": 2.6
                   }
                 ]
               }
@@ -893,22 +889,22 @@
             "child_movement_policy": "independent",
             "pose": {
               "position": {
-                "x": 3.1,
-                "y": 2.3,
+                "x": 4.1,
+                "y": 3.2,
                 "z": 0
               },
-              "yaw_degrees": 0
+              "yaw_degrees": 270
             },
             "obb": {
               "center": {
-                "x": 3.1,
-                "y": 2.3,
+                "x": 4.1,
+                "y": 3.2,
                 "z": 0.45
               },
               "size_x": 0.55,
               "size_y": 0.55,
               "size_z": 0.9,
-              "yaw_degrees": 0
+              "yaw_degrees": 270
             },
             "mobility": "movable",
             "host": null,
@@ -918,20 +914,20 @@
               "contact_patch": {
                 "vertices": [
                   {
-                    "x": 2.825,
-                    "y": 2.025
+                    "x": 3.825,
+                    "y": 3.475
                   },
                   {
-                    "x": 3.375,
-                    "y": 2.025
+                    "x": 3.825,
+                    "y": 2.925
                   },
                   {
-                    "x": 3.375,
-                    "y": 2.575
+                    "x": 4.375,
+                    "y": 2.925
                   },
                   {
-                    "x": 2.825,
-                    "y": 2.575
+                    "x": 4.375,
+                    "y": 3.475
                   }
                 ]
               }
@@ -966,27 +962,27 @@
             "child_movement_policy": "independent",
             "pose": {
               "position": {
-                "x": 0.45,
-                "y": 1,
+                "x": 1.2,
+                "y": 0.45,
                 "z": 0
               },
-              "yaw_degrees": 90
+              "yaw_degrees": 0
             },
             "obb": {
               "center": {
-                "x": 0.45,
-                "y": 1,
+                "x": 1.2,
+                "y": 0.45,
                 "z": 0.45
               },
               "size_x": 1.2,
               "size_y": 0.5,
               "size_z": 0.9,
-              "yaw_degrees": 90
+              "yaw_degrees": 0
             },
             "mobility": "movable",
             "host": {
               "relation_type": "flush_to_wall",
-              "host_surface_id": "surface-scene-capture-bedroom-primary-237afd5b-s-e4f32e43",
+              "host_surface_id": "surface-scene-capture-bedroom-primary-237afd5b-s-c3714655",
               "anchor_rect": null
             },
             "support": {
@@ -995,20 +991,20 @@
               "contact_patch": {
                 "vertices": [
                   {
-                    "x": 0.7,
-                    "y": 0.4
+                    "x": 0.6,
+                    "y": 0.2
                   },
                   {
-                    "x": 0.7,
-                    "y": 1.6
+                    "x": 1.8,
+                    "y": 0.2
                   },
                   {
-                    "x": 0.2,
-                    "y": 1.6
+                    "x": 1.8,
+                    "y": 0.7
                   },
                   {
-                    "x": 0.2,
-                    "y": 0.4
+                    "x": 0.6,
+                    "y": 0.7
                   }
                 ]
               }
@@ -1043,16 +1039,16 @@
             "child_movement_policy": "independent",
             "pose": {
               "position": {
-                "x": 2.05,
-                "y": 1.8,
+                "x": 2.45,
+                "y": 2.55,
                 "z": 0
               },
               "yaw_degrees": 0
             },
             "obb": {
               "center": {
-                "x": 2.05,
-                "y": 1.8,
+                "x": 2.45,
+                "y": 2.55,
                 "z": 0.01
               },
               "size_x": 2.4,
@@ -1068,20 +1064,20 @@
               "contact_patch": {
                 "vertices": [
                   {
-                    "x": 0.85,
-                    "y": 1
+                    "x": 1.25,
+                    "y": 1.75
                   },
                   {
-                    "x": 3.25,
-                    "y": 1
+                    "x": 3.65,
+                    "y": 1.75
                   },
                   {
-                    "x": 3.25,
-                    "y": 2.6
+                    "x": 3.65,
+                    "y": 3.35
                   },
                   {
-                    "x": 0.85,
-                    "y": 2.6
+                    "x": 1.25,
+                    "y": 3.35
                   }
                 ]
               }
@@ -1116,22 +1112,22 @@
             "child_movement_policy": "move_with_parent",
             "pose": {
               "position": {
-                "x": 0.35,
-                "y": 2.95,
+                "x": 1,
+                "y": 1.8,
                 "z": 0.62
               },
-              "yaw_degrees": 180
+              "yaw_degrees": 90
             },
             "obb": {
               "center": {
-                "x": 0.35,
-                "y": 2.95,
+                "x": 1,
+                "y": 1.8,
                 "z": 0.82
               },
               "size_x": 0.2,
               "size_y": 0.2,
               "size_z": 0.4,
-              "yaw_degrees": 180
+              "yaw_degrees": 90
             },
             "mobility": "movable",
             "host": null,
@@ -1141,20 +1137,20 @@
               "contact_patch": {
                 "vertices": [
                   {
-                    "x": 0.45,
-                    "y": 3.05
+                    "x": 1.1,
+                    "y": 1.7
                   },
                   {
-                    "x": 0.25,
-                    "y": 3.05
+                    "x": 1.1,
+                    "y": 1.9
                   },
                   {
-                    "x": 0.25,
-                    "y": 2.85
+                    "x": 0.9,
+                    "y": 1.9
                   },
                   {
-                    "x": 0.45,
-                    "y": 2.85
+                    "x": 0.9,
+                    "y": 1.7
                   }
                 ]
               }
@@ -1233,7 +1229,6 @@
             "severity": "hard",
             "target_entity_ids": [
               "object-scene-capture-bedroom-primary-237afd5b-o-b48aef9c",
-              "object-scene-capture-bedroom-primary-237afd5b-o-f45f5df3",
               "object-scene-capture-bedroom-primary-237afd5b-o-91c48b28",
               "object-scene-capture-bedroom-primary-237afd5b-o-a535bdcf",
               "fixed-element-scene-capture-bedroom-primary-237afd5b-f-3ca744ea"
@@ -1374,20 +1369,20 @@
         "polygon": {
           "vertices": [
             {
-              "x": 0.15,
-              "y": 0.95
+              "x": -0.7,
+              "y": 2.4
             },
             {
-              "x": 2.15,
-              "y": 0.95
+              "x": 0.9,
+              "y": 2.4
             },
             {
-              "x": 2.15,
-              "y": 2.55
+              "x": 0.9,
+              "y": 4.4
             },
             {
-              "x": 0.15,
-              "y": 2.55
+              "x": -0.7,
+              "y": 4.4
             }
           ]
         }
@@ -1399,20 +1394,20 @@
         "polygon": {
           "vertices": [
             {
-              "x": 2.8,
-              "y": 3.3
+              "x": 5.15,
+              "y": 3.5
             },
             {
-              "x": 1.6,
-              "y": 3.3
+              "x": 5.15,
+              "y": 4.7
             },
             {
-              "x": 1.6,
-              "y": 2.7
+              "x": 4.55,
+              "y": 4.7
             },
             {
-              "x": 2.8,
-              "y": 2.7
+              "x": 4.55,
+              "y": 3.5
             }
           ]
         }
@@ -1424,20 +1419,20 @@
         "polygon": {
           "vertices": [
             {
-              "x": 0.7,
-              "y": 1
+              "x": 1.2,
+              "y": 0.2
             },
             {
-              "x": 0.7,
-              "y": 2.2
+              "x": 2.4,
+              "y": 0.2
             },
             {
-              "x": 0.2,
-              "y": 2.2
+              "x": 2.4,
+              "y": 0.7
             },
             {
-              "x": 0.2,
-              "y": 1
+              "x": 1.2,
+              "y": 0.7
             }
           ]
         }
@@ -1449,34 +1444,34 @@
         "width_m": 1,
         "waypoints": [
           {
-            "x": 0.65,
+            "x": 4.95,
             "y": 0.5
           },
           {
-            "x": 0.9,
-            "y": 1.575
+            "x": 2.975,
+            "y": 1.95
           },
           {
-            "x": 1.15,
-            "y": 2.65
+            "x": 1,
+            "y": 3.4
           }
         ]
       },
       {
         "path_id": "path-opening-scene-capture-bedroom-primary-23-8bf15fe5",
-        "width_m": 0.4,
+        "width_m": 0.97,
         "waypoints": [
           {
-            "x": 0.65,
+            "x": 4.95,
             "y": 0.5
           },
           {
-            "x": 1.875,
-            "y": 1.75
+            "x": 4.9,
+            "y": 1.85
           },
           {
-            "x": 3.1,
-            "y": 3
+            "x": 4.85,
+            "y": 3.2
           }
         ]
       },
@@ -1485,60 +1480,25 @@
         "width_m": 1,
         "waypoints": [
           {
-            "x": 0.65,
+            "x": 4.95,
             "y": 0.5
           },
           {
-            "x": 0.55,
-            "y": 0.75
+            "x": 3.075,
+            "y": 0.475
           },
           {
-            "x": 0.45,
-            "y": 1
+            "x": 1.2,
+            "y": 0.45
           }
         ]
       }
     ],
     "soft_scores": {
-      "desk_near_window": 1,
+      "desk_near_window": 0.64,
       "primary_path_not_serpentine": 0.4
     },
-    "hard_violations": [
-      {
-        "entity_ids": [
-          "object-scene-capture-bedroom-primary-237afd5b-o-b48aef9c",
-          "object-scene-capture-bedroom-primary-237afd5b-o-f45f5df3"
-        ],
-        "reason_code": "OBJECT_OVERLAP",
-        "message": "bed overlaps nightstand."
-      },
-      {
-        "entity_id": "opening-scene-capture-bedroom-primary-237afd5b-o-1bbcbceb",
-        "reason_code": "OPENING_BLOCKED",
-        "blocked_by": [
-          "object-scene-capture-bedroom-primary-237afd5b-o-a535bdcf"
-        ]
-      },
-      {
-        "entity_id": "opening-scene-capture-bedroom-primary-237afd5b-o-415aa367",
-        "reason_code": "OPENING_BLOCKED",
-        "blocked_by": [
-          "object-scene-capture-bedroom-primary-237afd5b-o-91c48b28"
-        ]
-      },
-      {
-        "entity_id": "fixed-element-scene-capture-bedroom-primary-237afd5b-f-3ca744ea",
-        "reason_code": "OBJECT_OVERLAP",
-        "blocked_by": [
-          "object-scene-capture-bedroom-primary-237afd5b-o-91c48b28"
-        ]
-      },
-      {
-        "entity_id": "object-scene-capture-bedroom-primary-237afd5b-o-91c48b28",
-        "reason_code": "CLEARANCE_VIOLATION",
-        "message": "Insufficient walkway width (0.4m) from door to desk."
-      }
-    ],
+    "hard_violations": [],
     "selection_context_summary": "Bed captured as primary sleep anchor. Desk positioned near a window."
   },
   "bookmarks": [
@@ -1547,13 +1507,13 @@
       "name": "Entry view",
       "camera_pose": {
         "position": {
-          "x": 0.65,
-          "y": -0.7,
+          "x": 4.95,
+          "y": 1.55,
           "z": 1.65
         },
-        "yaw_degrees": 49.399
+        "yaw_degrees": 154.904
       },
-      "fov": 58,
+      "fov": 60,
       "created_at": "2026-04-16T18:11:00Z",
       "updated_at": "2026-04-16T18:11:00Z"
     },
@@ -1562,13 +1522,13 @@
       "name": "Window wall",
       "camera_pose": {
         "position": {
-          "x": 3.05,
-          "y": 1.3,
+          "x": 4,
+          "y": 2.85,
           "z": 1.55
         },
-        "yaw_degrees": 90
+        "yaw_degrees": 169.611
       },
-      "fov": 52,
+      "fov": 54,
       "created_at": "2026-04-16T18:11:00Z",
       "updated_at": "2026-04-16T18:11:00Z"
     }

@@ -13,7 +13,15 @@ import type {
   Vector3D,
 } from "./primitives";
 import type { MaterialState } from "./primitives";
-import type { CameraBookmark, EditableObjectClass, PhotorealEntry, Scene, SplatAssetRecord } from "./scene";
+import type {
+  CameraBookmark,
+  CameraIntrinsics,
+  CapturedFrame,
+  EditableObjectClass,
+  PhotorealEntry,
+  Scene,
+  SplatAssetRecord,
+} from "./scene";
 import type { CuratedAssetManifest, QuickRenderScene } from "./render";
 
 export const COMMAND_KIND_VALUES = ["generate_photoreal", "undo_last_change"] as const;
@@ -236,6 +244,13 @@ export interface ReplaceObjectOperation {
   asset_id?: AssetId | null;
 }
 
+export interface ResizeObjectOperation {
+  op: "resize_object";
+  object_id: EntityId;
+  size_x: number;
+  size_y: number;
+}
+
 export interface PlacementRelation {
   relation: "named_wall" | "window" | "surface_point";
   target_entity_id: EntityId;
@@ -285,6 +300,7 @@ export type SceneEditOperation =
   | MoveObjectOperation
   | RotateObjectOperation
   | ReplaceObjectOperation
+  | ResizeObjectOperation
   | AddObjectOperation
   | RemoveObjectOperation
   | LockEntityOperation
@@ -342,6 +358,17 @@ export interface GeneratePhotorealRequest {
   prompt_modifiers: string[];
   idempotency_key: string;
   /**
+   * Optional provider hint. When absent, the server uses the configured
+   * default provider.
+   */
+  provider?: "deterministic_stub" | "openrouter" | null;
+  /**
+   * Optional best-effort seed for providers that support reproducible image
+   * generation. Some providers may ignore it; provider_metadata records what
+   * actually happened.
+   */
+  seed?: number | null;
+  /**
    * Optional conditioning buffers captured from the client's three.js view.
    * When present, a real ControlNet-backed provider uses these as structural
    * inputs. Absent: server falls back to server-side deterministic conditioning
@@ -375,6 +402,32 @@ export interface VideoUploadRequest {
 
 export interface VideoUploadResponse {
   job_id: JobId;
+}
+
+export interface CaptureFrameInput {
+  frame_id: string;
+  captured_at: ISO8601Timestamp;
+  camera_pose: Pose3D;
+  camera_transform: number[];
+  intrinsics: CameraIntrinsics;
+  rgb_content_type: string;
+  rgb_base64: string;
+  depth_content_type: string;
+  depth_base64: string;
+  confidence_content_type?: string | null;
+  confidence_base64?: string | null;
+  bookmark_name?: string | null;
+}
+
+export interface CaptureFramesRequest {
+  video_upload_token: string;
+  idempotency_key: string;
+  frames: CaptureFrameInput[];
+}
+
+export interface CaptureFramesResponse {
+  captured_frames: CapturedFrame[];
+  scene: Scene;
 }
 
 export interface DeleteSceneRequest {

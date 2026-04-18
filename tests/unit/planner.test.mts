@@ -324,3 +324,41 @@ describe("planner — move_object", () => {
     assert.equal(result.response_kind, "clarification_request");
   });
 });
+
+describe("planner — resize_object", () => {
+  test("'make this desk bigger' builds a resize_object op for the selected desk", () => {
+    const scene = buildMinimalScene({
+      objects: [{ object_id: "obj:desk", class: "desk" }],
+    });
+    const result = planDeterministicTurn(
+      scene,
+      buildRequest({ user_prompt: "make this desk bigger" }, ["obj:desk"])
+    );
+    assert.equal(result.response_kind as unknown as string, "preview_request");
+    if ("preview_request" in result) {
+      const op = result.preview_request.ops[0];
+      assert.equal(op.op, "resize_object");
+      if (op.op === "resize_object") {
+        assert.equal(op.object_id, "obj:desk");
+        assert.ok(op.size_x > 1);
+        assert.ok(op.size_y > 1);
+      }
+    }
+  });
+
+  test("'make the rug 20% smaller' shrinks both footprint dimensions", () => {
+    const scene = buildMinimalScene({
+      objects: [{ object_id: "obj:rug", class: "rug", obb: { center: { x: 0, y: 0, z: 0.01 }, size_x: 2.4, size_y: 1.6, size_z: 0.02, yaw_degrees: 0 } }],
+    });
+    const result = planDeterministicTurn(scene, buildRequest({ user_prompt: "make the rug 20% smaller" }));
+    assert.equal(result.response_kind as unknown as string, "preview_request");
+    if ("preview_request" in result) {
+      const op = result.preview_request.ops[0];
+      assert.equal(op.op, "resize_object");
+      if (op.op === "resize_object") {
+        assert.equal(op.size_x, 1.92);
+        assert.equal(op.size_y, 1.28);
+      }
+    }
+  });
+});

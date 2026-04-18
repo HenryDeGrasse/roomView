@@ -1,0 +1,29 @@
+{
+  "schema_version": "phase0_capture_bundle/v0",
+  "capture_id": "bedroom-a-capture-001",
+  "room_id": "bedroom-a",
+  "primary_frame_id": "frame_front",
+  "device": {
+    "model": "iPhone Pro",
+    "has_lidar": true
+  },
+  "roomplan_raw_uri": "roomplan_raw.json",
+  "frames": [
+    {
+      "frame_id": "frame_front",
+      "rgb_uri": "frames/frame_front.jpg",
+      "depth_uri": "frames/frame_front.depth.png",
+      "pose_uri": "frames/frame_front.pose.json",
+      "intrinsics_uri": "frames/frame_front.intrinsics.json",
+      "tags": ["front_wall", "sharp", "primary_reference"]
+    },
+    {
+      "frame_id": "frame_corner",
+      "rgb_uri": "frames/frame_corner.jpg",
+      "depth_uri": null,
+      "pose_uri": "frames/frame_corner.pose.json",
+      "intrinsics_uri": "frames/frame_corner.intrinsics.json",
+      "tags": ["corner_view", "sharp"]
+    }
+  ]
+}

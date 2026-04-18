@@ -318,6 +318,60 @@ describe("simulateScenePreview — rotate_object", () => {
   });
 });
 
+describe("simulateScenePreview — resize_object", () => {
+  test("updates footprint dimensions and refreshes the bound asset ref", () => {
+    const scene = buildMinimalScene({
+      objects: [
+        {
+          object_id: "obj:desk",
+          class: "desk",
+          pose: { position: { x: 0, y: 0, z: 0 }, yaw_degrees: 0 },
+          obb: { center: { x: 0, y: 0, z: 0.37 }, size_x: 1.2, size_y: 0.6, size_z: 0.74, yaw_degrees: 0 },
+          asset_ref: "asset-desk-compact-01",
+        },
+      ],
+      editing_asset_refs: [
+        {
+          asset_id: "asset-desk-compact-01",
+          kind: "gltf",
+          uri: "asset://furniture/desk/compact-01.glb",
+          bound_to: "obj:desk",
+        },
+      ],
+    });
+    const result = simulateScenePreview(
+      scene,
+      buildPreviewRequest([
+        { op: "resize_object", object_id: "obj:desk", size_x: 1.8, size_y: 0.8 },
+      ]),
+      NOW
+    );
+    const object = result.simulated_scene.snapshot.state.room.objects[0];
+    assert.equal(object.obb.size_x, 1.8);
+    assert.equal(object.obb.size_y, 0.8);
+    assert.equal(object.support.support_kind, "floor");
+    assert.equal(object.asset_ref, "asset-desk-proxy-01");
+    assert.equal(result.simulated_scene.snapshot.editing_asset_refs[0]?.asset_id, "asset-desk-proxy-01");
+  });
+
+  test("rejects unsupported classes", () => {
+    const scene = buildMinimalScene({
+      objects: [{ object_id: "obj:tv", class: "television" }],
+    });
+    assert.throws(
+      () =>
+        simulateScenePreview(
+          scene,
+          buildPreviewRequest([
+            { op: "resize_object", object_id: "obj:tv", size_x: 1.2, size_y: 0.2 },
+          ]),
+          NOW
+        ),
+      (error: Error) => error instanceof SceneMutationError && error.reason_code === "UNSUPPORTED_CLASS"
+    );
+  });
+});
+
 describe("simulateScenePreview — repaint_surface / swap_flooring", () => {
   test("repaint_surface updates color", () => {
     const scene = buildMinimalScene({ objects: [] });

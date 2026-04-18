@@ -4,6 +4,11 @@ import type {
   ApplyPlanRequest,
   AssetRef,
   CameraBookmark,
+  CameraIntrinsics,
+  CapturedFrame,
+  CaptureFrameInput,
+  CaptureFramesRequest,
+  CaptureFramesResponse,
   ConstraintSpec,
   CreateBookmarkRequest,
   CreateBookmarkResponse,
@@ -28,6 +33,7 @@ import type {
   Point3D,
   Polygon2D,
   Pose3D,
+  QuickRenderScene,
   ReasonCode,
   RectOnSurface,
   Room,
@@ -76,6 +82,8 @@ import {
 import { OpenRouterPlanner, type AiPlannerResult, type OpenRouterPlannerOptions } from "./ai-planner";
 import { planDeterministicTurn } from "./planner";
 import {
+  generateOpenRouterPhotoreal,
+  resolveProviderKind,
   resolvePhotorealMetadata,
   summarizeClientConditioning,
 } from "./photoreal-providers";
@@ -561,7 +569,6 @@ export function buildInitialSceneFromRoomPlanCapture(
     })),
   ];
 
-  const openingById = new Map(canonicalOpenings.map((opening) => [opening.opening_id, opening]));
   const objectDrafts = objectInputs.map((input) =>
     createObjectDraft(input, {
       now,
@@ -648,7 +655,7 @@ export function buildInitialSceneFromRoomPlanCapture(
       created_at: now,
     },
     derived_state_cache: deriveInitialStateCache(room, canonicalOpenings, roomObjects, fixedElements),
-    bookmarks: createDefaultBookmarks(sceneSeed, room, openingById, now),
+    bookmarks: createDefaultBookmarks(sceneSeed, room, now),
     photoreal_gallery: [],
     splat: request.capture_metadata.video_expected
       ? {
@@ -660,6 +667,7 @@ export function buildInitialSceneFromRoomPlanCapture(
           updated_at: now,
         }
       : null,
+    captured_frames: [],
   };
 
   return {
@@ -727,6 +735,7 @@ export class RoomPlanCaptureService {
   private readonly handoffTokenHashToSceneId = new Map<string, string>();
   private readonly videoTokenHashToSceneId = new Map<string, string>();
   private readonly jobsById = new Map<string, JobRecord>();
+  private readonly inflightPhotorealJobs = new Set<string>();
 
   public constructor(options: RoomPlanCaptureServiceOptions = {}) {
     this.handoffBaseUrl = options.handoff_base_url ?? "https://roomview.local/h";
@@ -747,6 +756,7 @@ export class RoomPlanCaptureService {
     for (const record of this.durableStore?.loadAll() ?? []) {
       this.hydrateStoredScene(record);
     }
+    this.failStalePhotorealJobs();
   }
 
   public postRoomPlanCapture(request: RoomPlanCaptureRequest): RoomPlanCaptureResponse {
@@ -897,11 +907,12 @@ export class RoomPlanCaptureService {
       },
       () => {
         const stored = this.mustGetStoredScene(scene_id);
+        const idempotentRequest = normalizePhotorealIdempotencyRequest(request);
         const existing = this.getIdempotentResponse<GeneratePhotorealResponse>(
           stored,
           `photoreal:${scene_id}`,
           request.idempotency_key,
-          request as Record<string, unknown>
+          idempotentRequest
         );
         if (existing) {
           return existing;
@@ -915,7 +926,11 @@ export class RoomPlanCaptureService {
           }
           const historicalScene = this.materializeSceneAtSnapshot(stored, snapshot.snapshot_id);
           const resolvedCamera = this.resolvePhotorealCamera(historicalScene, request);
+          const providerKind = request.provider ?? resolveProviderKind();
           const conditioning = buildDeterministicQuickRender(historicalScene, CURATED_ASSET_MANIFEST);
+          const clientConditioning = summarizeClientConditioning(request.conditioning ?? null);
+          const scenePrompt = buildPhotorealScenePrompt(historicalScene, conditioning, request.prompt_modifiers);
+          const referenceImageDataUrl = toReferenceImageDataUrl(request.conditioning?.color ?? null);
           const entrySeed = JSON.stringify({
             scene_id,
             scene_snapshot_id: snapshot.snapshot_id,
@@ -924,11 +939,12 @@ export class RoomPlanCaptureService {
             camera_pose: resolvedCamera.camera_pose,
             fov: resolvedCamera.fov,
             prompt_modifiers: request.prompt_modifiers,
+            provider: providerKind,
+            seed: typeof request.seed === "number" && Number.isFinite(request.seed) ? Math.trunc(request.seed) : null,
           });
           const entry_id = makeStableId("photoreal", entrySeed);
           const asset_id = makeStableId("asset-photoreal", entrySeed);
-          const clientConditioning = summarizeClientConditioning(request.conditioning ?? null);
-          const providerResult = resolvePhotorealMetadata({
+          const baseProviderInput = {
             scene_id,
             scene_snapshot_id: snapshot.snapshot_id,
             scene_version: snapshot.scene_version,
@@ -936,6 +952,9 @@ export class RoomPlanCaptureService {
             camera_pose: resolvedCamera.camera_pose,
             fov: resolvedCamera.fov,
             prompt_modifiers: request.prompt_modifiers,
+            scene_prompt: scenePrompt,
+            seed: typeof request.seed === "number" && Number.isFinite(request.seed) ? Math.trunc(request.seed) : null,
+            reference_image_data_url: referenceImageDataUrl,
             conditioning_summary: {
               asset_binding_count: conditioning.asset_bindings.length,
               surface_count: conditioning.surfaces.length,
@@ -944,7 +963,7 @@ export class RoomPlanCaptureService {
               scene_snapshot_id: conditioning.scene_snapshot_id,
             },
             client_conditioning: clientConditioning,
-          });
+          };
           const photorealEntry: PhotorealEntry = {
             entry_id,
             asset_id,
@@ -955,24 +974,74 @@ export class RoomPlanCaptureService {
             fov: resolvedCamera.fov,
             prompt_modifiers: [...request.prompt_modifiers],
             provider_metadata: {
-              provider: providerResult.provider,
-              uri: providerResult.uri,
-              ...(providerResult.extra ?? {}),
+              provider: providerKind,
+              model: providerKind === "openrouter"
+                ? (process.env.ROOMVIEW_PHOTOREAL_MODEL || process.env.OPENROUTER_PHOTOREAL_MODEL || "google/gemini-3-pro-image-preview")
+                : null,
+              status: providerKind === "openrouter" ? "queued" : "ready",
+              uri: null,
+              seed_requested: typeof request.seed === "number" && Number.isFinite(request.seed) ? Math.trunc(request.seed) : null,
+              reference_image_present: Boolean(referenceImageDataUrl),
+              client_conditioning_present: clientConditioning.present,
             },
             created_at: now,
           };
-          if (!stored.scene.photoreal_gallery.some((entry) => entry.entry_id === entry_id)) {
-            stored.scene.photoreal_gallery = [...stored.scene.photoreal_gallery, photorealEntry].sort((left, right) =>
-              left.created_at.localeCompare(right.created_at)
-            );
-            stored.persisted_records.photoreal_entries = stored.scene.photoreal_gallery.map((entry) => ({
-              ...structuredClone(entry),
-              scene_id,
-            }));
-          }
+          this.upsertPhotorealEntry(stored, photorealEntry);
 
           const job_id = makeStableId("job", `photoreal:${scene_id}:${request.idempotency_key}`);
-          const job: JobRecord = {
+          if (providerKind === "openrouter") {
+            const queuedJob: JobRecord = {
+              job_id,
+              scene_id,
+              job_kind: "photoreal",
+              status: "queued",
+              source_scene_version: snapshot.scene_version,
+              scene_snapshot_id: snapshot.snapshot_id,
+              created_at: now,
+              updated_at: now,
+              output_asset_id: asset_id,
+              error_code: null,
+            };
+            this.jobsById.set(job_id, structuredClone(queuedJob));
+            this.persistStoredScene(stored);
+
+            const response: GeneratePhotorealResponse = {
+              job_id,
+              photoreal_entry: structuredClone(stored.scene.photoreal_gallery.find((entry) => entry.entry_id === entry_id) ?? photorealEntry),
+            };
+            this.recordIdempotentResponse(
+              stored,
+              `photoreal:${scene_id}`,
+              request.idempotency_key,
+              idempotentRequest,
+              200,
+              response,
+              now
+            );
+            this.enqueueOpenRouterPhotorealJob({
+              scene_id,
+              job_id,
+              asset_id,
+              entry_id,
+              request,
+              providerInput: baseProviderInput,
+            });
+            return response;
+          }
+
+          const providerResult = resolvePhotorealMetadata(baseProviderInput);
+          const readyEntry: PhotorealEntry = {
+            ...photorealEntry,
+            provider_metadata: {
+              provider: providerResult.provider,
+              uri: providerResult.uri,
+              status: "ready",
+              ...(providerResult.extra ?? {}),
+            },
+          };
+          this.upsertPhotorealEntry(stored, readyEntry);
+
+          const readyJob: JobRecord = {
             job_id,
             scene_id,
             job_kind: "photoreal",
@@ -984,18 +1053,18 @@ export class RoomPlanCaptureService {
             output_asset_id: asset_id,
             error_code: null,
           };
-          this.jobsById.set(job_id, structuredClone(job));
+          this.jobsById.set(job_id, structuredClone(readyJob));
           this.persistStoredScene(stored);
 
           const response: GeneratePhotorealResponse = {
             job_id,
-            photoreal_entry: structuredClone(stored.scene.photoreal_gallery.find((entry) => entry.entry_id === entry_id) ?? photorealEntry),
+            photoreal_entry: structuredClone(stored.scene.photoreal_gallery.find((entry) => entry.entry_id === entry_id) ?? readyEntry),
           };
           this.recordIdempotentResponse(
             stored,
             `photoreal:${scene_id}`,
             request.idempotency_key,
-            request as Record<string, unknown>,
+            idempotentRequest,
             200,
             response,
             now
@@ -1007,7 +1076,7 @@ export class RoomPlanCaptureService {
               reason_code: error.reason_code,
               message: error.message,
             };
-            this.recordIdempotentResponse(stored, `photoreal:${scene_id}`, request.idempotency_key, request as Record<string, unknown>, 409, responseBody, now);
+            this.recordIdempotentResponse(stored, `photoreal:${scene_id}`, request.idempotency_key, idempotentRequest, 409, responseBody, now);
             throw new RoomPlanCaptureError(error.reason_code, error.message);
           }
           throw error;
@@ -1422,6 +1491,159 @@ export class RoomPlanCaptureService {
     );
   }
 
+  public postCaptureFrames(scene_id: string, request: CaptureFramesRequest): CaptureFramesResponse {
+    return this.observeSync(
+      "capture.frames.ingest",
+      {
+        scene_id,
+        frame_count: request.frames?.length ?? 0,
+        idempotency_key: request.idempotency_key,
+      },
+      () => {
+        const stored = this.mustGetStoredScene(scene_id);
+        if (!this.durableStore) {
+          throw new RoomPlanCaptureError(
+            "INVALID_CAPTURE",
+            "Capture-frame ingest requires a durable storage directory to persist artifacts."
+          );
+        }
+        if (!Array.isArray(request.frames) || request.frames.length === 0) {
+          throw new RoomPlanCaptureError("INVALID_CAPTURE", "At least one frame is required.");
+        }
+
+        const tokenHash = hashOpaqueToken(this.tokenSecret, request.video_upload_token);
+        const tokenSceneId = this.videoTokenHashToSceneId.get(tokenHash);
+        if (!tokenSceneId || tokenSceneId !== scene_id || !stored.video_upload_token_record) {
+          throw new RoomPlanCaptureError("VIDEO_UPLOAD_TOKEN_INVALID", "The capture upload token is invalid.");
+        }
+        if (stored.video_upload_token_record.token_hash !== tokenHash) {
+          throw new RoomPlanCaptureError("VIDEO_UPLOAD_TOKEN_INVALID", "The capture upload token is no longer valid.");
+        }
+        const now = this.nowIso();
+        if (isExpired(stored.video_upload_token_record.expires_at, now)) {
+          stored.video_upload_token_record.status = "expired";
+          throw new RoomPlanCaptureError("VIDEO_UPLOAD_TOKEN_EXPIRED", "The capture upload token has expired.");
+        }
+
+        const idempotentRequest = normalizeCaptureFramesIdempotencyRequest(request);
+        const existing = this.getIdempotentResponse<CaptureFramesResponse>(
+          stored,
+          `frames:${scene_id}`,
+          request.idempotency_key,
+          idempotentRequest
+        );
+        if (existing) {
+          return existing;
+        }
+
+        const existingFrameIds = new Set(stored.scene.captured_frames.map((frame) => frame.frame_id));
+        const newBookmarks: CameraBookmark[] = [];
+        const newCapturedFrames: CapturedFrame[] = [];
+
+        for (const frameInput of request.frames) {
+          validateCaptureFrameInput(frameInput);
+          if (existingFrameIds.has(frameInput.frame_id)) {
+            continue;
+          }
+
+          const rgbAssetId = makeStableId("asset-frame-rgb", `${scene_id}:${frameInput.frame_id}`);
+          const depthAssetId = makeStableId("asset-frame-depth", `${scene_id}:${frameInput.frame_id}`);
+          const confidenceAssetId = frameInput.confidence_base64
+            ? makeStableId("asset-frame-conf", `${scene_id}:${frameInput.frame_id}`)
+            : null;
+
+          const rgbBytes = Buffer.from(frameInput.rgb_base64, "base64");
+          const depthBytes = Buffer.from(frameInput.depth_base64, "base64");
+          const confidenceBytes = frameInput.confidence_base64 ? Buffer.from(frameInput.confidence_base64, "base64") : null;
+
+          const rgbUri = this.durableStore.savePhotorealArtifact(scene_id, rgbAssetId, {
+            content_type: frameInput.rgb_content_type,
+            bytes: rgbBytes,
+            metadata: { kind: "captured_frame_rgb", frame_id: frameInput.frame_id },
+          });
+          const depthUri = this.durableStore.savePhotorealArtifact(scene_id, depthAssetId, {
+            content_type: frameInput.depth_content_type,
+            bytes: depthBytes,
+            metadata: { kind: "captured_frame_depth", frame_id: frameInput.frame_id },
+          });
+          const confidenceUri = confidenceAssetId && confidenceBytes
+            ? this.durableStore.savePhotorealArtifact(scene_id, confidenceAssetId, {
+                content_type: frameInput.confidence_content_type ?? "application/octet-stream",
+                bytes: confidenceBytes,
+                metadata: { kind: "captured_frame_confidence", frame_id: frameInput.frame_id },
+              })
+            : null;
+
+          const fovDegrees = computeFovDegreesFromIntrinsics(frameInput.intrinsics);
+          const bookmarkName = (frameInput.bookmark_name ?? `Captured ${frameInput.frame_id}`).trim() || `Captured ${frameInput.frame_id}`;
+          const bookmarkId = makeStableId(
+            "bookmark",
+            `${scene_id}:frame:${frameInput.frame_id}`
+          );
+          const bookmark: CameraBookmark = {
+            bookmark_id: bookmarkId,
+            name: bookmarkName,
+            camera_pose: structuredClone(frameInput.camera_pose),
+            fov: roundNumber(fovDegrees),
+            created_at: now,
+            updated_at: now,
+          };
+          newBookmarks.push(bookmark);
+
+          const capturedFrame: CapturedFrame = {
+            frame_id: frameInput.frame_id,
+            scene_id,
+            captured_at: frameInput.captured_at,
+            bookmark_id: bookmarkId,
+            camera_pose: structuredClone(frameInput.camera_pose),
+            camera_transform: [...frameInput.camera_transform],
+            intrinsics: { ...frameInput.intrinsics },
+            rgb: { asset_id: rgbAssetId, uri: rgbUri, content_type: frameInput.rgb_content_type },
+            depth: { asset_id: depthAssetId, uri: depthUri, content_type: frameInput.depth_content_type },
+            confidence: confidenceAssetId && confidenceUri
+              ? {
+                  asset_id: confidenceAssetId,
+                  uri: confidenceUri,
+                  content_type: frameInput.confidence_content_type ?? "application/octet-stream",
+                }
+              : null,
+          };
+          newCapturedFrames.push(capturedFrame);
+          existingFrameIds.add(frameInput.frame_id);
+        }
+
+        const existingBookmarkIds = new Set(stored.scene.bookmarks.map((bookmark) => bookmark.bookmark_id));
+        const bookmarksToAppend = newBookmarks.filter((bookmark) => !existingBookmarkIds.has(bookmark.bookmark_id));
+        stored.scene.bookmarks = [...stored.scene.bookmarks, ...bookmarksToAppend].sort((left, right) =>
+          left.created_at.localeCompare(right.created_at)
+        );
+        stored.scene.captured_frames = [...stored.scene.captured_frames, ...newCapturedFrames].sort((left, right) =>
+          left.captured_at.localeCompare(right.captured_at)
+        );
+        stored.persisted_records.camera_bookmarks = stored.scene.bookmarks.map((entry) => ({
+          ...structuredClone(entry),
+          scene_id,
+        }));
+        stored.persisted_records.captured_frames = stored.scene.captured_frames.map((frame) => structuredClone(frame));
+
+        const response: CaptureFramesResponse = {
+          captured_frames: newCapturedFrames.map((frame) => structuredClone(frame)),
+          scene: structuredClone(stored.scene),
+        };
+        this.recordIdempotentResponse(
+          stored,
+          `frames:${scene_id}`,
+          request.idempotency_key,
+          idempotentRequest,
+          200,
+          response as unknown as Record<string, unknown>,
+          now
+        );
+        return response;
+      }
+    );
+  }
+
   public getJob(job_id: string): JobRecord | null {
     const job = this.jobsById.get(job_id);
     return job ? structuredClone(job) : null;
@@ -1490,6 +1712,204 @@ export class RoomPlanCaptureService {
         return structuredClone(job);
       }
     );
+  }
+
+  public getPhotorealArtifact(scene_id: string, asset_id: string): { content_type: string; bytes: Buffer } | null {
+    const artifact = this.durableStore?.readPhotorealArtifact(scene_id, asset_id) ?? null;
+    return artifact ? { content_type: artifact.content_type, bytes: artifact.bytes } : null;
+  }
+
+  private enqueueOpenRouterPhotorealJob(args: {
+    scene_id: string;
+    job_id: string;
+    asset_id: string;
+    entry_id: string;
+    request: GeneratePhotorealRequest;
+    providerInput: Parameters<typeof generateOpenRouterPhotoreal>[0];
+  }): void {
+    if (this.inflightPhotorealJobs.has(args.job_id)) {
+      return;
+    }
+    this.inflightPhotorealJobs.add(args.job_id);
+    queueMicrotask(() => {
+      void this.observeAsync(
+        "photoreal.provider.openrouter",
+        {
+          scene_id: args.scene_id,
+          job_id: args.job_id,
+          asset_id: args.asset_id,
+        },
+        async () => {
+          try {
+            const processingStored = this.mustGetStoredScene(args.scene_id);
+            const processingJob = this.jobsById.get(args.job_id);
+            if (!processingJob) {
+              return;
+            }
+            processingJob.status = "processing";
+            processingJob.updated_at = this.nowIso();
+            this.markPhotorealEntryStatus(processingStored, args.entry_id, {
+              status: "processing",
+              updated_at: processingJob.updated_at,
+            });
+            this.persistStoredScene(processingStored);
+
+            const providerResult = await generateOpenRouterPhotoreal(args.providerInput);
+            const completedAt = this.nowIso();
+            let resolvedUri = providerResult.uri;
+            if (providerResult.image) {
+              resolvedUri = this.durableStore
+                ? this.durableStore.savePhotorealArtifact(args.scene_id, args.asset_id, {
+                    content_type: providerResult.image.content_type,
+                    bytes: providerResult.image.bytes,
+                    metadata: {
+                      provider: providerResult.provider,
+                      entry_id: args.entry_id,
+                      scene_snapshot_id: args.providerInput.scene_snapshot_id,
+                      seed_requested: args.providerInput.seed ?? null,
+                      ...(providerResult.extra ?? {}),
+                    },
+                  })
+                : bufferToDataUrl(providerResult.image.content_type, providerResult.image.bytes);
+            }
+
+            const completedStored = this.mustGetStoredScene(args.scene_id);
+            const completedJob = this.jobsById.get(args.job_id);
+            if (!completedJob) {
+              return;
+            }
+            completedJob.status = "ready";
+            completedJob.updated_at = completedAt;
+            completedJob.error_code = null;
+            this.markPhotorealEntryStatus(completedStored, args.entry_id, {
+              status: "ready",
+              updated_at: completedAt,
+              uri: resolvedUri,
+              provider: providerResult.provider,
+              ...(providerResult.extra ?? {}),
+            });
+            this.persistStoredScene(completedStored);
+            this.refreshPhotorealIdempotentResponses(completedStored, args.job_id, args.entry_id);
+          } catch (error) {
+            const failedAt = this.nowIso();
+            const failedStored = this.scenesById.get(args.scene_id) ?? null;
+            const failedJob = this.jobsById.get(args.job_id) ?? null;
+            if (failedStored && failedJob) {
+              failedJob.status = "failed";
+              failedJob.updated_at = failedAt;
+              failedJob.error_code = "PHOTOREAL_PROVIDER_ERROR";
+              this.markPhotorealEntryStatus(failedStored, args.entry_id, {
+                status: "failed",
+                updated_at: failedAt,
+                error: error instanceof Error ? error.message : "Photoreal provider failed.",
+              });
+              this.persistStoredScene(failedStored);
+              this.refreshPhotorealIdempotentResponses(failedStored, args.job_id, args.entry_id);
+            }
+            throw error;
+          } finally {
+            this.inflightPhotorealJobs.delete(args.job_id);
+          }
+        }
+      ).catch(() => {
+        // observeAsync already recorded the failure path and the job/entry state
+        // has been updated above.
+      });
+    });
+  }
+
+  private upsertPhotorealEntry(stored: StoredSceneRecord, entry: PhotorealEntry): void {
+    const existingIndex = stored.scene.photoreal_gallery.findIndex((candidate) => candidate.entry_id === entry.entry_id);
+    if (existingIndex >= 0) {
+      stored.scene.photoreal_gallery[existingIndex] = structuredClone(entry);
+    } else {
+      stored.scene.photoreal_gallery = [...stored.scene.photoreal_gallery, structuredClone(entry)].sort((left, right) =>
+        left.created_at.localeCompare(right.created_at)
+      );
+    }
+    stored.persisted_records.photoreal_entries = stored.scene.photoreal_gallery.map((galleryEntry) => ({
+      ...structuredClone(galleryEntry),
+      scene_id: stored.scene.head.scene_id,
+    }));
+  }
+
+  private markPhotorealEntryStatus(
+    stored: StoredSceneRecord,
+    entryId: string,
+    metadataPatch: Record<string, unknown>,
+  ): void {
+    const existing = stored.scene.photoreal_gallery.find((candidate) => candidate.entry_id === entryId) ?? null;
+    if (!existing) {
+      return;
+    }
+    this.upsertPhotorealEntry(stored, {
+      ...existing,
+      provider_metadata: {
+        ...(existing.provider_metadata ?? {}),
+        ...structuredClone(metadataPatch),
+      },
+    });
+  }
+
+  private refreshPhotorealIdempotentResponses(stored: StoredSceneRecord, jobId: string, entryId: string): void {
+    const entry = stored.scene.photoreal_gallery.find((candidate) => candidate.entry_id === entryId) ?? null;
+    if (!entry) {
+      return;
+    }
+    let touched = false;
+    for (const record of stored.idempotency_records.values()) {
+      if (record.scope !== `photoreal:${stored.scene.head.scene_id}`) {
+        continue;
+      }
+      if (record.response_body.job_id !== jobId) {
+        continue;
+      }
+      record.response_body = {
+        job_id: jobId,
+        photoreal_entry: structuredClone(entry),
+      };
+      record.updated_at = this.nowIso();
+      touched = true;
+    }
+    if (touched) {
+      this.persistStoredScene(stored);
+    }
+  }
+
+  private failStalePhotorealJobs(): void {
+    let touchedAnyScene = false;
+    for (const stored of this.scenesById.values()) {
+      let touchedScene = false;
+      for (const job of this.jobsById.values()) {
+        if (job.scene_id !== stored.scene.head.scene_id || job.job_kind !== "photoreal") {
+          continue;
+        }
+        if (job.status !== "queued" && job.status !== "processing") {
+          continue;
+        }
+        job.status = "failed";
+        job.updated_at = this.nowIso();
+        job.error_code = "PHOTOREAL_PROVIDER_ERROR";
+        if (job.output_asset_id) {
+          const entry = stored.scene.photoreal_gallery.find((candidate) => candidate.asset_id === job.output_asset_id) ?? null;
+          if (entry) {
+            this.markPhotorealEntryStatus(stored, entry.entry_id, {
+              status: "failed",
+              error: "Photoreal job was interrupted before completion.",
+              updated_at: job.updated_at,
+            });
+          }
+        }
+        touchedScene = true;
+      }
+      if (touchedScene) {
+        this.persistStoredScene(stored);
+        touchedAnyScene = true;
+      }
+    }
+    if (touchedAnyScene) {
+      // persisted scene state already updated above; no extra work.
+    }
   }
 
   private materializeSceneAtSnapshot(stored: StoredSceneRecord, snapshotId: string): Scene {
@@ -1733,7 +2153,12 @@ export class RoomPlanCaptureService {
 
   private refreshAccessArtifacts(stored: StoredSceneRecord, videoExpected: boolean): void {
     const now = this.nowIso();
-    if (stored.handoff_grant.status !== "issued" || isExpired(stored.handoff_grant.expires_at, now)) {
+    const currentHandoffHash = hashOpaqueToken(this.tokenSecret, stored.handoff_token);
+    if (
+      stored.handoff_grant.status !== "issued"
+      || isExpired(stored.handoff_grant.expires_at, now)
+      || stored.handoff_grant.token_hash !== currentHandoffHash
+    ) {
       this.handoffTokenHashToSceneId.delete(stored.handoff_grant.token_hash);
       const handoff = issueHandoffGrant(stored.scene.head.scene_id, now, {
         handoff_base_url: this.handoffBaseUrl,
@@ -1837,6 +2262,67 @@ function buildOpenRouterPlannerOptions(options: RoomPlanCaptureServiceOptions): 
     appName: options.planner_app_name,
     timeoutMs: options.planner_timeout_ms,
   };
+}
+
+function buildPhotorealScenePrompt(scene: Scene, quickRender: QuickRenderScene, promptModifiers: string[]): string {
+  const room = scene.snapshot.state.room;
+  const visibleObjects = quickRender.objects
+    .slice(0, 12)
+    .map((object) => object.class)
+    .join(", ");
+  const surfaceMaterials = quickRender.surfaces
+    .map((surface) => `${surface.type}:${surface.material_state.color}`)
+    .join(", ");
+  const styleLine = promptModifiers.length > 0
+    ? `Style direction: ${promptModifiers.join(", ")}.`
+    : "Style direction: keep the scene tasteful, modern, and photoreal.";
+  return [
+    `Create a photorealistic redesigned ${room.room_type} interior render from the provided camera viewpoint.`,
+    "Preserve the room geometry, wall openings, and overall camera composition.",
+    "Do not invent extra windows, doors, or furniture that conflict with the scene summary.",
+    "Keep furniture placement plausible and consistent with the existing layout unless the styling implies obvious material or decor changes only.",
+    styleLine,
+    `Visible furniture/object classes: ${visibleObjects || "bedroom furniture"}.`,
+    `Surface materials/colors: ${surfaceMaterials || "floor, wall, ceiling defaults"}.`,
+    "If a reference image is provided, use it as the composition/layout anchor and restyle the room photorealistically rather than reimagining a new camera angle.",
+  ].join(" ");
+}
+
+function toReferenceImageDataUrl(colorBuffer: string | null | undefined): string | null {
+  if (typeof colorBuffer !== "string" || colorBuffer.length === 0) {
+    return null;
+  }
+  return `data:image/png;base64,${colorBuffer}`;
+}
+
+function bufferToDataUrl(contentType: string, bytes: Buffer): string {
+  return `data:${contentType};base64,${bytes.toString("base64")}`;
+}
+
+function normalizePhotorealIdempotencyRequest(request: GeneratePhotorealRequest): Record<string, unknown> {
+  return {
+    scene_snapshot_id: request.scene_snapshot_id,
+    bookmark_id: request.bookmark_id ?? null,
+    camera_pose: request.camera_pose ?? null,
+    fov: typeof request.fov === "number" && Number.isFinite(request.fov) ? roundNumber(request.fov) : null,
+    prompt_modifiers: [...request.prompt_modifiers],
+    idempotency_key: request.idempotency_key,
+    provider: request.provider ?? null,
+    seed: typeof request.seed === "number" && Number.isFinite(request.seed) ? Math.trunc(request.seed) : null,
+    conditioning: request.conditioning
+      ? {
+          width: typeof request.conditioning.width === "number" ? request.conditioning.width : null,
+          height: typeof request.conditioning.height === "number" ? request.conditioning.height : null,
+          color_hash: hashOptionalString(request.conditioning.color),
+          depth_hash: hashOptionalString(request.conditioning.depth),
+          edge_hash: hashOptionalString(request.conditioning.edge),
+        }
+      : null,
+  };
+}
+
+function hashOptionalString(value: string | null | undefined): string | null {
+  return typeof value === "string" && value.length > 0 ? hashString(value) : null;
 }
 
 function validateRoomPlanCaptureRequest(request: RoomPlanCaptureRequest): void {
@@ -2494,15 +2980,23 @@ function deriveInitialStateCache(
 function createDefaultBookmarks(
   sceneId: string,
   room: Room,
-  openingsById: Map<string, Opening>,
   now: string
 ): CameraBookmark[] {
   const bounds = polygonBounds(room.shell.floor_polygon);
+  const roomCenter = polygonCenter(room.shell.floor_polygon);
   const door = room.shell.openings.find((opening) => opening.type === "door" || opening.type === "closet_door") ?? null;
   const primaryWindow = room.shell.openings.find((opening) => opening.type === "window") ?? null;
+  const bed = room.objects.find((object) => object.class === "bed") ?? null;
+  const primaryTarget = bed
+    ? { x: roundNumber(bed.pose.position.x), y: roundNumber(bed.pose.position.y) }
+    : roomCenter;
 
   const entryAnchor = door ? openingAnchorPoint(door) : { x: roundNumber((bounds.min_x + bounds.max_x) / 2), y: bounds.min_y };
-  const entryYaw = primaryWindow ? angleToDegrees(entryAnchor, openingAnchorPoint(primaryWindow)) : 0;
+  const entryPosition = clampPointInsideBounds(
+    addScaledPoint2D(entryAnchor, inwardNormalForOpening(room, door, roomCenter), 1.05),
+    bounds,
+    0.6
+  );
 
   const bookmarks: CameraBookmark[] = [
     {
@@ -2510,13 +3004,13 @@ function createDefaultBookmarks(
       name: "Entry view",
       camera_pose: {
         position: {
-          x: entryAnchor.x,
-          y: roundNumber(entryAnchor.y - 1.2),
+          x: entryPosition.x,
+          y: entryPosition.y,
           z: 1.65,
         },
-        yaw_degrees: roundNumber(entryYaw),
+        yaw_degrees: roundNumber(angleToDegrees(entryPosition, primaryTarget)),
       },
-      fov: 58,
+      fov: 60,
       created_at: now,
       updated_at: now,
     },
@@ -2524,24 +3018,60 @@ function createDefaultBookmarks(
 
   if (primaryWindow) {
     const windowAnchor = openingAnchorPoint(primaryWindow);
+    const windowPosition = clampPointInsideBounds(
+      addScaledPoint2D(windowAnchor, inwardNormalForOpening(room, primaryWindow, roomCenter), 1.55),
+      bounds,
+      0.7
+    );
     bookmarks.push({
       bookmark_id: makeStableId("bookmark", `${sceneId}:window-view`),
       name: "Window wall",
       camera_pose: {
         position: {
-          x: windowAnchor.x,
-          y: roundNumber(Math.max(bounds.min_y + 0.8, windowAnchor.y - 2)),
+          x: windowPosition.x,
+          y: windowPosition.y,
           z: 1.55,
         },
-        yaw_degrees: roundNumber(angleToDegrees({ x: windowAnchor.x, y: windowAnchor.y - 2 }, windowAnchor)),
+        yaw_degrees: roundNumber(angleToDegrees(windowPosition, primaryTarget)),
       },
-      fov: 52,
+      fov: 54,
       created_at: now,
       updated_at: now,
     });
   }
 
   return bookmarks;
+}
+
+function inwardNormalForOpening(room: Room, opening: Opening | null, fallbackTarget: Point2D): Point2D {
+  if (!opening) {
+    return { x: 0, y: 1 };
+  }
+  const hostSurface = room.shell.surfaces.find((surface) => surface.surface_id === opening.host_surface_id) ?? null;
+  const normal = hostSurface?.surface_frame?.normal;
+  if (normal && Number.isFinite(normal.x) && Number.isFinite(normal.y) && (normal.x !== 0 || normal.y !== 0)) {
+    return normalizeVector2D({ x: normal.x, y: normal.y });
+  }
+  const anchor = openingAnchorPoint(opening);
+  return normalizeVector2D({ x: fallbackTarget.x - anchor.x, y: fallbackTarget.y - anchor.y });
+}
+
+function addScaledPoint2D(origin: Point2D, direction: Point2D, distance: number): Point2D {
+  return {
+    x: roundNumber(origin.x + direction.x * distance),
+    y: roundNumber(origin.y + direction.y * distance),
+  };
+}
+
+function clampPointInsideBounds(
+  point: Point2D,
+  bounds: { min_x: number; max_x: number; min_y: number; max_y: number },
+  margin: number
+): Point2D {
+  return {
+    x: roundNumber(Math.min(bounds.max_x - margin, Math.max(bounds.min_x + margin, point.x))),
+    y: roundNumber(Math.min(bounds.max_y - margin, Math.max(bounds.min_y + margin, point.y))),
+  };
 }
 
 function selectInitialAsset(objectClass: EditableObjectClass, obb: SceneObject["obb"]): AssetTemplate {
@@ -2874,6 +3404,69 @@ function hashOpaqueToken(secret: string, token: string): string {
 function makeStableId(prefix: string, seed: string): string {
   const slug = slugify(seed).slice(0, 40);
   return `${prefix}-${slug}-${hashString(seed).slice(0, 8)}`;
+}
+
+function validateCaptureFrameInput(input: CaptureFrameInput): void {
+  if (typeof input.frame_id !== "string" || input.frame_id.trim().length === 0) {
+    throw new RoomPlanCaptureError("INVALID_CAPTURE", "frame_id is required.");
+  }
+  if (typeof input.captured_at !== "string" || input.captured_at.length === 0) {
+    throw new RoomPlanCaptureError("INVALID_CAPTURE", `Frame ${input.frame_id} is missing captured_at.`);
+  }
+  if (!Array.isArray(input.camera_transform) || input.camera_transform.length !== 16) {
+    throw new RoomPlanCaptureError(
+      "INVALID_CAPTURE",
+      `Frame ${input.frame_id} camera_transform must be a 16-element 4x4 column-major matrix.`
+    );
+  }
+  if (input.camera_transform.some((value) => typeof value !== "number" || !Number.isFinite(value))) {
+    throw new RoomPlanCaptureError(
+      "INVALID_CAPTURE",
+      `Frame ${input.frame_id} camera_transform contains non-finite values.`
+    );
+  }
+  const { fx, fy, cx, cy, width, height } = input.intrinsics ?? ({} as CameraIntrinsics);
+  for (const [name, value] of [["fx", fx], ["fy", fy], ["cx", cx], ["cy", cy], ["width", width], ["height", height]] as const) {
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      throw new RoomPlanCaptureError(
+        "INVALID_CAPTURE",
+        `Frame ${input.frame_id} intrinsics.${name} must be a positive finite number.`
+      );
+    }
+  }
+  if (typeof input.rgb_base64 !== "string" || input.rgb_base64.length === 0) {
+    throw new RoomPlanCaptureError("INVALID_CAPTURE", `Frame ${input.frame_id} rgb_base64 is required.`);
+  }
+  if (typeof input.rgb_content_type !== "string" || input.rgb_content_type.length === 0) {
+    throw new RoomPlanCaptureError("INVALID_CAPTURE", `Frame ${input.frame_id} rgb_content_type is required.`);
+  }
+  if (typeof input.depth_base64 !== "string" || input.depth_base64.length === 0) {
+    throw new RoomPlanCaptureError("INVALID_CAPTURE", `Frame ${input.frame_id} depth_base64 is required.`);
+  }
+  if (typeof input.depth_content_type !== "string" || input.depth_content_type.length === 0) {
+    throw new RoomPlanCaptureError("INVALID_CAPTURE", `Frame ${input.frame_id} depth_content_type is required.`);
+  }
+}
+
+function computeFovDegreesFromIntrinsics(intrinsics: CameraIntrinsics): number {
+  const vertical = 2 * Math.atan(intrinsics.height / (2 * intrinsics.fy));
+  return (vertical * 180) / Math.PI;
+}
+
+function normalizeCaptureFramesIdempotencyRequest(request: CaptureFramesRequest): Record<string, unknown> {
+  return {
+    frames: request.frames.map((frame) => ({
+      frame_id: frame.frame_id,
+      captured_at: frame.captured_at,
+      camera_pose: frame.camera_pose,
+      camera_transform: frame.camera_transform,
+      intrinsics: frame.intrinsics,
+      rgb_content_type: frame.rgb_content_type,
+      depth_content_type: frame.depth_content_type,
+      confidence_content_type: frame.confidence_content_type ?? null,
+      bookmark_name: frame.bookmark_name ?? null,
+    })),
+  };
 }
 
 function cardinalWallNameFromNormal(normal: Point3D): string {

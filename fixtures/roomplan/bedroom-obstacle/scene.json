@@ -1166,13 +1166,13 @@
       "name": "Entry view",
       "camera_pose": {
         "position": {
-          "x": 3.725,
-          "y": -0.225,
+          "x": 2.675,
+          "y": 0.975,
           "z": 1.65
         },
-        "yaw_degrees": 160.115
+        "yaw_degrees": 84.936
       },
-      "fov": 58,
+      "fov": 60,
       "created_at": "2026-04-16T18:28:00Z",
       "updated_at": "2026-04-16T18:28:00Z"
     },
@@ -1181,13 +1181,13 @@
       "name": "Window wall",
       "camera_pose": {
         "position": {
-          "x": 0.2,
-          "y": 0.8,
+          "x": 1.75,
+          "y": 2.25,
           "z": 1.55
         },
-        "yaw_degrees": 90
+        "yaw_degrees": 32.471
       },
-      "fov": 52,
+      "fov": 54,
       "created_at": "2026-04-16T18:28:00Z",
       "updated_at": "2026-04-16T18:28:00Z"
     }

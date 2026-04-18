@@ -174,6 +174,7 @@ function buildSystemPrompt(): string {
     "- move_object",
     "- rotate_object",
     "- replace_object",
+    "- resize_object",
     "- add_object",
     "- remove_object",
     "- lock_entity",
@@ -196,6 +197,7 @@ function buildSystemPrompt(): string {
     "- 'Paint this wall blue' with a selected wall -> preview_scene_edit with repaint_surface using color='blue'.",
     "- 'Paint the rug green' -> reject_request explaining that rugs are objects and direct object recolor is not supported yet.",
     "- 'Make the floor green' -> preview_scene_edit using swap_flooring or repaint_surface on the floor, not a clarification about action.",
+    "- 'Make this desk bigger' with a selected desk -> preview_scene_edit with resize_object using larger size_x/size_y values.",
     "",
     "Workflow:",
     "1. Use get_scene_summary and get_entity_details when needed.",
@@ -611,6 +613,14 @@ function normalizeOperation(scene: Scene, rawOperation: Record<string, unknown>)
           ? rawOperation.style_tags.filter((value): value is string => typeof value === "string")
           : [],
         asset_id: optionalStringField(rawOperation, "asset_id"),
+      };
+    }
+    case "resize_object": {
+      return {
+        op,
+        object_id: requireStringField(rawOperation, "object_id"),
+        size_x: requireNumberField(rawOperation, "size_x"),
+        size_y: requireNumberField(rawOperation, "size_y"),
       };
     }
     case "move_object": {

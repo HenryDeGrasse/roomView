@@ -345,7 +345,7 @@ assert.equal(mutationCases.cases.length, 4, "expected four mutation verification
             {
               op: "move_object",
               object_id: chair.object_id,
-              target_position: { x: 0.65, y: 0.45, z: chair.pose.position.z },
+              target_position: { x: 4.8, y: 0.8, z: chair.pose.position.z },
             },
           ],
         }),
@@ -363,7 +363,7 @@ assert.equal(mutationCases.cases.length, 4, "expected four mutation verification
             {
               op: "move_object",
               object_id: dresser.object_id,
-              target_position: { x: 0.9, y: 0.8, z: dresser.pose.position.z },
+              target_position: { x: 4.6, y: 0.45, z: dresser.pose.position.z },
             },
           ],
         }),
@@ -381,7 +381,7 @@ assert.equal(mutationCases.cases.length, 4, "expected four mutation verification
             {
               op: "move_object",
               object_id: requireObject(scene, "desk").object_id,
-              target_position: { ...requireObject(scene, "desk").pose.position, y: 1.5 },
+              target_position: { ...requireObject(scene, "desk").pose.position, x: 4.0 },
             },
           ],
         }),

@@ -21,6 +21,7 @@ import type {
   Pose3D,
   ReasonCode,
   RepaintSurfaceOperation,
+  ResizeObjectOperation,
   ReplaceObjectOperation,
   RotateObjectOperation,
   Scene,
@@ -41,6 +42,18 @@ import {
 
 const DEFAULT_CLEARANCE_WIDTH_M = 0.76;
 const MAX_OPS_PER_PREVIEW = 5;
+const RESIZABLE_OBJECT_CLASSES = new Set<EditableObjectClass>([
+  "bed",
+  "nightstand",
+  "desk",
+  "chair",
+  "table",
+  "dresser",
+  "bookshelf",
+  "sofa",
+  "rug",
+  "storage",
+]);
 
 export interface MutationValidationSummary extends SceneApplyResponse["validation_summary"] {}
 
@@ -171,6 +184,9 @@ function applyOperation(scene: Scene, operation: SceneEditOperation, now: string
     case "replace_object":
       applyReplaceObject(scene, operation, now);
       return;
+    case "resize_object":
+      applyResizeObject(scene, operation, now);
+      return;
     case "add_object":
       applyAddObject(scene, operation, now);
       return;
@@ -283,6 +299,37 @@ function applyReplaceObject(scene: Scene, operation: ReplaceObjectOperation, now
     uri: selectedAsset.uri,
     bound_to: object.object_id,
   });
+}
+
+function applyResizeObject(scene: Scene, operation: ResizeObjectOperation, now: string): void {
+  const room = scene.snapshot.state.room;
+  const object = requireObject(room.objects, operation.object_id);
+  ensureObjectUnlocked(object);
+  ensureObjectClassResizable(object.class);
+
+  const nextSizeX = roundNumber(operation.size_x);
+  const nextSizeY = roundNumber(operation.size_y);
+  if (!Number.isFinite(nextSizeX) || !Number.isFinite(nextSizeY) || nextSizeX < 0.15 || nextSizeY < 0.15) {
+    throw new SceneMutationError("INVALID_CAPTURE", "resize_object requires size_x and size_y to be at least 0.15 meters.");
+  }
+  if (nextSizeX > 8 || nextSizeY > 8) {
+    throw new SceneMutationError("INVALID_CAPTURE", "resize_object sizes larger than 8 meters are not supported.");
+  }
+
+  object.obb.size_x = nextSizeX;
+  object.obb.size_y = nextSizeY;
+  if (object.support.support_kind === "floor") {
+    object.support.contact_patch = footprintFromObb(object.obb);
+  }
+  const selectedAsset = selectCuratedAssetForFootprint(object.class, object.obb, CURATED_ASSET_MANIFEST);
+  object.asset_ref = selectedAsset.asset_id;
+  upsertEditingAssetRef(scene, {
+    asset_id: selectedAsset.asset_id,
+    kind: selectedAsset.kind,
+    uri: selectedAsset.uri,
+    bound_to: object.object_id,
+  });
+  object.provenance = touchProvenance(object.provenance, now);
 }
 
 function applyAddObject(scene: Scene, operation: AddObjectOperation, now: string): void {
@@ -416,6 +463,12 @@ function requireFloorSurface(surfaces: Surface[]): Surface {
 function ensureObjectUnlocked(object: SceneObject): void {
   if (object.user_locked) {
     throw new SceneMutationError("ENTITY_LOCKED", `Object ${object.object_id} is locked.`);
+  }
+}
+
+function ensureObjectClassResizable(objectClass: ObjectClass): asserts objectClass is EditableObjectClass {
+  if (!RESIZABLE_OBJECT_CLASSES.has(objectClass as EditableObjectClass)) {
+    throw new SceneMutationError("UNSUPPORTED_CLASS", `${objectClass} cannot be resized in the MVP.`);
   }
 }
 

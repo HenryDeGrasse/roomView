@@ -298,6 +298,7 @@ export function buildMinimalScene(options: BuildMinimalSceneOptions = {}): Scene
     bookmarks: [],
     photoreal_gallery: [],
     splat: null,
+    captured_frames: [],
   };
 
   return scene;

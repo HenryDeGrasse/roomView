@@ -35,3 +35,7 @@ npm run fixtures:update
 ## AI chat planner setup
 
 To enable the OpenRouter-backed chat planner for live API sessions, copy `.env.example` to `.env` and fill in `OPENROUTER_API_KEY`. The API server automatically loads repo-root `.env` when it starts.
+
+## Phase 0 local render bench
+
+To validate whether indoor redesign quality improves with room-photo and depth conditioning before building more architecture, see `experiments/phase0/README.md` and run the local SDXL benchmark via `uv run ./scripts/phase0-render-bench.py`.

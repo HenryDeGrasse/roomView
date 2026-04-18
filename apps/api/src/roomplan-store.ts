@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import type {
@@ -44,6 +44,12 @@ export interface PersistedRoomPlanCaptureRecord {
   job_records?: JobRecord[];
 }
 
+export interface StoredPhotorealArtifact {
+  content_type: string;
+  bytes: Buffer;
+  metadata: Record<string, unknown> | null;
+}
+
 export class FileSystemRoomPlanCaptureRecordStore {
   private readonly rootDirectory: string;
 
@@ -65,5 +71,49 @@ export class FileSystemRoomPlanCaptureRecordStore {
     const temporaryPath = `${targetPath}.tmp-${process.pid}`;
     writeFileSync(temporaryPath, `${JSON.stringify(record, null, 2)}\n`);
     renameSync(temporaryPath, targetPath);
+  }
+
+  public savePhotorealArtifact(
+    sceneId: string,
+    assetId: string,
+    artifact: { content_type: string; bytes: Buffer; metadata?: Record<string, unknown> | null }
+  ): string {
+    const directory = this.photorealArtifactDirectory(sceneId);
+    mkdirSync(directory, { recursive: true });
+
+    const binaryTargetPath = resolve(directory, `${assetId}.bin`);
+    const binaryTemporaryPath = `${binaryTargetPath}.tmp-${process.pid}`;
+    writeFileSync(binaryTemporaryPath, artifact.bytes);
+    renameSync(binaryTemporaryPath, binaryTargetPath);
+
+    const metadataTargetPath = resolve(directory, `${assetId}.json`);
+    const metadataTemporaryPath = `${metadataTargetPath}.tmp-${process.pid}`;
+    writeFileSync(
+      metadataTemporaryPath,
+      `${JSON.stringify({ content_type: artifact.content_type, ...(artifact.metadata ?? {}) }, null, 2)}\n`
+    );
+    renameSync(metadataTemporaryPath, metadataTargetPath);
+
+    return `/artifacts/photoreal/${encodeURIComponent(sceneId)}/${encodeURIComponent(assetId)}`;
+  }
+
+  public readPhotorealArtifact(sceneId: string, assetId: string): StoredPhotorealArtifact | null {
+    const directory = this.photorealArtifactDirectory(sceneId);
+    const binaryPath = resolve(directory, `${assetId}.bin`);
+    const metadataPath = resolve(directory, `${assetId}.json`);
+    if (!existsSync(binaryPath) || !existsSync(metadataPath)) {
+      return null;
+    }
+    const rawMetadata = JSON.parse(readFileSync(metadataPath, "utf8")) as { content_type?: string } & Record<string, unknown>;
+    const { content_type, ...metadata } = rawMetadata;
+    return {
+      content_type: typeof content_type === "string" && content_type.length > 0 ? content_type : "application/octet-stream",
+      bytes: readFileSync(binaryPath),
+      metadata,
+    };
+  }
+
+  private photorealArtifactDirectory(sceneId: string): string {
+    return resolve(this.rootDirectory, "_artifacts", "photoreal", sceneId);
   }
 }

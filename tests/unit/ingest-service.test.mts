@@ -128,6 +128,22 @@ describe("RoomPlanCaptureService — apply / undo lifecycle", () => {
     assert.equal(scene.head.current_scene_version, 1);
   });
 
+  test("fixture ingest yields a clean default layout with interior bookmarks", () => {
+    const scene = service.getScene(sceneId);
+    assert.ok(scene);
+    assert.deepEqual(scene.derived_state_cache?.hard_violations ?? [], []);
+    const vertices = scene.snapshot.state.room.shell.floor_polygon.vertices;
+    const minX = Math.min(...vertices.map((vertex) => vertex.x));
+    const maxX = Math.max(...vertices.map((vertex) => vertex.x));
+    const minY = Math.min(...vertices.map((vertex) => vertex.y));
+    const maxY = Math.max(...vertices.map((vertex) => vertex.y));
+    assert.ok(scene.bookmarks.length >= 2, "expected multiple default interior bookmarks");
+    for (const bookmark of scene.bookmarks) {
+      assert.ok(bookmark.camera_pose.position.x >= minX && bookmark.camera_pose.position.x <= maxX, `${bookmark.name} x must stay inside room bounds`);
+      assert.ok(bookmark.camera_pose.position.y >= minY && bookmark.camera_pose.position.y <= maxY, `${bookmark.name} y must stay inside room bounds`);
+    }
+  });
+
   test("redeemHandoff issues a session", () => {
     const response = service.redeemHandoff({ handoff_token: handoffToken });
     assert.equal(response.scene_id, sceneId);

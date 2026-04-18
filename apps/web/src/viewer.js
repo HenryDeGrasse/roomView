@@ -16,6 +16,7 @@ const LAYER_GIZMO = 3;
 export function mountViewer(container) {
   return mountThreeView(container, {
     enabledLayers: [LAYER_SHELL, LAYER_OBJECTS],
+    appearanceMode: 'editable',
     mountKind: 'viewer',
   });
 }
@@ -27,6 +28,7 @@ export function mountViewer(container) {
 export function mountScanView(container) {
   return mountThreeView(container, {
     enabledLayers: [LAYER_SHELL, LAYER_SPLAT],
+    appearanceMode: 'capture',
     mountKind: 'scan',
   });
 }
@@ -34,6 +36,7 @@ export function mountScanView(container) {
 function mountThreeView(container, opts) {
   if (!container) throw new Error('mountThreeView: missing container element');
   const enabledLayers = opts?.enabledLayers ?? [LAYER_SHELL, LAYER_OBJECTS];
+  const appearanceMode = opts?.appearanceMode ?? 'editable';
   const mountKind = opts?.mountKind ?? 'viewer';
 
   const scene = new THREE.Scene();
@@ -185,6 +188,7 @@ function mountThreeView(container, opts) {
       }
     }
     const ctx = {
+      appearanceMode,
       assetRefsByObjectId,
       gltfCache,
       gltfLoader,
@@ -248,7 +252,29 @@ function mountThreeView(container, opts) {
     };
   }
 
-  const api = { setRoom, setSelection, setOnSelect, setAssetUriResolver, captureConditioning, dispose };
+  function getCurrentCameraView() {
+    const direction = new THREE.Vector3();
+    camera.getWorldDirection(direction);
+    const yawDegrees = Math.atan2(direction.y, direction.x) * 180 / Math.PI;
+    return {
+      camera_pose: {
+        position: {
+          x: roundCoord(camera.position.x),
+          y: roundCoord(camera.position.y),
+          z: roundCoord(camera.position.z),
+        },
+        yaw_degrees: roundCoord(yawDegrees),
+      },
+      fov: roundCoord(camera.fov),
+      target: {
+        x: roundCoord(controls.target.x),
+        y: roundCoord(controls.target.y),
+        z: roundCoord(controls.target.z),
+      },
+    };
+  }
+
+  const api = { setRoom, setSelection, setOnSelect, setAssetUriResolver, captureConditioning, getCurrentCameraView, dispose };
   // Dev/demo hook: lets the browser console (and later E2E harnesses) inspect
   // the scene graph, camera, and controls without re-plumbing through the UI.
   if (typeof window !== 'undefined') {
@@ -264,8 +290,8 @@ function buildRoomGroup(room, ctx) {
 
   const shell = new THREE.Group();
   shell.userData = { kind: 'shell' };
-  buildFloor(room, shell);
-  buildWalls(room, shell);
+  buildFloor(room, shell, ctx);
+  buildWalls(room, shell, ctx);
   buildFixedElements(room, shell, ctx);
   setLayerDeep(shell, LAYER_SHELL);
   group.add(shell);
@@ -289,7 +315,7 @@ function buildRoomGroup(room, ctx) {
   return group;
 }
 
-function buildFloor(room, parent) {
+function buildFloor(room, parent, ctx) {
   const floorSurface = room.shell.surfaces.find((s) => s.type === 'floor');
   const polygon = room.shell.floor_polygon.vertices;
   if (!polygon || polygon.length < 3) return;
@@ -297,14 +323,16 @@ function buildFloor(room, parent) {
   if (shoelaceSignedArea(points) < 0) points.reverse();
   const shape = new THREE.Shape(points);
   const geom = new THREE.ShapeGeometry(shape);
-  const color = materialColor(floorSurface?.material_state, 0x6b5a3e);
-  const mat = new THREE.MeshStandardMaterial({ color, side: THREE.DoubleSide, roughness: 0.92 });
+  const color = ctx?.appearanceMode === 'capture'
+    ? CAPTURE_SHELL_COLORS.floor
+    : materialColor(floorSurface?.material_state, 0x6b5a3e);
+    const mat = new THREE.MeshStandardMaterial({ color, side: THREE.DoubleSide, roughness: 0.92 });
   const mesh = new THREE.Mesh(geom, mat);
   mesh.userData = { canonical_id: floorSurface?.surface_id, kind: 'floor' };
   parent.add(mesh);
 }
 
-function buildWalls(room, parent) {
+function buildWalls(room, parent, ctx) {
   const walls = room.shell.surfaces.filter((s) => s.type === 'wall');
   const openingsBySurface = groupOpeningsBySurface(room.shell.openings);
   for (const wall of walls) {
@@ -328,8 +356,10 @@ function buildWalls(room, parent) {
     }
 
     const geom = new THREE.ShapeGeometry(shape);
-    const color = materialColor(wall.material_state, 0xd8d2c0);
-    const mat = new THREE.MeshStandardMaterial({ color, side: THREE.DoubleSide, roughness: 0.85 });
+    const color = ctx?.appearanceMode === 'capture'
+      ? CAPTURE_SHELL_COLORS.wall
+      : materialColor(wall.material_state, 0xd8d2c0);
+    const mat = new THREE.MeshStandardMaterial({ color, side: THREE.FrontSide, roughness: 0.85 });
     const mesh = new THREE.Mesh(geom, mat);
 
     const { origin, u_axis, v_axis, normal } = wall.surface_frame;
@@ -393,6 +423,15 @@ function tryAttachGLTF(parentGroup, proxyMesh, obb, canonicalId, ctx, kind, clas
     if (!proxyMesh.parent || proxyMesh.parent !== parentGroup) return;
     const container = new THREE.Group();
     const clone = sourceScene.clone(true);
+    clone.traverse((child) => {
+      if (!child.isMesh) return;
+      child.userData = {
+        ...child.userData,
+        canonical_id: canonicalId,
+        kind,
+        class: className,
+      };
+    });
     container.add(clone);
     // Fit clone to OBB — compute its axis-aligned bounds in local space, then
     // uniformly scale so it fits within OBB without distortion.
@@ -460,6 +499,10 @@ function stripDataUrlPrefix(dataUrl) {
   if (typeof dataUrl !== 'string') return null;
   const idx = dataUrl.indexOf(',');
   return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl;
+}
+
+function roundCoord(value) {
+  return Math.round(value * 1000) / 1000;
 }
 
 function fitCameraToRoom(camera, controls, room) {
@@ -550,6 +593,11 @@ const CLASS_PALETTE = {
   television: 0x1f2937,
   storage: 0x706547,
   generic_obstacle: 0x6e6e6e,
+};
+
+const CAPTURE_SHELL_COLORS = {
+  floor: 0x384152,
+  wall: 0xcfd7e3,
 };
 
 function objectColor(object) {

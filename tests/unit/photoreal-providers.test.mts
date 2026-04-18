@@ -27,6 +27,7 @@ function baseInput(overrides: Partial<PhotorealProviderInput> = {}): PhotorealPr
     },
     fov: 65,
     prompt_modifiers: ["modern"],
+    scene_prompt: "Create a photoreal bedroom render.",
     conditioning_summary: {
       asset_binding_count: 5,
       surface_count: 6,
@@ -62,6 +63,11 @@ describe("resolveProviderKind", () => {
   test("replicate is recognized", () => {
     assert.equal(resolveProviderKind({ ROOMVIEW_PHOTOREAL_PROVIDER: "replicate" }), "replicate");
     assert.equal(resolveProviderKind({ ROOMVIEW_PHOTOREAL_PROVIDER: "REPLICATE" }), "replicate");
+  });
+
+  test("openrouter is recognized", () => {
+    assert.equal(resolveProviderKind({ ROOMVIEW_PHOTOREAL_PROVIDER: "openrouter" }), "openrouter");
+    assert.equal(resolveProviderKind({ ROOMVIEW_PHOTOREAL_PROVIDER: "OPENROUTER" }), "openrouter");
   });
 
   test("local_sdxl and sdxl both map to local_sdxl", () => {

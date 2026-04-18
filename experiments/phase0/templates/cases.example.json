@@ -1,0 +1,17 @@
+{
+  "default_negative_prompt": "low quality, blurry, distorted perspective, warped furniture, bad geometry, extra windows, extra doors, text, watermark",
+  "cases": [
+    {
+      "case_id": "paint-main-wall-warm-white",
+      "reference_frame_id": "frame_front",
+      "prompt": "Redesign this exact bedroom. Keep the room layout, windows, lighting direction, furniture placement, and proportions unchanged. Paint only the main wall a soft warm white matte. Preserve realism and the identity of the room.",
+      "tags": ["paint", "wall"]
+    },
+    {
+      "case_id": "swap-flooring-to-medium-oak",
+      "reference_frame_id": "frame_corner",
+      "prompt": "Redesign this exact bedroom. Keep the room layout, walls, windows, furniture placement, and camera viewpoint unchanged. Replace the flooring with medium-tone natural oak wood. Preserve realism and the identity of the room.",
+      "tags": ["flooring", "material_swap"]
+    }
+  ]
+}
