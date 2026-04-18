@@ -204,6 +204,15 @@ export interface AssetRef {
   kind: AssetKind;
   uri: string;
   bound_to: EntityId;
+  /**
+   * Optional BOM metadata (stretch.md Track 3 v1.2 Furniture BOM). Populated
+   * by the asset library when a retrieved glTF has retailer provenance; absent
+   * otherwise. Purely additive — MVP ingest/mutation paths do not populate.
+   */
+  retailer_url?: string | null;
+  retailer_name?: string | null;
+  price_cents?: number | null;
+  currency?: string | null;
 }
 
 export interface SplatAssetRecord {

@@ -335,6 +335,21 @@ export interface GeneratePhotorealRequest {
   fov?: number | null;
   prompt_modifiers: string[];
   idempotency_key: string;
+  /**
+   * Optional conditioning buffers captured from the client's three.js view.
+   * When present, a real ControlNet-backed provider uses these as structural
+   * inputs. Absent: server falls back to server-side deterministic conditioning
+   * derived from the committed scene snapshot (same as MVP behavior).
+   *
+   * All values are base64-encoded PNG bytes (no data: prefix).
+   */
+  conditioning?: {
+    color?: string | null;
+    depth?: string | null;
+    edge?: string | null;
+    width?: number | null;
+    height?: number | null;
+  } | null;
 }
 
 export interface GeneratePhotorealResponse {
