@@ -32,6 +32,7 @@ jobs:
           npm run verify:demo
           npm run verify:unit
           npm run verify:capture-bundle
+          npm run verify:bundle-phase0-bridge
 
   swift-build:
     name: Swift Package build
