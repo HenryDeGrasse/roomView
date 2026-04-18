@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const LAYER_SHELL = 0;
 const LAYER_OBJECTS = 1;
@@ -13,7 +14,27 @@ const LAYER_SPLAT = 2;
 const LAYER_GIZMO = 3;
 
 export function mountViewer(container) {
-  if (!container) throw new Error('mountViewer: missing container element');
+  return mountThreeView(container, {
+    enabledLayers: [LAYER_SHELL, LAYER_OBJECTS],
+    mountKind: 'viewer',
+  });
+}
+
+// Scan pane view: shell-only, orbit/zoom; L2 will light up when splat lands.
+// Reads canonical Scene.snapshot.state.room — independent three.js scene from
+// the render-pane viewer but shares the canonical coordinate frame so a
+// future stretch Track 2 v1.1 composite renderer can run in the same space.
+export function mountScanView(container) {
+  return mountThreeView(container, {
+    enabledLayers: [LAYER_SHELL, LAYER_SPLAT],
+    mountKind: 'scan',
+  });
+}
+
+function mountThreeView(container, opts) {
+  if (!container) throw new Error('mountThreeView: missing container element');
+  const enabledLayers = opts?.enabledLayers ?? [LAYER_SHELL, LAYER_OBJECTS];
+  const mountKind = opts?.mountKind ?? 'viewer';
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0b1020);
@@ -26,8 +47,9 @@ export function mountViewer(container) {
   const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 200);
   camera.up.set(0, 0, 1);
   camera.position.set(6, -6, 4);
-  camera.layers.enable(LAYER_SHELL);
-  camera.layers.enable(LAYER_OBJECTS);
+  // Start from layer 0 only (default) and enable exactly the configured layers.
+  camera.layers.disableAll();
+  for (const layer of enabledLayers) camera.layers.enable(layer);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio || 1);
@@ -71,19 +93,116 @@ export function mountViewer(container) {
   rafHandle = requestAnimationFrame(tick);
 
   let currentRoomId = null;
+  let currentSelectionId = null;
+  let onSelect = () => {};
+  const selectionSavedStyle = new Map();
 
-  function setRoom(room) {
+  // glTF loading infra. Boxes render immediately; glTFs swap in async.
+  // Resolver is pluggable so the MVP stays in box-proxy mode until a real
+  // asset library (stretch Track 3 v1 / data sourcing) lights up.
+  const gltfLoader = new GLTFLoader();
+  const gltfCache = new Map(); // resolvedUrl -> Promise<THREE.Group>
+  let assetUriResolver = () => null;
+  let setRoomVersion = 0;
+
+  const raycaster = new THREE.Raycaster();
+  const pointerNdc = new THREE.Vector2();
+
+  canvas.addEventListener('click', (event) => {
+    if (event.defaultPrevented) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    pointerNdc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    pointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointerNdc, camera);
+    raycaster.layers = camera.layers;
+    const candidates = [];
+    roomsRoot.traverse((child) => {
+      if (!child.isMesh) return;
+      // Only count objects/fixed-elements/walls as selectable — floor is skipped
+      // so clicking an empty floor area deselects.
+      const kind = child.userData?.kind;
+      if (kind === 'object' || kind === 'fixed_element' || kind === 'wall') {
+        candidates.push(child);
+      }
+    });
+    const hits = raycaster.intersectObjects(candidates, false);
+    const firstVisible = hits.find((hit) => camera.layers.test(hit.object.layers));
+    if (firstVisible) {
+      const id = firstVisible.object.userData?.canonical_id;
+      if (id) {
+        onSelect(id);
+        return;
+      }
+    }
+    onSelect(null);
+  });
+
+  function setSelection(id) {
+    for (const [mesh, saved] of selectionSavedStyle) {
+      if (mesh.material && mesh.material.emissive) {
+        mesh.material.emissive.setHex(saved.emissiveHex);
+        mesh.material.emissiveIntensity = saved.intensity;
+      }
+    }
+    selectionSavedStyle.clear();
+    currentSelectionId = id || null;
+    if (!currentSelectionId) return;
+    roomsRoot.traverse((obj) => {
+      if (!obj.isMesh) return;
+      if (obj.userData?.canonical_id !== currentSelectionId) return;
+      const mat = obj.material;
+      if (!mat || !mat.emissive) return;
+      selectionSavedStyle.set(obj, {
+        emissiveHex: mat.emissive.getHex(),
+        intensity: mat.emissiveIntensity ?? 1,
+      });
+      mat.emissive.setHex(0xfbbf24);
+      mat.emissiveIntensity = 0.55;
+    });
+  }
+
+  function setOnSelect(fn) {
+    onSelect = typeof fn === 'function' ? fn : () => {};
+  }
+
+  function setAssetUriResolver(fn) {
+    assetUriResolver = typeof fn === 'function' ? fn : () => null;
+  }
+
+  function setRoom(room, options) {
     if (!room) return;
+    setRoomVersion += 1;
+    const versionToken = setRoomVersion;
     disposeRoomsRoot();
-    const roomGroup = buildRoomGroup(room);
+    const assetRefsByObjectId = new Map();
+    const rawAssetRefs = options?.editing_asset_refs;
+    if (Array.isArray(rawAssetRefs)) {
+      for (const ref of rawAssetRefs) {
+        if (ref && typeof ref.bound_to === 'string') {
+          assetRefsByObjectId.set(ref.bound_to, ref);
+        }
+      }
+    }
+    const ctx = {
+      assetRefsByObjectId,
+      gltfCache,
+      gltfLoader,
+      resolveAssetUri: assetUriResolver,
+      versionToken,
+      getVersion: () => setRoomVersion,
+    };
+    const roomGroup = buildRoomGroup(room, ctx);
     roomsRoot.add(roomGroup);
     if (room.room_id !== currentRoomId) {
       fitCameraToRoom(camera, controls, room);
       currentRoomId = room.room_id;
     }
+    if (currentSelectionId) setSelection(currentSelectionId);
   }
 
   function disposeRoomsRoot() {
+    selectionSavedStyle.clear();
     for (const child of [...roomsRoot.children]) {
       disposeTree(child);
       roomsRoot.remove(child);
@@ -99,16 +218,47 @@ export function mountViewer(container) {
     if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
   }
 
-  const api = { setRoom, dispose };
+  function captureConditioning() {
+    // Render color (current scene state).
+    renderer.render(scene, camera);
+    const colorDataUrl = renderer.domElement.toDataURL('image/png');
+
+    // Render depth via an override material. MeshDepthMaterial packs depth into
+    // RGBA which is fine for conditioning; the real provider re-extracts it.
+    const savedOverride = scene.overrideMaterial;
+    const depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.BasicDepthPacking });
+    scene.overrideMaterial = depthMat;
+    renderer.render(scene, camera);
+    const depthDataUrl = renderer.domElement.toDataURL('image/png');
+    scene.overrideMaterial = savedOverride;
+    depthMat.dispose();
+
+    // Restore live color so the rAF loop resumes without a flash.
+    renderer.render(scene, camera);
+
+    return {
+      color: stripDataUrlPrefix(colorDataUrl),
+      depth: stripDataUrlPrefix(depthDataUrl),
+      // Edge is intentionally null in slice 1 of Phase 0 Slice D. Real providers
+      // typically generate their own Canny from the color buffer; when we wire
+      // a real provider, add a Sobel pass here or rely on the server to compute.
+      edge: null,
+      width: renderer.domElement.width,
+      height: renderer.domElement.height,
+    };
+  }
+
+  const api = { setRoom, setSelection, setOnSelect, setAssetUriResolver, captureConditioning, dispose };
   // Dev/demo hook: lets the browser console (and later E2E harnesses) inspect
   // the scene graph, camera, and controls without re-plumbing through the UI.
   if (typeof window !== 'undefined') {
-    window.__roomviewDebug = { api, scene, camera, controls, roomsRoot, THREE };
+    window.__roomviewDebug = window.__roomviewDebug || {};
+    window.__roomviewDebug[mountKind] = { api, scene, camera, controls, roomsRoot, THREE };
   }
   return api;
 }
 
-function buildRoomGroup(room) {
+function buildRoomGroup(room, ctx) {
   const group = new THREE.Group();
   group.userData = { kind: 'room', canonical_id: room.room_id };
 
@@ -116,13 +266,13 @@ function buildRoomGroup(room) {
   shell.userData = { kind: 'shell' };
   buildFloor(room, shell);
   buildWalls(room, shell);
-  buildFixedElements(room, shell);
+  buildFixedElements(room, shell, ctx);
   setLayerDeep(shell, LAYER_SHELL);
   group.add(shell);
 
   const objects = new THREE.Group();
   objects.userData = { kind: 'objects' };
-  buildObjects(room, objects);
+  buildObjects(room, objects, ctx);
   setLayerDeep(objects, LAYER_OBJECTS);
   group.add(objects);
 
@@ -196,7 +346,7 @@ function buildWalls(room, parent) {
   }
 }
 
-function buildFixedElements(room, parent) {
+function buildFixedElements(room, parent, ctx) {
   const elements = room.shell.fixed_elements ?? [];
   for (const element of elements) {
     const mesh = makeOBBMesh(element.obb, 0x808a94, 0.78);
@@ -207,10 +357,11 @@ function buildFixedElements(room, parent) {
       class: element.class,
     };
     parent.add(mesh);
+    tryAttachGLTF(parent, mesh, element.obb, element.fixed_element_id, ctx, 'fixed_element');
   }
 }
 
-function buildObjects(room, parent) {
+function buildObjects(room, parent, ctx) {
   for (const object of room.objects) {
     const color = objectColor(object);
     const mesh = makeOBBMesh(object.obb, color, 0.7);
@@ -221,7 +372,55 @@ function buildObjects(room, parent) {
       class: object.class,
     };
     parent.add(mesh);
+    tryAttachGLTF(parent, mesh, object.obb, object.object_id, ctx, 'object', object.class);
   }
+}
+
+function tryAttachGLTF(parentGroup, proxyMesh, obb, canonicalId, ctx, kind, className) {
+  if (!ctx || !ctx.assetRefsByObjectId) return;
+  const ref = ctx.assetRefsByObjectId.get(canonicalId);
+  if (!ref || ref.kind !== 'gltf' || typeof ref.uri !== 'string') return;
+  const resolved = ctx.resolveAssetUri ? ctx.resolveAssetUri(ref.uri) : null;
+  if (!resolved || typeof resolved !== 'string') return;
+  const versionAtRequest = ctx.versionToken;
+  const cached = ctx.gltfCache.get(resolved);
+  const promise = cached || new Promise((resolve, reject) => {
+    ctx.gltfLoader.load(resolved, (gltf) => resolve(gltf.scene), undefined, reject);
+  });
+  if (!cached) ctx.gltfCache.set(resolved, promise);
+  promise.then((sourceScene) => {
+    if (ctx.getVersion() !== versionAtRequest) return;
+    if (!proxyMesh.parent || proxyMesh.parent !== parentGroup) return;
+    const container = new THREE.Group();
+    const clone = sourceScene.clone(true);
+    container.add(clone);
+    // Fit clone to OBB — compute its axis-aligned bounds in local space, then
+    // uniformly scale so it fits within OBB without distortion.
+    const bbox = new THREE.Box3().setFromObject(clone);
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    if (size.x > 0 && size.y > 0 && size.z > 0) {
+      const scale = Math.min(
+        obb.size_x / size.x,
+        obb.size_y / size.y,
+        obb.size_z / size.z,
+      );
+      clone.scale.setScalar(scale);
+      const center = new THREE.Vector3();
+      bbox.getCenter(center);
+      clone.position.sub(center.multiplyScalar(scale));
+    }
+    container.position.set(obb.center.x, obb.center.y, obb.center.z);
+    container.rotation.z = (obb.yaw_degrees || 0) * Math.PI / 180;
+    container.userData = { canonical_id: canonicalId, kind, class: className, asset_backed: true };
+    parentGroup.add(container);
+    parentGroup.remove(proxyMesh);
+    disposeTree(proxyMesh);
+  }).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.warn('glTF load failed for', resolved, err);
+    // Box proxy stays in place.
+  });
 }
 
 function makeOBBMesh(obb, color, roughness) {
@@ -255,6 +454,12 @@ function shoelaceSignedArea(points) {
     sum += (b.x - a.x) * (b.y + a.y);
   }
   return sum;
+}
+
+function stripDataUrlPrefix(dataUrl) {
+  if (typeof dataUrl !== 'string') return null;
+  const idx = dataUrl.indexOf(',');
+  return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl;
 }
 
 function fitCameraToRoom(camera, controls, room) {

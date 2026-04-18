@@ -13,7 +13,9 @@ const serverDir = dirname(fileURLToPath(import.meta.url));
 const webAppRoot = resolve(serverDir, "..");
 const repoRoot = resolve(serverDir, "..", "..", "..");
 const viewerModulePath = resolve(serverDir, "viewer.js");
+const layoutViewModulePath = resolve(serverDir, "layout-view.js");
 const vendorThreeRoot = resolve(webAppRoot, "public", "vendor", "three");
+const vendorModelsRoot = resolve(webAppRoot, "public", "vendor", "models");
 const DEFAULT_FIXTURE_SCENE_ID = "fixture-bedroom-primary";
 const DEFAULT_FIXTURE_MANIFEST_PATH = "fixtures/manifest.json";
 export const DEFAULT_WEB_EDITOR_PORT = 4173;
@@ -50,6 +52,11 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
       return;
     }
 
+    if (request.method === "GET" && requestUrl.pathname === "/layout-view.js") {
+      sendStaticFile(response, layoutViewModulePath, "application/javascript; charset=utf-8");
+      return;
+    }
+
     if (request.method === "GET" && requestUrl.pathname.startsWith("/vendor/three/")) {
       const rel = requestUrl.pathname.slice("/vendor/three/".length);
       const resolved = resolve(vendorThreeRoot, rel);
@@ -58,6 +65,18 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
         return;
       }
       sendStaticFile(response, resolved, "application/javascript; charset=utf-8");
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname.startsWith("/vendor/models/")) {
+      const rel = requestUrl.pathname.slice("/vendor/models/".length);
+      const resolved = resolve(vendorModelsRoot, rel);
+      if (!resolved.startsWith(vendorModelsRoot + sep) && resolved !== vendorModelsRoot) {
+        sendJson(response, 400, { message: "Invalid vendor path." });
+        return;
+      }
+      const ct = resolved.endsWith('.gltf') ? 'model/gltf+json' : 'model/gltf-binary';
+      sendStaticFile(response, resolved, ct);
       return;
     }
 
@@ -296,6 +315,7 @@ function renderEditorShellHtml(input: {
         display: grid;
         gap: 10px;
         margin-top: 10px;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
       }
       .gallery-item {
         border: 1px solid #374151;
@@ -320,6 +340,66 @@ function renderEditorShellHtml(input: {
         position: relative;
       }
       .render-viewer canvas { display: block; width: 100%; height: 100%; }
+      .scan-viewer {
+        height: 240px;
+        width: 100%;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #07090f;
+        margin-bottom: 12px;
+        position: relative;
+      }
+      .scan-viewer canvas { display: block; width: 100%; height: 100%; }
+      .scan-mode-badge {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        background: rgba(59, 130, 246, 0.15);
+        color: #93c5fd;
+        border: 1px solid rgba(59, 130, 246, 0.4);
+        pointer-events: none;
+      }
+      .scan-mode-badge.splat {
+        background: rgba(34, 197, 94, 0.15);
+        color: #86efac;
+        border-color: rgba(34, 197, 94, 0.4);
+      }
+      .layout-svg-mount {
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        max-height: 300px;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #0a0e1a;
+        margin-bottom: 12px;
+      }
+      .layout-svg-mount svg [data-entity-id]:hover {
+        filter: brightness(1.25);
+        cursor: pointer;
+      }
+      .layout-svg-mount svg .rv-selected {
+        stroke: #fbbf24 !important;
+        stroke-width: 0.08 !important;
+      }
+      .layout-violations-summary {
+        margin: 8px 0 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid #7f1d1d;
+        background: rgba(127, 29, 29, 0.18);
+        color: #fecaca;
+        font-size: 12px;
+      }
+      .layout-violations-summary ul { margin: 6px 0 0; padding-left: 18px; }
+      .layout-scores {
+        margin: 4px 0 12px;
+        font-size: 12px;
+        color: #a7f3d0;
+      }
       @media (max-width: 1100px) {
         main { grid-template-columns: 1fr; }
         .pane { min-height: 0; }
@@ -415,6 +495,10 @@ function renderEditorShellHtml(input: {
         requestCounter: 0,
         viewer: null,
         viewerLoading: null,
+        layoutView: null,
+        layoutViewLoading: null,
+        scanView: null,
+        scanViewLoading: null,
       };
 
       const statusNode = document.getElementById("status");
@@ -512,6 +596,10 @@ function renderEditorShellHtml(input: {
           }
           if (action === "generate-photoreal") {
             void generatePhotorealFromActiveBookmark();
+            return;
+          }
+          if (action === "generate-style-grid") {
+            void generatePhotorealStyleGrid();
             return;
           }
         }
@@ -710,6 +798,47 @@ function renderEditorShellHtml(input: {
         }
       }
 
+      async function generatePhotorealStyleGrid() {
+        if (!state.scene || !state.sceneId) return;
+        if (!state.sessionId) {
+          setStatus('Style-grid generation requires a redeemed live scene session.', true);
+          return;
+        }
+        const styles = ['modern', 'cozy_warm', 'minimal_scandi', 'rustic_earthy'];
+        const bookmark = resolveActiveBookmark(state.scene);
+        const conditioning = safeCaptureConditioning();
+        setStatus('Generating ' + styles.length + ' style variants in parallel...');
+        const results = await Promise.allSettled(styles.map(async (style) => {
+          const key = 'render-photoreal-style-' + style + '-' + (++state.requestCounter);
+          return postSceneJson('/scenes/' + encodeURIComponent(state.sceneId) + '/photoreal', {
+            scene_snapshot_id: state.scene.snapshot.snapshot_id,
+            bookmark_id: bookmark ? bookmark.bookmark_id : undefined,
+            prompt_modifiers: [style],
+            idempotency_key: key,
+            conditioning,
+          });
+        }));
+        let added = 0;
+        for (const r of results) {
+          if (r.status === 'fulfilled' && r.value?.photoreal_entry) {
+            const entry = r.value.photoreal_entry;
+            if (!state.scene.photoreal_gallery.some((e) => e.entry_id === entry.entry_id)) {
+              state.scene.photoreal_gallery = [...state.scene.photoreal_gallery, entry];
+              added += 1;
+            }
+          }
+        }
+        const failed = results.filter((r) => r.status === 'rejected').length;
+        appendChatMessage(
+          'assistant',
+          'Style grid complete',
+          'Added ' + added + ' variant(s). ' + (failed > 0 ? failed + ' failed.' : ''),
+          failed > 0 ? 'error' : 'success'
+        );
+        setStatus('Style-grid generation complete: ' + added + ' new, ' + failed + ' failed.');
+        renderScene();
+      }
+
       async function generatePhotorealFromActiveBookmark() {
         if (!state.scene || !state.sceneId) {
           return;
@@ -720,11 +849,13 @@ function renderEditorShellHtml(input: {
         }
         try {
           const bookmark = resolveActiveBookmark(state.scene);
+          const conditioning = safeCaptureConditioning();
           const photorealResponse = await postSceneJson("/scenes/" + encodeURIComponent(state.sceneId) + "/photoreal", {
             scene_snapshot_id: state.scene.snapshot.snapshot_id,
             bookmark_id: bookmark ? bookmark.bookmark_id : undefined,
             prompt_modifiers: [],
             idempotency_key: "render-photoreal-" + (++state.requestCounter),
+            conditioning,
           });
           const jobResponse = await getSceneJson("/jobs/" + encodeURIComponent(photorealResponse.job_id));
           state.lastPhotorealJobId = photorealResponse.job_id;
@@ -848,11 +979,13 @@ function renderEditorShellHtml(input: {
               return;
             }
             const bookmark = resolveActiveBookmark(state.scene);
+            const conditioning = safeCaptureConditioning();
             const photorealResponse = await postSceneJson(state.pendingPlannerResponse.command.endpoint, {
               scene_snapshot_id: state.scene.snapshot.snapshot_id,
               bookmark_id: bookmark ? bookmark.bookmark_id : undefined,
               prompt_modifiers: [],
               idempotency_key: "chat-photoreal-" + (++state.requestCounter),
+              conditioning,
             });
             const jobResponse = await getSceneJson("/jobs/" + encodeURIComponent(photorealResponse.job_id));
             state.lastPhotorealJobId = photorealResponse.job_id;
@@ -910,13 +1043,153 @@ function renderEditorShellHtml(input: {
           renderEmptyState();
           return;
         }
-        scanPane.innerHTML = renderScanPane(state.scene);
-        layoutPane.innerHTML = renderLayoutPane(state.scene, state.selectionId);
+        ensureScanPaneSkeleton();
+        document.getElementById('scan-info-mount').innerHTML = renderScanPaneInfo(state.scene);
+        syncScanView();
+        ensureLayoutPaneSkeleton();
+        document.getElementById('layout-info-mount').innerHTML = renderLayoutPaneInfo(state.scene, state.selectionId);
+        syncLayoutView();
         ensureRenderPaneSkeleton();
         document.getElementById('render-info-mount').innerHTML = renderRenderPaneInfo(state.scene, state.quickRender, state.selectionId, state.loadedFrom);
         syncViewer();
         renderChatPanel();
         ensureSplatPolling();
+      }
+
+      function ensureScanPaneSkeleton() {
+        if (document.getElementById('scan-viewer-mount') && document.getElementById('scan-info-mount')) return;
+        scanPane.innerHTML = '<div class="scan-viewer"><div id="scan-viewer-mount" style="width:100%;height:100%"></div><span class="scan-mode-badge" id="scan-mode-badge">RoomPlan preview</span></div><div id="scan-info-mount"></div>';
+      }
+
+      function syncScanView() {
+        const room = state.scene && state.scene.snapshot && state.scene.snapshot.state && state.scene.snapshot.state.room;
+        if (!room) return;
+        updateScanModeBadge();
+        if (state.scanView) {
+          try { state.scanView.setRoom(room); } catch (err) { console.error('scanView.setRoom failed', err); }
+          return;
+        }
+        if (state.scanViewLoading) return;
+        state.scanViewLoading = (async () => {
+          try {
+            const mod = await import('/viewer.js');
+            const mount = document.getElementById('scan-viewer-mount');
+            if (!mount) return null;
+            const view = mod.mountScanView(mount);
+            state.scanView = view;
+            if (state.scene && state.scene.snapshot) {
+              view.setRoom(state.scene.snapshot.state.room);
+            }
+            return view;
+          } catch (err) {
+            console.error('scan view failed to load', err);
+            return null;
+          } finally {
+            state.scanViewLoading = null;
+          }
+        })();
+      }
+
+      function updateScanModeBadge() {
+        const badge = document.getElementById('scan-mode-badge');
+        if (!badge) return;
+        const splat = state.scene?.splat;
+        if (splat && splat.status === 'ready') {
+          badge.textContent = 'Splat ready';
+          badge.classList.add('splat');
+        } else {
+          badge.textContent = 'RoomPlan preview';
+          badge.classList.remove('splat');
+        }
+      }
+
+      function installAssetUriResolver(api) {
+        if (!api || typeof api.setAssetUriResolver !== 'function') return;
+        // Default: no resolver. Each canonical asset:// URI stays unresolved
+        // and the viewer falls back to box proxies. Add ?asset_demo=1 to map
+        // all furniture asset:// URIs to a shared demo model — proves the glTF
+        // pipeline end-to-end. Real behavior comes from the curated library
+        // (stretch Track 3 v1) once assets are sourced.
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('asset_demo') === '1') {
+          const demoUri = url.searchParams.get('asset_demo_uri') || '/vendor/models/placeholder.glb';
+          api.setAssetUriResolver((uri) => {
+            if (typeof uri === 'string' && uri.startsWith('asset://')) {
+              return demoUri;
+            }
+            return null;
+          });
+        }
+      }
+
+      function safeCaptureConditioning() {
+        if (!state.viewer || typeof state.viewer.captureConditioning !== 'function') return null;
+        try {
+          return state.viewer.captureConditioning();
+        } catch (err) {
+          console.error('captureConditioning failed', err);
+          return null;
+        }
+      }
+
+      function disposeScanView() {
+        if (!state.scanView) return;
+        try { state.scanView.dispose(); } catch (err) { console.error('scanView.dispose failed', err); }
+        state.scanView = null;
+      }
+
+      function ensureLayoutPaneSkeleton() {
+        if (document.getElementById('layout-svg-mount') && document.getElementById('layout-info-mount')) {
+          return;
+        }
+        layoutPane.innerHTML = '<div class="layout-svg-mount" id="layout-svg-mount"></div><div id="layout-info-mount"></div>';
+      }
+
+      function syncLayoutView() {
+        const room = state.scene && state.scene.snapshot && state.scene.snapshot.state && state.scene.snapshot.state.room;
+        if (!room) return;
+        const derived = state.scene.derived_state_cache || null;
+        if (state.layoutView) {
+          try {
+            state.layoutView.setRoom(room, derived);
+            state.layoutView.setSelection(state.selectionId);
+          } catch (err) {
+            console.error('layoutView.setRoom failed', err);
+          }
+          return;
+        }
+        if (state.layoutViewLoading) return;
+        state.layoutViewLoading = (async () => {
+          try {
+            const mod = await import('/layout-view.js');
+            const mount = document.getElementById('layout-svg-mount');
+            if (!mount) return null;
+            const view = mod.mountLayoutView(mount);
+            view.setOnSelect((id) => {
+              state.selectionId = id;
+              renderScene();
+            });
+            state.layoutView = view;
+            const liveScene = state.scene;
+            if (liveScene && liveScene.snapshot) {
+              view.setRoom(liveScene.snapshot.state.room, liveScene.derived_state_cache || null);
+              view.setSelection(state.selectionId);
+            }
+            return view;
+          } catch (err) {
+            console.error('layout view failed to load', err);
+            setStatus('Layout diagram failed to load; falling back to entity list.', true);
+            return null;
+          } finally {
+            state.layoutViewLoading = null;
+          }
+        })();
+      }
+
+      function disposeLayoutView() {
+        if (!state.layoutView) return;
+        try { state.layoutView.dispose(); } catch (err) { console.error('layoutView.dispose failed', err); }
+        state.layoutView = null;
       }
 
       function ensureRenderPaneSkeleton() {
@@ -931,9 +1204,11 @@ function renderEditorShellHtml(input: {
         if (!room) {
           return;
         }
+        const editingAssetRefs = state.scene.snapshot.editing_asset_refs || [];
         if (state.viewer) {
           try {
-            state.viewer.setRoom(room);
+            state.viewer.setRoom(room, { editing_asset_refs: editingAssetRefs });
+            state.viewer.setSelection(state.selectionId);
           } catch (err) {
             console.error('viewer.setRoom failed', err);
           }
@@ -950,9 +1225,17 @@ function renderEditorShellHtml(input: {
               return null;
             }
             const api = mod.mountViewer(mount);
+            api.setOnSelect((id) => {
+              state.selectionId = id;
+              renderScene();
+            });
+            installAssetUriResolver(api);
             state.viewer = api;
             if (state.scene && state.scene.snapshot) {
-              api.setRoom(state.scene.snapshot.state.room);
+              api.setRoom(state.scene.snapshot.state.room, {
+                editing_asset_refs: state.scene.snapshot.editing_asset_refs || [],
+              });
+              api.setSelection(state.selectionId);
             }
             return api;
           } catch (err) {
@@ -981,6 +1264,8 @@ function renderEditorShellHtml(input: {
       function renderEmptyState() {
         clearSplatPolling();
         disposeViewer();
+        disposeLayoutView();
+        disposeScanView();
         scanPane.innerHTML = emptyPane("Redeem a handoff or load a fixture to populate the read-only scan pane.");
         layoutPane.innerHTML = emptyPane("Selection state appears here once the server returns a scene.");
         renderPane.innerHTML = emptyPane("Quick-render inputs and derived cache details appear here once a scene is loaded.");
@@ -1076,7 +1361,7 @@ function renderEditorShellHtml(input: {
             : selectionId;
       }
 
-      function renderScanPane(scene) {
+      function renderScanPaneInfo(scene) {
         const room = scene.snapshot.state.room;
         const scanMode = scene.splat?.status === "ready" ? "splat" : "roomplan_preview";
         const summary = {
@@ -1117,9 +1402,12 @@ function renderEditorShellHtml(input: {
         ].join('');
       }
 
-      function renderLayoutPane(scene, selectionId) {
+      function renderLayoutPaneInfo(scene, selectionId) {
         const room = scene.snapshot.state.room;
         const selected = findSelectedEntity(scene, selectionId);
+        const derived = scene.derived_state_cache || null;
+        const violationsBlock = renderViolationsSummary(derived);
+        const scoresBlock = renderSoftScores(derived);
         const groups = [
           {
             title: 'Objects',
@@ -1135,7 +1423,7 @@ function renderEditorShellHtml(input: {
           }
         ];
 
-        return groups.map((group) => {
+        return violationsBlock + scoresBlock + groups.map((group) => {
           const buttons = group.items.length === 0
             ? '<p class="muted">No ' + group.title.toLowerCase() + ' in scene.</p>'
             : '<div class="list">' + group.items.map((item) => {
@@ -1144,6 +1432,52 @@ function renderEditorShellHtml(input: {
               }).join('') + '</div>';
           return '<section style="margin-bottom:16px"><div class="badge">' + escapeHtml(group.title) + '</div>' + buttons + '</section>';
         }).join('') + '<section><div class="badge">Selection</div>' + renderSelectedEntity(selected) + '</section>';
+      }
+
+      function renderViolationsSummary(derived) {
+        if (!derived || !derived.hard_violations || derived.hard_violations.length === 0) {
+          return '<div class="layout-scores">No hard violations.</div>';
+        }
+        const items = derived.hard_violations.map((v) => {
+          const reason = v.reason_code || 'VIOLATION';
+          const msg = v.message || (v.blocked_by ? 'blocked_by ' + v.blocked_by.join(', ') : 'affects ' + (v.entity_ids || [v.entity_id]).filter(Boolean).join(', '));
+          return '<li>' + escapeHtml(reason) + ' — ' + escapeHtml(msg) + '</li>';
+        }).join('');
+        return '<div class="layout-violations-summary"><strong>' + derived.hard_violations.length + ' hard violation(s)</strong><ul>' + items + '</ul></div>';
+      }
+
+      function renderBomStrip(scene) {
+        const refs = (scene.snapshot.editing_asset_refs || []);
+        const objects = scene.snapshot.state.room.objects || [];
+        const classByObjectId = new Map(objects.map((o) => [o.object_id, o.class]));
+        let totalCents = 0;
+        let priceCount = 0;
+        const rows = refs.map((ref) => {
+          const cls = classByObjectId.get(ref.bound_to) || '—';
+          const price = typeof ref.price_cents === 'number' ? ref.price_cents : null;
+          if (price !== null) { totalCents += price; priceCount += 1; }
+          const priceStr = price !== null ? (ref.currency || 'USD') + ' ' + (price / 100).toFixed(2) : '—';
+          const link = ref.retailer_url ? '<a href="' + escapeHtml(ref.retailer_url) + '" target="_blank" rel="noopener" style="color:#93c5fd">' + escapeHtml(ref.retailer_name || 'link') + '</a>' : '—';
+          return '<tr><td>' + escapeHtml(cls) + '</td><td>' + escapeHtml(ref.asset_id) + '</td><td>' + priceStr + '</td><td>' + link + '</td></tr>';
+        }).join('');
+        const totalRow = priceCount > 0 ? '<tr style="border-top:1px solid #374151"><td colspan="2"><strong>Subtotal (' + priceCount + ' items)</strong></td><td><strong>USD ' + (totalCents / 100).toFixed(2) + '</strong></td><td></td></tr>' : '';
+        const summary = refs.length === 0
+          ? '<p class="muted">No asset bindings attached to this snapshot.</p>'
+          : '<details style="margin-top:8px"><summary style="cursor:pointer;color:#93c5fd">' + refs.length + ' asset binding(s)' + (priceCount === 0 ? ' — retailer metadata not yet populated (stretch Track 3 v1.2)' : '') + '</summary>'
+            + '<table style="width:100%;font-size:12px;border-collapse:collapse;margin-top:8px"><thead><tr style="text-align:left;color:#94a3b8"><th>Class</th><th>Asset</th><th>Price</th><th>Retailer</th></tr></thead><tbody>'
+            + rows + totalRow + '</tbody></table></details>';
+        return '<div class="badge">Furniture BOM</div>' + summary;
+      }
+
+      function renderSoftScores(derived) {
+        if (!derived || !derived.soft_scores) return '';
+        const entries = Object.entries(derived.soft_scores);
+        if (entries.length === 0) return '';
+        const parts = entries.map(([name, value]) => {
+          const v = typeof value === 'number' ? value.toFixed(2) : String(value);
+          return escapeHtml(name) + ' ' + v;
+        });
+        return '<div class="layout-scores">Soft scores: ' + parts.join(' · ') + '</div>';
       }
 
       function renderSelectedEntity(selected) {
@@ -1176,10 +1510,12 @@ function renderEditorShellHtml(input: {
               return '<button type="button" data-bookmark-id="' + escapeHtml(bookmark.bookmark_id) + '" data-selected="' + selectedState + '">' + escapeHtml(bookmark.name + ' · ' + bookmark.bookmark_id) + '</button>';
             }).join('') + '</div>';
         const gallery = scene.photoreal_gallery.length === 0
-          ? '<p class="muted">No photoreal outputs yet. Use the button below to generate one from the active bookmark.</p>'
+          ? '<p class="muted">No photoreal outputs yet. Use the buttons below to generate one from the active bookmark, or request a grid of style variants.</p>'
           : '<div class="gallery-grid">' + [...scene.photoreal_gallery].reverse().map((entry) => {
               const providerUri = entry.provider_metadata?.uri || '<none>';
-              return '<div class="gallery-item"><strong>' + escapeHtml(entry.entry_id) + '</strong><pre>' + escapeHtml(JSON.stringify({ scene_version: entry.scene_version, scene_snapshot_id: entry.scene_snapshot_id, bookmark_id: entry.bookmark_id, asset_id: entry.asset_id, provider_uri: providerUri, created_at: entry.created_at }, null, 2)) + '</pre></div>';
+              const styleTag = Array.isArray(entry.prompt_modifiers) && entry.prompt_modifiers.length > 0 ? entry.prompt_modifiers.join(', ') : null;
+              const styleBadge = styleTag ? '<div class="badge" style="background:rgba(251,191,36,0.15);color:#fcd34d;margin-bottom:6px">' + escapeHtml(styleTag) + '</div>' : '';
+              return '<div class="gallery-item">' + styleBadge + '<strong>' + escapeHtml(entry.entry_id) + '</strong><pre>' + escapeHtml(JSON.stringify({ scene_version: entry.scene_version, scene_snapshot_id: entry.scene_snapshot_id, bookmark_id: entry.bookmark_id, asset_id: entry.asset_id, provider_uri: providerUri, created_at: entry.created_at }, null, 2)) + '</pre></div>';
             }).join('') + '</div>';
         const details = {
           loaded_from: loadedFrom,
@@ -1207,8 +1543,9 @@ function renderEditorShellHtml(input: {
           '<div><dt>Version sync</dt><dd>' + escapeHtml(versionSynchronized ? 'synchronized' : 'mismatch') + '</dd></div>',
           '</dl>',
           '<section class="render-section"><div class="badge">Bookmarks</div>' + bookmarkList + '</section>',
-          '<section class="render-section"><div class="actions"><button type="button" data-render-action="save-bookmark">Save active bookmark</button><button type="button" class="secondary" data-render-action="generate-photoreal">Generate photoreal</button></div><p class="muted" style="margin-top:10px">Buttons are live only after redeeming an authenticated scene handoff. The current shell uses the active bookmark as the render camera scaffold.</p></section>',
+          '<section class="render-section"><div class="actions"><button type="button" data-render-action="save-bookmark">Save active bookmark</button><button type="button" class="secondary" data-render-action="generate-photoreal">Generate photoreal</button><button type="button" class="secondary" data-render-action="generate-style-grid">Generate 4 styles</button></div><p class="muted" style="margin-top:10px">Buttons are live only after redeeming an authenticated scene handoff. “Generate 4 styles” fires parallel /photoreal requests with different prompt modifiers ([stretch.md Track 2 v1.3] Photoreal style exploration).</p></section>',
           '<section class="render-section"><div class="badge">Photoreal gallery</div>' + gallery + '</section>',
+          '<section class="render-section">' + renderBomStrip(scene) + '</section>',
           '<div style="margin-top:12px"><pre>' + escapeHtml(JSON.stringify(details, null, 2)) + '</pre></div>'
         ].join('');
       }
