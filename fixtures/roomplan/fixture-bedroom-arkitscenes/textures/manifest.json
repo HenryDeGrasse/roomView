@@ -1,11 +1,11 @@
 {
   "fixture_id": "fixture-bedroom-arkitscenes",
-  "texel_m": 0.04,
+  "texel_m": 0.015,
   "textures": {
     "surface-scene-fixture-fixture-bedroom-arkitscene-f69c7829": {
       "path": "textures/surface-scene-fixture-fixture-bedroom-arkitscene-f69c7829.png",
-      "width": 102,
-      "height": 85,
+      "width": 270,
+      "height": 226,
       "u_min": -0.24325296875224198,
       "u_max": 3.7973201190196395,
       "v_min": 0.006163626837777063,
@@ -14,8 +14,8 @@
     },
     "surface-scene-fixture-fixture-bedroom-arkitscene-4241292c": {
       "path": "textures/surface-scene-fixture-fixture-bedroom-arkitscene-4241292c.png",
-      "width": 102,
-      "height": 85,
+      "width": 270,
+      "height": 226,
       "u_min": -0.24325296875224198,
       "u_max": 3.7973201190196395,
       "v_min": 0.006163626837777063,
@@ -24,8 +24,8 @@
     },
     "surface-scene-fixture-fixture-bedroom-arkitscene-4a606097": {
       "path": "textures/surface-scene-fixture-fixture-bedroom-arkitscene-4a606097.png",
-      "width": 97,
-      "height": 60,
+      "width": 257,
+      "height": 159,
       "u_min": 0.0,
       "u_max": 3.8468539070864587,
       "v_min": 0.0,
@@ -34,8 +34,8 @@
     },
     "surface-scene-fixture-fixture-bedroom-arkitscene-869b2b5d": {
       "path": "textures/surface-scene-fixture-fixture-bedroom-arkitscene-869b2b5d.png",
-      "width": 79,
-      "height": 60,
+      "width": 210,
+      "height": 159,
       "u_min": 0.0,
       "u_max": 3.1351150249156245,
       "v_min": 0.0,
@@ -44,8 +44,8 @@
     },
     "surface-scene-fixture-fixture-bedroom-arkitscene-bcded795": {
       "path": "textures/surface-scene-fixture-fixture-bedroom-arkitscene-bcded795.png",
-      "width": 97,
-      "height": 60,
+      "width": 257,
+      "height": 159,
       "u_min": 0.0,
       "u_max": 3.846853907086459,
       "v_min": 0.0,
@@ -54,8 +54,8 @@
     },
     "surface-scene-fixture-fixture-bedroom-arkitscene-860f783b": {
       "path": "textures/surface-scene-fixture-fixture-bedroom-arkitscene-860f783b.png",
-      "width": 79,
-      "height": 60,
+      "width": 210,
+      "height": 159,
       "u_min": 0.0,
       "u_max": 3.1351150249156254,
       "v_min": 0.0,
