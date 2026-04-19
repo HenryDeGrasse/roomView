@@ -105,12 +105,22 @@ function mountThreeView(container, opts) {
   resizeObserver.observe(container);
   window.addEventListener('resize', resize);
 
-  let rafHandle = 0;
+  // Dollhouse mode — when the camera moves OUTSIDE the room polygon,
+  // hide the splat + mesh content so the shell reads as a clean box
+  // from every exterior angle. The same FrontSide culling that makes
+  // walls see-through from outside doesn't affect gaussian splats
+  // (they're view-aligned sprites), so we gate them on a polygon
+  // inside-test every tick.
+  let dollhouseState = { inside: true, splatViewerGetter: null }; // start inside so splats show until we know otherwise
   const tick = () => {
     controls.update();
+    if (mountKind === 'scan') {
+      updateDollhouseVisibility(camera, roomsRoot, scanProxiesRoot, dollhouseState);
+    }
     renderer.render(scene, camera);
     rafHandle = requestAnimationFrame(tick);
   };
+  let rafHandle = 0;
   rafHandle = requestAnimationFrame(tick);
 
   let currentRoomId = null;
@@ -208,9 +218,18 @@ function mountThreeView(container, opts) {
   let currentSplatUri = null;
   const splatMeta = { uri: null, gaussian_count: null, status: 'absent' };
   let splatLoader = null; // Week 4 follow-up: drop in gsplat.js or similar.
+  // Optional accessor for the live DropInViewer — splat-loader.js wires
+  // this up via setSplatViewerGetter so the dollhouse visibility toggle
+  // can .visible it without chasing scene children every tick.
+  let splatViewerGetter = null;
 
   function setSplatLoader(fn) {
     splatLoader = typeof fn === 'function' ? fn : null;
+  }
+
+  function setSplatViewerGetter(fn) {
+    splatViewerGetter = typeof fn === 'function' ? fn : null;
+    dollhouseState.splatViewerGetter = splatViewerGetter;
   }
 
   async function setSplat(descriptor) {
@@ -580,6 +599,7 @@ function mountThreeView(container, opts) {
     setAssetUriResolver,
     setSplat,
     setSplatLoader,
+    setSplatViewerGetter,
     getSplatMeta,
     setScanProxies,
     setObjectOutlines,
@@ -601,7 +621,10 @@ function mountThreeView(container, opts) {
 
 function buildRoomGroup(room, ctx) {
   const group = new THREE.Group();
-  group.userData = { kind: 'room', canonical_id: room.room_id };
+  // Stash the room payload so tick-time helpers (e.g. the dollhouse
+  // visibility toggle) can read floor_polygon + ceiling_height without
+  // threading state through the mount closure.
+  group.userData = { kind: 'room', canonical_id: room.room_id, roomData: room };
 
   const shell = new THREE.Group();
   shell.userData = { kind: 'shell' };
@@ -719,6 +742,82 @@ function buildWalls(room, parent, ctx) {
 }
 
 /**
+ * Toggle scan-pane splat + mesh content visibility based on whether
+ * the camera is inside the room polygon. FrontSide culling hides the
+ * inpaint walls from outside orbits, but gaussian splats render from
+ * every angle — so we hide them explicitly when the camera is outside
+ * the shell. The result is a clean dollhouse from exterior angles, and
+ * full-content view from interior angles.
+ *
+ * Uses the ray-crossings point-in-polygon test against floor_polygon
+ * vertices (handles the rotated rectangle produced by scan-to-shell.py
+ * as well as any non-rectangular shape). Adds a 30cm horizontal margin
+ * + a small Z band around the room so edge orbits aren't twitchy.
+ */
+function updateDollhouseVisibility(camera, roomsRoot, scanProxiesRoot, state) {
+  // Find the first room's floor polygon and ceiling height.
+  let shell = null;
+  roomsRoot.traverse((node) => {
+    if (shell) return;
+    const room = node.userData?.roomData;
+    if (room && room.shell) shell = room.shell;
+  });
+  if (!shell) return;
+  const polygon = shell.floor_polygon?.vertices;
+  if (!polygon || polygon.length < 3) return;
+  const margin = 0.3;
+  const ceilH = Number(shell.ceiling_height) || 2.4;
+  const cx = camera.position.x;
+  const cy = camera.position.y;
+  const cz = camera.position.z;
+  const insideZ = cz > -margin && cz < ceilH + margin;
+  const insideXY = insideZ && pointInPolygonWithMargin(cx, cy, polygon, margin);
+  if (insideXY !== state.inside) {
+    state.inside = insideXY;
+    // Toggle the .visible on the splat viewer (if installed) and on
+    // the scan-native proxies root. We set .visible directly instead
+    // of relying on camera.layers because the mkkellogg gaussian-splat
+    // library renders through its own internal draw pass and doesn't
+    // always honour the outer camera's layer mask.
+    if (state.splatViewerGetter) {
+      const viewer = state.splatViewerGetter();
+      if (viewer) viewer.visible = insideXY;
+    }
+    if (scanProxiesRoot) scanProxiesRoot.visible = insideXY;
+  }
+}
+
+function pointInPolygonWithMargin(px, py, vertices, margin) {
+  // Expand polygon by `margin` along each edge's inward normal. Rather
+  // than computing a Minkowski sum exactly, approximate by inflating
+  // the point-in-polygon test: a point is "inside with margin" if it's
+  // inside OR within `margin` of any edge.
+  let inside = false;
+  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+    const xi = vertices[i].x, yi = vertices[i].y;
+    const xj = vertices[j].x, yj = vertices[j].y;
+    const intersect = ((yi > py) !== (yj > py)) &&
+      (px < ((xj - xi) * (py - yi)) / ((yj - yi) || 1e-9) + xi);
+    if (intersect) inside = !inside;
+  }
+  if (inside) return true;
+  // Distance-to-edge fallback for the margin band.
+  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+    const xi = vertices[i].x, yi = vertices[i].y;
+    const xj = vertices[j].x, yj = vertices[j].y;
+    const dx = xj - xi, dy = yj - yi;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1e-9) continue;
+    const t = Math.max(0, Math.min(1, ((px - xi) * dx + (py - yi) * dy) / len2));
+    const ex = xi + t * dx, ey = yi + t * dy;
+    const d2 = (px - ex) * (px - ex) + (py - ey) * (py - ey);
+    if (d2 <= margin * margin) return true;
+  }
+  return false;
+}
+
+
+/**
  * Scan-pane inpaint: one inward-facing plane per shell surface (floor,
  * ceiling, every wall). Uses THREE.FrontSide culling so the plane only
  * renders when the camera is on the inside — orbits from outside see
@@ -743,14 +842,21 @@ function buildCaptureInpaintShell(room, parent) {
       { x: 1, y: 0, z: 0 },
       { x: 0, y: 1, z: 0 },
       { x: 0, y: 0, z: 1 });
-    // Ceiling — same polygon, lifted to z=ceiling, normal -Z so it
-    // renders only when the camera is below.
+    // Ceiling: lift the SAME polygon (in its natural +Y orientation)
+    // to z=ceiling_height. We keep v_axis=+Y so (x, y) polygon vertices
+    // land at (x, y, ceiling_h) — otherwise flipping v_axis to get a
+    // -Z face normal mirrors the ceiling polygon through the Y axis
+    // and the ceiling ends up rotated 180° off its walls. Instead
+    // we keep the frame identical to the floor (face normal +Z) and
+    // render with BackSide so it's only visible from BELOW — which is
+    // the same dollhouse behavior we wanted from -Z + FrontSide.
     const ceilShape = new THREE.Shape(points);
     addInpaintSurface(parent, ceilShape, 'ceiling',
       { x: 0, y: 0, z: ceilingHeight },
       { x: 1, y: 0, z: 0 },
-      { x: 0, y: -1, z: 0 }, // flip v so face winding matches the -Z normal
-      { x: 0, y: 0, z: -1 });
+      { x: 0, y: 1, z: 0 },
+      { x: 0, y: 0, z: 1 },
+      { side: THREE.BackSide });
   }
 
   // Walls — each one has its own `surface_frame` pointing inward.
@@ -767,11 +873,14 @@ function buildCaptureInpaintShell(room, parent) {
   }
 }
 
-function addInpaintSurface(parent, shape, category, origin, uAxis, vAxis, normal) {
+function addInpaintSurface(parent, shape, category, origin, uAxis, vAxis, normal, opts = {}) {
   const geom = new THREE.ShapeGeometry(shape);
   const mat = new THREE.MeshBasicMaterial({
     color: CAPTURE_INPAINT_COLORS[category] ?? 0xbbbbbb,
-    side: THREE.FrontSide,   // auto-transparent from outside
+    // FrontSide by default → auto-transparent from outside. Ceiling
+    // passes side:BackSide because its shape is emitted with a +Z face
+    // normal (to avoid a Y-flip) but we want it visible from below.
+    side: opts.side ?? THREE.FrontSide,
     transparent: false,
     depthWrite: true,
   });

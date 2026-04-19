@@ -17,6 +17,11 @@ import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
 let activeViewer = null;   // singleton DropInViewer attached to the scan scene
 let lastDisposedAt = 0;
 
+/** Returns the DropInViewer Three.js object, if any splat is loaded. */
+export function getActiveSplatViewer() {
+  return activeViewer;
+}
+
 function disposeActiveSplat(scene) {
   if (!activeViewer) return;
   try {
@@ -86,5 +91,12 @@ export async function loadSplatIntoScene({ uri, scene, camera, layer, THREE }) {
 export function installSplatLoader(scanView) {
   if (!scanView || typeof scanView.setSplatLoader !== 'function') return false;
   scanView.setSplatLoader(loadSplatIntoScene);
+  // Also let the viewer toggle the splat's .visible directly when the
+  // camera crosses the room boundary — the gaussian-splat library
+  // renders through its own pass and doesn't always honour the outer
+  // camera's layer mask, so we need the object-level toggle.
+  if (typeof scanView.setSplatViewerGetter === 'function') {
+    scanView.setSplatViewerGetter(getActiveSplatViewer);
+  }
   return true;
 }
