@@ -148,22 +148,174 @@ def classify_planes(planes: list[dict[str, Any]]) -> tuple[list[dict], list[dict
     return floors, ceilings, walls
 
 
-def snap_wall_normal(normal: np.ndarray) -> np.ndarray:
-    """Snap a (nearly) axis-aligned wall normal to the nearest cardinal."""
-    n_horiz = normal.copy()
-    n_horiz[2] = 0.0
-    mag = np.linalg.norm(n_horiz)
+def _canonicalize_wall(wall: dict) -> dict:
+    """
+    Flip a wall's normal + offset so the normal sits in a canonical
+    half-plane of horizontal directions. Open3D's plane normals are
+    returned with arbitrary sign; canonicalizing first lets us cluster
+    "the same wall" correctly regardless of which way the RANSAC fit
+    happened to orient the normal.
+
+    Canonical: n_x > 0, or if n_x ≈ 0, n_y > 0.
+    """
+    n = wall["normal"].copy()
+    offset = wall["offset"]
+    if n[0] < -1e-6 or (abs(n[0]) < 1e-6 and n[1] < 0):
+        n = -n
+        offset = -offset
+    return {**wall, "normal": n, "offset": offset}
+
+
+def _wall_azimuth(wall: dict) -> float:
+    """Azimuth of a canonicalized wall normal in the XY plane, radians."""
+    n = wall["normal"]
+    return float(np.arctan2(n[1], n[0]))
+
+
+def cluster_walls_by_direction(walls: list[dict], cluster_gap_deg: float = 15.0) -> list[list[dict]]:
+    """
+    Sort canonicalized walls by azimuth, split into clusters at any gap
+    wider than `cluster_gap_deg`. Two parallel walls (room's front and
+    back) end up in the same cluster since their normals both canonicalize
+    to the same half-plane direction.
+    """
+    if not walls:
+        return []
+    sorted_walls = sorted(walls, key=_wall_azimuth)
+    gap = np.radians(cluster_gap_deg)
+    clusters: list[list[dict]] = [[sorted_walls[0]]]
+    for w in sorted_walls[1:]:
+        if _wall_azimuth(w) - _wall_azimuth(clusters[-1][-1]) < gap:
+            clusters[-1].append(w)
+        else:
+            clusters.append([w])
+    # Handle wrap-around: a wall near azimuth +π/2-ε and another near -π/2+ε
+    # After canonicalization both are in [-π/2, π/2], so no wrap issue here.
+    return clusters
+
+
+def _cluster_direction(cluster: list[dict]) -> np.ndarray:
+    """Inlier-weighted average of normals in a cluster, re-normalized."""
+    weighted = np.zeros(3, dtype=np.float64)
+    total = 0.0
+    for w in cluster:
+        weighted += w["normal"] * w["inlier_count"]
+        total += w["inlier_count"]
+    avg = weighted / max(total, 1.0)
+    mag = np.linalg.norm(avg)
     if mag < 1e-6:
-        return normal
-    n_horiz /= mag
-    # Candidates: ±X, ±Y
-    candidates = np.array([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]], dtype=np.float64)
-    dots = candidates @ n_horiz
-    best = int(np.argmax(dots))
-    angle_deg = np.degrees(np.arccos(np.clip(dots[best], -1, 1)))
-    if angle_deg <= WALL_SNAP_ANGLE_DEG:
-        return candidates[best].astype(np.float64)
-    return normal
+        return cluster[0]["normal"].copy()
+    return avg / mag
+
+
+def _cluster_extents(cluster: list[dict], direction: np.ndarray) -> tuple[float, float, list[dict]]:
+    """
+    Project each wall onto `direction` and return (min_d, max_d, ordered_walls).
+    A wall's signed distance from origin along `direction` is the solution
+    of `direction · x = signed_d` for any x on the plane. For a plane
+    `n · x + offset = 0` (n the wall's canonicalized normal, |n|=1), the
+    signed distance along `direction` is `-offset * sign(n · direction)`.
+    """
+    distances = []
+    for w in cluster:
+        sign = float(np.sign(np.dot(w["normal"], direction)))
+        if sign == 0:
+            sign = 1.0
+        distances.append((float(-w["offset"]) * sign, w))
+    distances.sort(key=lambda t: t[0])
+    ordered_walls = [w for _, w in distances]
+    d_values = [d for d, _ in distances]
+    return d_values[0], d_values[-1], ordered_walls
+
+
+def fit_rectangular_polygon(
+    walls: list[dict],
+    positions: np.ndarray,
+) -> tuple[list[tuple[float, float]], tuple[np.ndarray, np.ndarray]] | None:
+    """
+    Two-step fit:
+      1. Use detected wall planes to determine the room's rotation
+         (primary wall direction + perpendicular).
+      2. Use percentiles of the splat point cloud along those
+         directions to determine room EXTENT — more robust than relying
+         on RANSAC to find the exact back-wall plane, which often has
+         fewer inliers than front walls in one-sided captures.
+
+    Returns (corners_ccw, (dir_a, dir_b)) where corners are 2D (x, y)
+    tuples in the scene frame (no translation applied). Returns None if
+    we can't form a rectangular room (fewer than 2 near-perpendicular
+    wall clusters).
+    """
+    if not walls:
+        return None
+    canon = [_canonicalize_wall(w) for w in walls]
+    clusters = cluster_walls_by_direction(canon)
+    if not clusters:
+        return None
+    # Rank clusters by total inlier count — biggest wall sets first.
+    ranked = sorted(
+        clusters,
+        key=lambda c: -sum(w["inlier_count"] for w in c),
+    )
+    primary = ranked[0]
+    primary_dir = _cluster_direction(primary)
+    # Find the cluster most perpendicular to primary (dot product closest to 0).
+    best_perp = None
+    best_score = 1.0  # smaller |dot| is more perpendicular
+    for c in ranked[1:]:
+        d = _cluster_direction(c)
+        dot = abs(float(np.dot(primary_dir, d)))
+        if dot < best_score:
+            best_score = dot
+            best_perp = c
+    if best_perp is None or best_score > 0.3:
+        return None
+    perp_dir = _cluster_direction(best_perp)
+    # Orthogonalize perp_dir against primary_dir so the 2x2 intersection
+    # solve is cleanly perpendicular even when the perpendicular cluster's
+    # members are a couple of degrees off.
+    perp_dir = perp_dir - primary_dir * float(np.dot(perp_dir, primary_dir))
+    perp_mag = float(np.linalg.norm(perp_dir))
+    if perp_mag < 1e-6:
+        return None
+    perp_dir = perp_dir / perp_mag
+
+    # Step 2: project splat points onto each direction, use 2nd/98th
+    # percentiles as extents. Percentiles (not min/max) tolerate outlier
+    # splats that landed just outside the real room from depth noise.
+    EXTENT_PERCENTILES = (2.0, 98.0)
+    dir_a_xy = primary_dir[:2]
+    dir_b_xy = perp_dir[:2]
+    xy = positions[:, :2].astype(np.float64)
+    proj_a = xy @ dir_a_xy
+    proj_b = xy @ dir_b_xy
+    min_a = float(np.percentile(proj_a, EXTENT_PERCENTILES[0]))
+    max_a = float(np.percentile(proj_a, EXTENT_PERCENTILES[1]))
+    min_b = float(np.percentile(proj_b, EXTENT_PERCENTILES[0]))
+    max_b = float(np.percentile(proj_b, EXTENT_PERCENTILES[1]))
+
+    # Solve intersection in XY for each corner.
+    def intersect_xy(d_a: float, d_b: float) -> tuple[float, float]:
+        M = np.array([
+            [primary_dir[0], primary_dir[1]],
+            [perp_dir[0], perp_dir[1]],
+        ], dtype=np.float64)
+        rhs = np.array([d_a, d_b], dtype=np.float64)
+        xy = np.linalg.solve(M, rhs)
+        return float(xy[0]), float(xy[1])
+
+    raw_corners = [
+        intersect_xy(min_a, min_b),
+        intersect_xy(max_a, min_b),
+        intersect_xy(max_a, max_b),
+        intersect_xy(min_a, max_b),
+    ]
+    centroid = (sum(c[0] for c in raw_corners) / 4.0, sum(c[1] for c in raw_corners) / 4.0)
+    corners_ccw = sorted(
+        raw_corners,
+        key=lambda p: np.arctan2(p[1] - centroid[1], p[0] - centroid[0]),
+    )
+    return corners_ccw, (primary_dir, perp_dir)
 
 
 def pick_dominant_horizontal_plane(planes: list[dict], prefer: str) -> dict | None:
@@ -177,7 +329,123 @@ def pick_dominant_horizontal_plane(planes: list[dict], prefer: str) -> dict | No
     return planes_sorted[0]
 
 
-def compute_wall_aabb(
+def _edge_length(p0: tuple[float, float], p1: tuple[float, float]) -> float:
+    return float(np.hypot(p1[0] - p0[0], p1[1] - p0[1]))
+
+
+def build_shell_update_from_polygon(
+    corners_ccw: list[tuple[float, float]],
+    floor: dict | None,
+    ceiling: dict | None,
+    existing_scene: dict,
+) -> dict:
+    """
+    Build the new shell given 4 CCW corners of a (possibly rotated)
+    floor polygon. Each wall's `surface_frame` is derived from its
+    corner pair: u_axis along the edge, v_axis = +Z up, normal rotated
+    90° CCW from u_axis (pointing inward since corners are CCW).
+    """
+    old_shell = existing_scene["snapshot"]["state"]["room"]["shell"]
+    floor_z = float(floor["z_plane"]) if floor else 0.0
+    ceil_z = float(ceiling["z_plane"]) if ceiling else floor_z + float(old_shell.get("ceiling_height", 2.4))
+    ceiling_height = max(1.8, ceil_z - floor_z)
+
+    new_floor_vertices = [{"x": float(x), "y": float(y)} for x, y in corners_ccw]
+
+    # Match each detected wall edge to one of the existing 4 wall surfaces
+    # by orientation. Existing surfaces carry the old `surface_frame.normal`
+    # — we pick the new wall whose inward normal is closest to it. This
+    # preserves IDs + named_wall_ref bindings through the geometry swap.
+    old_surfaces = old_shell["surfaces"]
+    old_walls = [s for s in old_surfaces if s["type"] == "wall"]
+    used_old_wall_ids: set[str] = set()
+
+    def match_old_wall(new_normal: np.ndarray) -> dict | None:
+        best = None
+        best_dot = -2.0
+        for s in old_walls:
+            if s["surface_id"] in used_old_wall_ids:
+                continue
+            frame = s.get("surface_frame") or {}
+            n = frame.get("normal") or {"x": 0, "y": 0, "z": 0}
+            old_n = np.array([float(n["x"]), float(n["y"]), float(n["z"])])
+            mag = float(np.linalg.norm(old_n))
+            if mag < 1e-6:
+                continue
+            old_n = old_n / mag
+            dot = float(np.dot(new_normal, old_n))
+            if dot > best_dot:
+                best_dot = dot
+                best = s
+        if best is not None:
+            used_old_wall_ids.add(best["surface_id"])
+        return best
+
+    new_surfaces: list[dict] = []
+    # Re-emit floor + ceiling with the new polygon vertices.
+    for surf in old_surfaces:
+        stype = surf.get("type")
+        if stype in ("floor", "ceiling"):
+            s_copy = json.loads(json.dumps(surf))
+            s_copy["boundary"] = {"vertices": new_floor_vertices}
+            new_surfaces.append(s_copy)
+    # Four wall surfaces, one per polygon edge.
+    for i in range(4):
+        p0 = corners_ccw[i]
+        p1 = corners_ccw[(i + 1) % 4]
+        edge = np.array([p1[0] - p0[0], p1[1] - p0[1], 0.0])
+        length = float(np.linalg.norm(edge))
+        if length < 1e-6:
+            continue
+        u_axis = edge / length
+        v_axis = np.array([0.0, 0.0, 1.0])
+        # Inward normal is u_axis rotated +90° about +Z since corners are CCW.
+        inward_normal = np.array([-u_axis[1], u_axis[0], 0.0])
+        # Sanity check: point from midpoint toward polygon centroid.
+        mid = 0.5 * (np.array([p0[0], p0[1]]) + np.array([p1[0], p1[1]]))
+        centroid = np.mean(np.array(corners_ccw), axis=0)
+        if np.dot(inward_normal[:2], centroid - mid) < 0:
+            inward_normal = -inward_normal
+        old_match = match_old_wall(inward_normal)
+        if old_match is None:
+            # Shouldn't happen for 4-walls ↔ 4-old-walls, but be defensive.
+            surface_id = f"surface-wall-fit-{i}"
+            named_ref = None
+        else:
+            surface_id = old_match["surface_id"]
+            named_ref = old_match.get("named_wall_ref_id")
+        wall_record = {
+            "surface_id": surface_id,
+            "type": "wall",
+            "named_wall_ref_id": named_ref,
+            "boundary": {"vertices": [
+                {"x": 0.0, "y": 0.0},
+                {"x": length, "y": 0.0},
+                {"x": length, "y": ceiling_height},
+                {"x": 0.0, "y": ceiling_height},
+            ]},
+            "surface_frame": {
+                "origin": {"x": float(p0[0]), "y": float(p0[1]), "z": floor_z},
+                "u_axis": {"x": float(u_axis[0]), "y": float(u_axis[1]), "z": float(u_axis[2])},
+                "v_axis": {"x": float(v_axis[0]), "y": float(v_axis[1]), "z": float(v_axis[2])},
+                "normal": {"x": float(inward_normal[0]), "y": float(inward_normal[1]), "z": float(inward_normal[2])},
+            },
+            # Carry over the material state / provenance from the matched
+            # old wall if present, so rendered colors + confidence survive.
+            "material_state": (old_match or {}).get("material_state"),
+            "provenance": (old_match or {}).get("provenance"),
+            "user_locked": (old_match or {}).get("user_locked", False),
+        }
+        new_surfaces.append(wall_record)
+
+    return {
+        "floor_polygon": {"vertices": new_floor_vertices},
+        "ceiling_height": ceiling_height,
+        "surfaces": new_surfaces,
+    }
+
+
+def _unused_compute_wall_aabb(
     walls: list[dict],
     floor: dict | None,
 ) -> tuple[float | None, float | None, float | None, float | None]:
@@ -230,7 +498,7 @@ def compute_wall_aabb(
     return min_x, max_x, min_y, max_y
 
 
-def build_shell_update(
+def _legacy_build_shell_update(
     walls: list[dict],
     floor: dict | None,
     ceiling: dict | None,
@@ -238,7 +506,7 @@ def build_shell_update(
 ) -> dict:
     """Construct the replacement shell block (preserving surface IDs)."""
     old_shell = existing_scene["snapshot"]["state"]["room"]["shell"]
-    min_x, max_x, min_y, max_y = compute_wall_aabb(walls, floor)
+    min_x, max_x, min_y, max_y = _unused_compute_wall_aabb(walls, floor)
     # Fall back to old shell extents for any missing wall.
     old_floor_verts = old_shell["floor_polygon"]["vertices"]
     old_xs = [float(v["x"]) for v in old_floor_verts]
@@ -353,13 +621,11 @@ def main() -> int:
                 else "wall" if abs(n[2]) < VERTICAL_NORMAL_Z_THRESHOLD
                 else "tilted")
         pts = p["inlier_points"]
-        snap = snap_wall_normal(n)
+        azimuth_deg = float(np.degrees(np.arctan2(n[1], n[0])))
         print(
             f"  plane[{i}] {kind:10s} n=({n[0]:+.2f},{n[1]:+.2f},{n[2]:+.2f}) "
-            f"snapped=({snap[0]:+.1f},{snap[1]:+.1f},{snap[2]:+.1f}) "
+            f"az={azimuth_deg:+6.1f}° "
             f"offset={p['offset']:+.2f} inliers={p['inlier_count']:6d} "
-            f"X[{pts[:,0].min():.2f},{pts[:,0].max():.2f}] "
-            f"Y[{pts[:,1].min():.2f},{pts[:,1].max():.2f}] "
             f"Z[{pts[:,2].min():.2f},{pts[:,2].max():.2f}]",
             file=sys.stderr,
         )
@@ -374,24 +640,37 @@ def main() -> int:
     if ceiling is None:
         print("[scan-to-shell] WARN: no ceiling plane detected, defaulting to old ceiling_height", file=sys.stderr)
 
-    update = build_shell_update(walls, floor, ceiling, scene)
-    shift = update.pop("shift_applied")
+    fit = fit_rectangular_polygon(walls, positions)
+    if fit is None:
+        raise SystemExit(
+            "failed to fit a rectangular polygon from the detected walls — "
+            "need at least two near-perpendicular wall clusters"
+        )
+    corners_ccw, (dir_a, dir_b) = fit
+    edge_lengths = [
+        _edge_length(corners_ccw[i], corners_ccw[(i + 1) % 4]) for i in range(4)
+    ]
+    angle_ab_deg = float(np.degrees(np.arccos(abs(float(np.dot(dir_a, dir_b))))))
     print(
-        f"[scan-to-shell] new floor polygon AABB: "
-        f"X[0..{update['floor_polygon']['vertices'][1]['x']:.2f}] "
-        f"Y[0..{update['floor_polygon']['vertices'][2]['y']:.2f}]",
+        f"[scan-to-shell] fitted polygon: "
+        f"edges={edge_lengths[0]:.2f}×{edge_lengths[1]:.2f}m "
+        f"wall-pair angle={angle_ab_deg:.1f}° "
+        f"dir_a=({dir_a[0]:+.2f},{dir_a[1]:+.2f}) "
+        f"dir_b=({dir_b[0]:+.2f},{dir_b[1]:+.2f})",
         file=sys.stderr,
     )
-    print(f"[scan-to-shell] new ceiling_height: {update['ceiling_height']:.2f}m", file=sys.stderr)
-    print(f"[scan-to-shell] re-anchor shift: dx={shift['x']:.2f}, dy={shift['y']:.2f}", file=sys.stderr)
+    for i, (x, y) in enumerate(corners_ccw):
+        print(f"    corner[{i}] = ({x:+.2f}, {y:+.2f})", file=sys.stderr)
+
+    update = build_shell_update_from_polygon(corners_ccw, floor, ceiling, scene)
+    print(
+        f"[scan-to-shell] new ceiling_height: {update['ceiling_height']:.2f}m",
+        file=sys.stderr,
+    )
 
     if args["dry_run"]:
         print(json.dumps(update["floor_polygon"], indent=2))
         return 0
-
-    # Apply the shift to objects + captured_frames so everything stays consistent.
-    if abs(shift["x"]) > 1e-6 or abs(shift["y"]) > 1e-6:
-        apply_shift_to_scene(scene, shift["x"], shift["y"])
 
     shell = scene["snapshot"]["state"]["room"]["shell"]
     shell["floor_polygon"] = update["floor_polygon"]

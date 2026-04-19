@@ -50,20 +50,20 @@
           "floor_polygon": {
             "vertices": [
               {
-                "x": 0.0,
-                "y": 0.0
+                "x": -0.04156226067695912,
+                "y": 0.006163626837777063
               },
               {
-                "x": 3.6347572075089634,
-                "y": 0.0
+                "x": 3.7973201190196395,
+                "y": 0.25368545884726523
               },
               {
-                "x": 3.6347572075089634,
-                "y": 3.081567071594805
+                "x": 3.595629410944357,
+                "y": 3.382306093844067
               },
               {
-                "x": 0.0,
-                "y": 3.081567071594805
+                "x": -0.24325296875224198,
+                "y": 3.134784261834579
               }
             ]
           },
@@ -76,20 +76,20 @@
               "boundary": {
                 "vertices": [
                   {
-                    "x": 0.0,
-                    "y": 0.0
+                    "x": -0.04156226067695912,
+                    "y": 0.006163626837777063
                   },
                   {
-                    "x": 3.6347572075089634,
-                    "y": 0.0
+                    "x": 3.7973201190196395,
+                    "y": 0.25368545884726523
                   },
                   {
-                    "x": 3.6347572075089634,
-                    "y": 3.081567071594805
+                    "x": 3.595629410944357,
+                    "y": 3.382306093844067
                   },
                   {
-                    "x": 0.0,
-                    "y": 3.081567071594805
+                    "x": -0.24325296875224198,
+                    "y": 3.134784261834579
                   }
                 ]
               },
@@ -117,20 +117,20 @@
               "boundary": {
                 "vertices": [
                   {
-                    "x": 0.0,
-                    "y": 0.0
+                    "x": -0.04156226067695912,
+                    "y": 0.006163626837777063
                   },
                   {
-                    "x": 3.6347572075089634,
-                    "y": 0.0
+                    "x": 3.7973201190196395,
+                    "y": 0.25368545884726523
                   },
                   {
-                    "x": 3.6347572075089634,
-                    "y": 3.081567071594805
+                    "x": 3.595629410944357,
+                    "y": 3.382306093844067
                   },
                   {
-                    "x": 0.0,
-                    "y": 3.081567071594805
+                    "x": -0.24325296875224198,
+                    "y": 3.134784261834579
                   }
                 ]
               },
@@ -173,71 +173,9 @@
               }
             },
             {
-              "surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-bcded795",
-              "type": "wall",
-              "geometry_ref": "north_wall",
-              "boundary": {
-                "vertices": [
-                  {
-                    "x": 0.0,
-                    "y": 0.0
-                  },
-                  {
-                    "x": 3.6347572075089634,
-                    "y": 0.0
-                  },
-                  {
-                    "x": 3.6347572075089634,
-                    "y": 2.383749998346826
-                  },
-                  {
-                    "x": 0.0,
-                    "y": 2.383749998346826
-                  }
-                ]
-              },
-              "surface_frame": {
-                "origin": {
-                  "x": 0,
-                  "y": 3.081567071594805,
-                  "z": 0
-                },
-                "u_axis": {
-                  "x": 1,
-                  "y": 0,
-                  "z": 0
-                },
-                "v_axis": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 1
-                },
-                "normal": {
-                  "x": 0,
-                  "y": -1,
-                  "z": 0
-                }
-              },
-              "named_wall_ref_id": "wall-ref-scene-fixture-fixture-bedroom-arkitscene-c17ebb1b",
-              "material_state": {
-                "category": "paint",
-                "color": "warm_white",
-                "finish": "eggshell",
-                "pattern": null,
-                "reference_asset_id": null
-              },
-              "user_locked": false,
-              "provenance": {
-                "source_kind": "measured",
-                "confidence": 0.98,
-                "source_ref": "roomplan:north_wall",
-                "updated_at": "2026-04-19T04:36:26.629Z"
-              }
-            },
-            {
               "surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-4a606097",
               "type": "wall",
-              "geometry_ref": "south_wall",
+              "named_wall_ref_id": "wall-ref-scene-fixture-fixture-bedroom-arkitscene-3966622d",
               "boundary": {
                 "vertices": [
                   {
@@ -245,11 +183,11 @@
                     "y": 0.0
                   },
                   {
-                    "x": 3.6347572075089634,
+                    "x": 3.8468539070864587,
                     "y": 0.0
                   },
                   {
-                    "x": 3.6347572075089634,
+                    "x": 3.8468539070864587,
                     "y": 2.383749998346826
                   },
                   {
@@ -260,27 +198,26 @@
               },
               "surface_frame": {
                 "origin": {
-                  "x": 3.6347572075089634,
-                  "y": 0,
-                  "z": 0
+                  "x": -0.04156226067695912,
+                  "y": 0.006163626837777063,
+                  "z": 0.008279151051306482
                 },
                 "u_axis": {
-                  "x": -1,
-                  "y": 0,
-                  "z": 0
+                  "x": 0.9979277800554953,
+                  "y": 0.06434396470152332,
+                  "z": 0.0
                 },
                 "v_axis": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 1
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
                 },
                 "normal": {
-                  "x": 0,
-                  "y": 1,
-                  "z": 0
+                  "x": -0.06434396470152332,
+                  "y": 0.9979277800554953,
+                  "z": 0.0
                 }
               },
-              "named_wall_ref_id": "wall-ref-scene-fixture-fixture-bedroom-arkitscene-3966622d",
               "material_state": {
                 "category": "paint",
                 "color": "warm_white",
@@ -288,18 +225,18 @@
                 "pattern": null,
                 "reference_asset_id": null
               },
-              "user_locked": false,
               "provenance": {
                 "source_kind": "measured",
                 "confidence": 0.98,
                 "source_ref": "roomplan:south_wall",
                 "updated_at": "2026-04-19T04:36:26.629Z"
-              }
+              },
+              "user_locked": false
             },
             {
               "surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-869b2b5d",
               "type": "wall",
-              "geometry_ref": "east_wall",
+              "named_wall_ref_id": "wall-ref-scene-fixture-fixture-bedroom-arkitscene-456642e1",
               "boundary": {
                 "vertices": [
                   {
@@ -307,11 +244,11 @@
                     "y": 0.0
                   },
                   {
-                    "x": 3.081567071594805,
+                    "x": 3.1351150249156245,
                     "y": 0.0
                   },
                   {
-                    "x": 3.081567071594805,
+                    "x": 3.1351150249156245,
                     "y": 2.383749998346826
                   },
                   {
@@ -322,27 +259,26 @@
               },
               "surface_frame": {
                 "origin": {
-                  "x": 3.6347572075089634,
-                  "y": 3.081567071594805,
-                  "z": 0
+                  "x": 3.7973201190196395,
+                  "y": 0.25368545884726523,
+                  "z": 0.008279151051306482
                 },
                 "u_axis": {
-                  "x": 0,
-                  "y": -1,
-                  "z": 0
+                  "x": -0.06433279368456686,
+                  "y": 0.9979285002728097,
+                  "z": 0.0
                 },
                 "v_axis": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 1
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
                 },
                 "normal": {
-                  "x": -1,
-                  "y": 0,
-                  "z": 0
+                  "x": -0.9979285002728097,
+                  "y": -0.06433279368456686,
+                  "z": 0.0
                 }
               },
-              "named_wall_ref_id": "wall-ref-scene-fixture-fixture-bedroom-arkitscene-456642e1",
               "material_state": {
                 "category": "paint",
                 "color": "warm_white",
@@ -350,18 +286,18 @@
                 "pattern": null,
                 "reference_asset_id": null
               },
-              "user_locked": false,
               "provenance": {
                 "source_kind": "measured",
                 "confidence": 0.98,
                 "source_ref": "roomplan:east_wall",
                 "updated_at": "2026-04-19T04:36:26.629Z"
-              }
+              },
+              "user_locked": false
             },
             {
-              "surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-860f783b",
+              "surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-bcded795",
               "type": "wall",
-              "geometry_ref": "west_wall",
+              "named_wall_ref_id": "wall-ref-scene-fixture-fixture-bedroom-arkitscene-c17ebb1b",
               "boundary": {
                 "vertices": [
                   {
@@ -369,11 +305,11 @@
                     "y": 0.0
                   },
                   {
-                    "x": 3.081567071594805,
+                    "x": 3.846853907086459,
                     "y": 0.0
                   },
                   {
-                    "x": 3.081567071594805,
+                    "x": 3.846853907086459,
                     "y": 2.383749998346826
                   },
                   {
@@ -384,27 +320,26 @@
               },
               "surface_frame": {
                 "origin": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 0
+                  "x": 3.595629410944357,
+                  "y": 3.382306093844067,
+                  "z": 0.008279151051306482
                 },
                 "u_axis": {
-                  "x": 0,
-                  "y": 1,
-                  "z": 0
+                  "x": -0.9979277800554953,
+                  "y": -0.06434396470152323,
+                  "z": 0.0
                 },
                 "v_axis": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 1
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
                 },
                 "normal": {
-                  "x": 1,
-                  "y": 0,
-                  "z": 0
+                  "x": 0.06434396470152323,
+                  "y": -0.9979277800554953,
+                  "z": 0.0
                 }
               },
-              "named_wall_ref_id": "wall-ref-scene-fixture-fixture-bedroom-arkitscene-857a7787",
               "material_state": {
                 "category": "paint",
                 "color": "warm_white",
@@ -412,13 +347,74 @@
                 "pattern": null,
                 "reference_asset_id": null
               },
-              "user_locked": false,
+              "provenance": {
+                "source_kind": "measured",
+                "confidence": 0.98,
+                "source_ref": "roomplan:north_wall",
+                "updated_at": "2026-04-19T04:36:26.629Z"
+              },
+              "user_locked": false
+            },
+            {
+              "surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-860f783b",
+              "type": "wall",
+              "named_wall_ref_id": "wall-ref-scene-fixture-fixture-bedroom-arkitscene-857a7787",
+              "boundary": {
+                "vertices": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0
+                  },
+                  {
+                    "x": 3.1351150249156254,
+                    "y": 0.0
+                  },
+                  {
+                    "x": 3.1351150249156254,
+                    "y": 2.383749998346826
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 2.383749998346826
+                  }
+                ]
+              },
+              "surface_frame": {
+                "origin": {
+                  "x": -0.24325296875224198,
+                  "y": 3.134784261834579,
+                  "z": 0.008279151051306482
+                },
+                "u_axis": {
+                  "x": 0.06433279368456693,
+                  "y": -0.9979285002728095,
+                  "z": 0.0
+                },
+                "v_axis": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                },
+                "normal": {
+                  "x": 0.9979285002728095,
+                  "y": 0.06433279368456693,
+                  "z": 0.0
+                }
+              },
+              "material_state": {
+                "category": "paint",
+                "color": "warm_white",
+                "finish": "eggshell",
+                "pattern": null,
+                "reference_asset_id": null
+              },
               "provenance": {
                 "source_kind": "measured",
                 "confidence": 0.98,
                 "source_ref": "roomplan:west_wall",
                 "updated_at": "2026-04-19T04:36:26.629Z"
-              }
+              },
+              "user_locked": false
             }
           ],
           "named_wall_refs": [
