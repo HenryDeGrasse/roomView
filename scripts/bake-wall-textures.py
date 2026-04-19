@@ -57,7 +57,7 @@ MIN_JPG_WEIGHT_FOR_TIER1 = 0.4          # below this, fall back to splat tier
 SPLAT_PERP_BAND_M = 0.25                # tier-2: splat points within this of plane
 SPLAT_SAMPLE_RADIUS_M = 0.06            # tier-2: tangential radius per texel
 SPLAT_MIN_SAMPLES_FOR_TIER2 = 2
-TIER3_BLEND_ITERATIONS = 6              # how many dilation passes smooth defaults into observed
+TIER3_BLEND_ITERATIONS = 2              # minimal boundary feather; more iters = smeary / blurry
 
 
 DEFAULTS = {

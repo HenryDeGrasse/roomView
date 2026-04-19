@@ -788,7 +788,9 @@ function updateDollhouseVisibility(camera, roomsRoot, scanProxiesRoot, state) {
       const viewer = state.splatViewerGetter();
       if (viewer) viewer.visible = insideXY;
     }
-    if (scanProxiesRoot) scanProxiesRoot.visible = insideXY;
+    // scanProxiesRoot (TSDF meshes: chair, desk, etc.) stays visible from
+    // both sides — dollhouse view hides splats (noisy from outside) but
+    // keeps the rigid scan geometry so the room reads as a real space.
   }
 }
 

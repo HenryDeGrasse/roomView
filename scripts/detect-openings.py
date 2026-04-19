@@ -51,6 +51,13 @@ DOOR_MIN_HEIGHT_M = 1.70
 # Expand edges a tiny amount so a barely-hit cell becomes part of an
 # adjacent stronger cluster during connected-component labelling.
 DILATION_STEPS = 1
+# Splat-leak signal: splats that ended up on the OUTSIDE side of a wall
+# (within this slab) only got there because a camera saw past the wall
+# through an opening. A cell collecting ≥ this many outside splats
+# counts as an opening candidate, merged (logical OR) with ray votes.
+SPLAT_LEAK_SLAB_NEAR_M = 0.05   # skip splats within 5cm of plane (shell-fit noise)
+SPLAT_LEAK_SLAB_FAR_M = 2.50    # look out to 2.5m beyond the wall
+SPLAT_LEAK_MIN_PER_CELL = 4     # ≥ this many leaked splats in a cell → opening hint
 
 
 def load_scene(fixture_dir: Path) -> dict:
@@ -88,6 +95,82 @@ def load_depth_and_intrinsics(fixture_dir: Path, frame: dict) -> tuple[np.ndarra
 
 def column_major_to_4x4(flat16: list[float]) -> np.ndarray:
     return np.array(flat16, dtype=np.float64).reshape(4, 4, order="F")
+
+
+def load_splat_positions(fixture_dir: Path) -> np.ndarray:
+    """Read the .splat file's position channel (first 12 bytes of each 32-byte gaussian)."""
+    splat_files = list((fixture_dir / "splats").glob("*.splat"))
+    if not splat_files:
+        return np.zeros((0, 3), dtype=np.float64)
+    data = splat_files[0].read_bytes()
+    n = len(data) // 32
+    if n == 0:
+        return np.zeros((0, 3), dtype=np.float64)
+    return np.frombuffer(data, dtype=np.float32).reshape(n, 8)[:, :3].astype(np.float64)
+
+
+def shell_interior_direction_for_wall(wall: dict, floor_polygon: list[tuple[float, float]]) -> float:
+    """
+    Return +1 if the wall.normal points INTO the room, else -1.
+    Determined by taking the floor-polygon centroid and checking which
+    side of the wall plane it lies on.
+    """
+    if not floor_polygon:
+        return 1.0
+    cx = float(np.mean([p[0] for p in floor_polygon]))
+    cy = float(np.mean([p[1] for p in floor_polygon]))
+    # Use floor-plane z = 0 for the centroid probe (shell frame is floor-anchored).
+    centroid = np.array([cx, cy, 0.0], dtype=np.float64)
+    disp = centroid - wall["origin"]
+    return 1.0 if float(np.dot(disp, wall["normal"])) > 0 else -1.0
+
+
+def floor_polygon_from_scene(scene: dict) -> list[tuple[float, float]]:
+    shell = scene["snapshot"]["state"]["room"]["shell"]
+    poly = shell.get("floor_polygon")
+    if not poly:
+        return []
+    return [(float(v["x"]), float(v["y"])) for v in poly.get("vertices", [])]
+
+
+def splat_leak_votes_for_wall(
+    wall: dict,
+    splat_positions: np.ndarray,
+    inward_sign: float,
+    nu: int,
+    nv: int,
+) -> np.ndarray:
+    """
+    Count splats sitting in a slab on the OUTSIDE of this wall. The
+    camera can only have produced those splats by observing through an
+    opening, so dense cells in this grid are strong opening hints.
+    """
+    votes = np.zeros((nv, nu), dtype=np.int32)
+    if splat_positions.size == 0:
+        return votes
+    disp = splat_positions - wall["origin"]
+    # perp_outward > 0 means the splat is beyond the wall (outside the room).
+    perp_outward = -inward_sign * (disp @ wall["normal"])
+    in_slab = (perp_outward > SPLAT_LEAK_SLAB_NEAR_M) & (perp_outward < SPLAT_LEAK_SLAB_FAR_M)
+    if not np.any(in_slab):
+        return votes
+    loc_u = disp @ wall["u_axis"]
+    loc_v = disp @ wall["v_axis"]
+    in_bounds = (
+        in_slab
+        & (loc_u >= wall["u_min"]) & (loc_u < wall["u_max"])
+        & (loc_v >= wall["v_min"]) & (loc_v < wall["v_max"])
+    )
+    if not np.any(in_bounds):
+        return votes
+    u_cells = np.floor((loc_u[in_bounds] - wall["u_min"]) / WALL_GRID_CELL_M).astype(np.int64)
+    v_cells = np.floor((loc_v[in_bounds] - wall["v_min"]) / WALL_GRID_CELL_M).astype(np.int64)
+    valid = (u_cells >= 0) & (u_cells < nu) & (v_cells >= 0) & (v_cells < nv)
+    u_cells = u_cells[valid]
+    v_cells = v_cells[valid]
+    # Raw count per cell (not one-hot — many splats reinforce a cell).
+    np.add.at(votes, (v_cells, u_cells), 1)
+    return votes
 
 
 def wall_frames_from_scene(scene: dict) -> list[dict]:
@@ -269,8 +352,11 @@ def rects_from_votes(
     votes: np.ndarray,
     wall: dict,
     min_frames: int = OPENING_MIN_FRAMES,
+    leak_mask: np.ndarray | None = None,
 ) -> list[dict]:
     mask = votes >= min_frames
+    if leak_mask is not None:
+        mask = mask | leak_mask
     if not np.any(mask):
         return []
     mask = dilate_mask(mask, DILATION_STEPS)
@@ -312,6 +398,12 @@ def detect_all(scene: dict, fixture_dir: Path) -> list[dict]:
     frames = load_frames_meta(scene)
     if not frames:
         raise SystemExit("no captured_frames in scene")
+    splat_positions = load_splat_positions(fixture_dir)
+    floor_poly = floor_polygon_from_scene(scene)
+    print(
+        f"[detect-openings] splat_leak: loaded {splat_positions.shape[0]} splat positions",
+        file=sys.stderr,
+    )
     openings: list[dict] = []
     for i, wall in enumerate(walls):
         print(
@@ -321,7 +413,17 @@ def detect_all(scene: dict, fixture_dir: Path) -> list[dict]:
             file=sys.stderr,
         )
         votes = vote_openings_for_wall(wall, frames, fixture_dir)
-        wall_rects = rects_from_votes(votes, wall)
+        nv, nu = votes.shape
+        inward_sign = shell_interior_direction_for_wall(wall, floor_poly)
+        leak = splat_leak_votes_for_wall(wall, splat_positions, inward_sign, nu, nv)
+        leak_mask = leak >= SPLAT_LEAK_MIN_PER_CELL
+        print(
+            f"  ray-vote cells ≥{OPENING_MIN_FRAMES}: {int(np.sum(votes >= OPENING_MIN_FRAMES))}  "
+            f"splat-leak cells ≥{SPLAT_LEAK_MIN_PER_CELL}: {int(leak_mask.sum())}  "
+            f"(max leak/cell: {int(leak.max()) if leak.size else 0})",
+            file=sys.stderr,
+        )
+        wall_rects = rects_from_votes(votes, wall, leak_mask=leak_mask)
         print(
             f"  → {len(wall_rects)} opening rect(s)",
             file=sys.stderr,

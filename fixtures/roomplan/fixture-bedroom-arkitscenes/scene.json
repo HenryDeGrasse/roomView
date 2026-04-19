@@ -469,14 +469,54 @@
           ],
           "openings": [
             {
-              "opening_id": "opening-fit-334ac7247f07",
+              "opening_id": "opening-fit-2cc2584178fb",
+              "host_surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-869b2b5d",
+              "type": "window",
+              "rect": {
+                "min_u": 1.6500000000000001,
+                "min_v": 1.1,
+                "width": 0.65,
+                "height": 1.4000000000000001
+              },
+              "swing_zone": null,
+              "keepout_zone": null,
+              "connects_to_room_id": null,
+              "provenance": {
+                "source_kind": "measured",
+                "source_ref": "scan:detect-openings",
+                "confidence": 0.85,
+                "updated_at": "2026-04-19T00:00:00.000Z"
+              }
+            },
+            {
+              "opening_id": "opening-fit-8fbea710690f",
+              "host_surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-869b2b5d",
+              "type": "window",
+              "rect": {
+                "min_u": 0.65,
+                "min_v": 1.6500000000000001,
+                "width": 0.8500000000000001,
+                "height": 0.75
+              },
+              "swing_zone": null,
+              "keepout_zone": null,
+              "connects_to_room_id": null,
+              "provenance": {
+                "source_kind": "measured",
+                "source_ref": "scan:detect-openings",
+                "confidence": 0.85,
+                "updated_at": "2026-04-19T00:00:00.000Z"
+              }
+            },
+            {
+              "opening_id": "opening-fit-e3a8a37260e2",
               "host_surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-860f783b",
               "type": "window",
               "rect": {
-                "min_u": 1.55,
-                "min_v": 0.15000000000000002,
-                "width": 0.9,
-                "height": 1.0
+                "min_u": 1.25,
+                "min_v": 0.0,
+                "width": 1.55,
+                "height": 1.4500000000000002
               },
               "swing_zone": null,
               "keepout_zone": null,
@@ -1216,11 +1256,41 @@
             "reason_code_on_fail": "CLEARANCE_VIOLATION"
           },
           {
-            "constraint_id": "constraint-opening-fit-334ac7247f07-preserved",
+            "constraint_id": "constraint-opening-fit-2cc2584178fb-preserved",
             "kind": "opening_preserved",
             "scope": {
               "opening_ids": [
-                "opening-fit-334ac7247f07"
+                "opening-fit-2cc2584178fb"
+              ]
+            },
+            "provenance": {
+              "source_kind": "measured",
+              "source_ref": "scan:detect-openings",
+              "confidence": 0.85,
+              "updated_at": "2026-04-19T00:00:00.000Z"
+            }
+          },
+          {
+            "constraint_id": "constraint-opening-fit-8fbea710690f-preserved",
+            "kind": "opening_preserved",
+            "scope": {
+              "opening_ids": [
+                "opening-fit-8fbea710690f"
+              ]
+            },
+            "provenance": {
+              "source_kind": "measured",
+              "source_ref": "scan:detect-openings",
+              "confidence": 0.85,
+              "updated_at": "2026-04-19T00:00:00.000Z"
+            }
+          },
+          {
+            "constraint_id": "constraint-opening-fit-e3a8a37260e2-preserved",
+            "kind": "opening_preserved",
+            "scope": {
+              "opening_ids": [
+                "opening-fit-e3a8a37260e2"
               ]
             },
             "provenance": {
