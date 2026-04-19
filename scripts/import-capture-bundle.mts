@@ -284,11 +284,54 @@ async function runAgainstService(
   }
 }
 
+async function runAgainstHttp(
+  apiBaseUrl: string,
+  captureRequest: RoomPlanCaptureRequest,
+  frames: CaptureFrameInput[]
+): Promise<{ scene_id: string; handoff_url: string; captured_frame_count: number }> {
+  const base = apiBaseUrl.replace(/\/$/, "");
+
+  const captureResponse = await fetch(`${base}/captures/roomplan`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(captureRequest),
+  });
+  if (!captureResponse.ok) {
+    throw new Error(`POST /captures/roomplan failed: ${captureResponse.status} ${await captureResponse.text()}`);
+  }
+  const capture = (await captureResponse.json()) as {
+    scene_id: string;
+    handoff_url: string;
+    video_upload_token: string | null;
+  };
+  if (!capture.video_upload_token) {
+    throw new Error("Server did not return a video_upload_token; set video_expected=true in the capture request.");
+  }
+
+  const framesRequest = {
+    video_upload_token: capture.video_upload_token,
+    idempotency_key: `import-bundle-${capture.scene_id}-${Date.now()}`,
+    frames,
+  };
+  const framesResponse = await fetch(`${base}/captures/${encodeURIComponent(capture.scene_id)}/frames`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(framesRequest),
+  });
+  if (!framesResponse.ok) {
+    throw new Error(`POST /captures/:id/frames failed: ${framesResponse.status} ${await framesResponse.text()}`);
+  }
+  const framesBody = (await framesResponse.json()) as { captured_frames: unknown[] };
+
+  return {
+    scene_id: capture.scene_id,
+    handoff_url: capture.handoff_url,
+    captured_frame_count: framesBody.captured_frames.length,
+  };
+}
+
 async function main(): Promise<void> {
   const options = parseCli(process.argv);
-  if (options.api_base_url) {
-    throw new Error("HTTP mode is not supported yet. Use in-process verification.");
-  }
 
   const { capture_request, frames } = options.mode === "bundle" && options.bundle_path
     ? loadBundle(options.bundle_path)
@@ -297,8 +340,17 @@ async function main(): Promise<void> {
   process.stdout.write(
     `[import-capture-bundle] mode=${options.mode} frames=${frames.length} ${
       options.bundle_path ? `bundle=${basename(options.bundle_path)}` : "source=fixture"
-    }\n`
+    }${options.api_base_url ? ` target=${options.api_base_url}` : " target=in-process"}\n`
   );
+
+  if (options.api_base_url) {
+    const result = await runAgainstHttp(options.api_base_url, capture_request, frames);
+    process.stdout.write(
+      `[import-capture-bundle] ok scene_id=${result.scene_id} captured_frames=${result.captured_frame_count}\n`
+    );
+    process.stdout.write(`[import-capture-bundle] handoff: ${result.handoff_url}\n`);
+    return;
+  }
 
   const result = await runAgainstService(capture_request, frames);
   process.stdout.write(
