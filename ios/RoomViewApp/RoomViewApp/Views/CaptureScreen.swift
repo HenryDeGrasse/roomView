@@ -323,7 +323,9 @@ final class CaptureController: NSObject, ObservableObject {
             // to RANSAC-fit walls when finalizing.
             if !samples.isEmpty, let videoUploadToken = captureResponse.videoUploadToken {
                 uploadStage = .frames
-                let frameInputs = samples.map(FrameInputBuilder.build(sample:))
+                let frameInputs = samples.map { sample in
+                    FrameInputBuilder.build(sample: sample)
+                }
                 let framesRequest = CaptureFramesRequestEnvelope(
                     videoUploadToken: videoUploadToken,
                     idempotencyKey: UUID().uuidString,
