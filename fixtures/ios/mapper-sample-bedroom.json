@@ -1,0 +1,352 @@
+{
+  "capture_metadata" : {
+    "captured_at" : "2026-04-18T12:00:00Z",
+    "device_model" : "iPhoneTest",
+    "room_type_hint" : "bedroom",
+    "units" : "m",
+    "video_expected" : false
+  },
+  "client_capture_id" : "capture-ios-mapper-sample",
+  "request_id" : "req-ios-mapper-sample",
+  "roomplan_payload" : {
+    "coordinate_frame" : {
+      "north_source" : "scan_forward",
+      "origin" : {
+        "x" : 0,
+        "y" : 0,
+        "z" : 0
+      },
+      "x_axis" : {
+        "x" : 1,
+        "y" : 0,
+        "z" : 0
+      },
+      "y_axis" : {
+        "x" : 0,
+        "y" : 1,
+        "z" : 0
+      },
+      "z_axis" : {
+        "x" : 0,
+        "y" : 0,
+        "z" : 1
+      }
+    },
+    "dimensions" : {
+      "ceiling_height_m" : 2.5,
+      "length_m" : 3,
+      "width_m" : 4
+    },
+    "objects" : [
+      {
+        "attributes" : [
+          "queen"
+        ],
+        "category" : "bed",
+        "id" : "rp-bed-00000000",
+        "obb" : {
+          "center" : {
+            "x" : 2,
+            "y" : 1.5,
+            "z" : 0.30000001192092896
+          },
+          "size_x" : 2,
+          "size_y" : 1.600000023841858,
+          "size_z" : 0.6000000238418579,
+          "yaw_degrees" : -0
+        },
+        "pose" : {
+          "position" : {
+            "x" : 2,
+            "y" : 1.5,
+            "z" : 0
+          },
+          "yaw_degrees" : -0
+        }
+      }
+    ],
+    "openings" : [
+      {
+        "category" : "door",
+        "host_surface_id" : "rp-wall-00000000",
+        "id" : "rp-door-00000000",
+        "rect" : {
+          "height" : 2.0999999046325684,
+          "min_u" : 1.050000011920929,
+          "min_v" : 0,
+          "width" : 0.8999999761581421
+        }
+      },
+      {
+        "category" : "window",
+        "host_surface_id" : "rp-wall-00000000",
+        "id" : "rp-window-00000000",
+        "rect" : {
+          "height" : 1.100000023841858,
+          "min_u" : 0.8999999761581421,
+          "min_v" : 0.8499999642372131,
+          "width" : 1.2000000476837158
+        }
+      }
+    ],
+    "room_count" : 1,
+    "room_type" : "bedroom",
+    "schema_version" : "roomplan-ios-v1",
+    "surfaces" : [
+      {
+        "category" : "wall",
+        "frame" : {
+          "normal" : {
+            "x" : 0,
+            "y" : 1,
+            "z" : 0
+          },
+          "origin" : {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+          },
+          "u_axis" : {
+            "x" : 1,
+            "y" : -0,
+            "z" : 0
+          },
+          "v_axis" : {
+            "x" : 0,
+            "y" : -0,
+            "z" : 1
+          }
+        },
+        "id" : "rp-wall-00000000",
+        "polygon" : {
+          "vertices" : [
+            {
+              "x" : 0,
+              "y" : 0
+            },
+            {
+              "x" : 4,
+              "y" : 0
+            },
+            {
+              "x" : 4,
+              "y" : 2.5
+            },
+            {
+              "x" : 0,
+              "y" : 2.5
+            }
+          ]
+        }
+      },
+      {
+        "category" : "wall",
+        "frame" : {
+          "normal" : {
+            "x" : 0,
+            "y" : -1,
+            "z" : 0
+          },
+          "origin" : {
+            "x" : 4,
+            "y" : 3,
+            "z" : 0
+          },
+          "u_axis" : {
+            "x" : -1,
+            "y" : -0,
+            "z" : 0
+          },
+          "v_axis" : {
+            "x" : 0,
+            "y" : -0,
+            "z" : 1
+          }
+        },
+        "id" : "rp-wall-00000000",
+        "polygon" : {
+          "vertices" : [
+            {
+              "x" : 0,
+              "y" : 0
+            },
+            {
+              "x" : 4,
+              "y" : 0
+            },
+            {
+              "x" : 4,
+              "y" : 2.5
+            },
+            {
+              "x" : 0,
+              "y" : 2.5
+            }
+          ]
+        }
+      },
+      {
+        "category" : "wall",
+        "frame" : {
+          "normal" : {
+            "x" : 1,
+            "y" : 0,
+            "z" : 0
+          },
+          "origin" : {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+          },
+          "u_axis" : {
+            "x" : 0,
+            "y" : 1,
+            "z" : 0
+          },
+          "v_axis" : {
+            "x" : 0,
+            "y" : -0,
+            "z" : 1
+          }
+        },
+        "id" : "rp-wall-00000000",
+        "polygon" : {
+          "vertices" : [
+            {
+              "x" : 0,
+              "y" : 0
+            },
+            {
+              "x" : 3,
+              "y" : 0
+            },
+            {
+              "x" : 3,
+              "y" : 2.5
+            },
+            {
+              "x" : 0,
+              "y" : 2.5
+            }
+          ]
+        }
+      },
+      {
+        "category" : "wall",
+        "frame" : {
+          "normal" : {
+            "x" : -1,
+            "y" : 0,
+            "z" : 0
+          },
+          "origin" : {
+            "x" : 4,
+            "y" : 3,
+            "z" : 0
+          },
+          "u_axis" : {
+            "x" : 0,
+            "y" : -1,
+            "z" : 0
+          },
+          "v_axis" : {
+            "x" : 0,
+            "y" : -0,
+            "z" : 1
+          }
+        },
+        "id" : "rp-wall-00000000",
+        "polygon" : {
+          "vertices" : [
+            {
+              "x" : 0,
+              "y" : 0
+            },
+            {
+              "x" : 3,
+              "y" : 0
+            },
+            {
+              "x" : 3,
+              "y" : 2.5
+            },
+            {
+              "x" : 0,
+              "y" : 2.5
+            }
+          ]
+        }
+      },
+      {
+        "category" : "floor",
+        "id" : "rp-floor-1",
+        "polygon" : {
+          "vertices" : [
+            {
+              "x" : 0,
+              "y" : 0
+            },
+            {
+              "x" : 4,
+              "y" : 0
+            },
+            {
+              "x" : 4,
+              "y" : 3
+            },
+            {
+              "x" : 0,
+              "y" : 3
+            }
+          ]
+        }
+      },
+      {
+        "category" : "ceiling",
+        "frame" : {
+          "normal" : {
+            "x" : 0,
+            "y" : 0,
+            "z" : -1
+          },
+          "origin" : {
+            "x" : 0,
+            "y" : 0,
+            "z" : 2.5
+          },
+          "u_axis" : {
+            "x" : 1,
+            "y" : 0,
+            "z" : 0
+          },
+          "v_axis" : {
+            "x" : 0,
+            "y" : 1,
+            "z" : 0
+          }
+        },
+        "id" : "rp-ceiling-1",
+        "polygon" : {
+          "vertices" : [
+            {
+              "x" : 0,
+              "y" : 0
+            },
+            {
+              "x" : 4,
+              "y" : 0
+            },
+            {
+              "x" : 4,
+              "y" : 3
+            },
+            {
+              "x" : 0,
+              "y" : 3
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

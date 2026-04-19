@@ -20,3 +20,6 @@ ios/**/DerivedData/
 ios/**/*.xcworkspace/xcuserdata/
 ios/**/*.xcodeproj/xcuserdata/
 ios/**/.swiftpm/
+
+__pycache__/
+*.pyc

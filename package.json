@@ -27,6 +27,11 @@
     "verify:unit": "npx --yes tsx ./scripts/verify-unit.mts",
     "verify:capture-bundle": "npx --yes tsx ./scripts/import-capture-bundle.mts --synthetic",
     "verify:bundle-phase0-bridge": "npx --yes tsx ./scripts/verify-bundle-phase0-bridge.mts",
-    "check": "npm run verify:fixtures && npm run verify:replays && npm run verify:quick-render && npm run verify:mutation-pipeline && npm run verify:planner && npm run verify:photoreal && npm run verify:splat && npm run verify:observability && npm run verify:demo && npm run verify:unit && npm run verify:capture-bundle && npm run verify:bundle-phase0-bridge"
+    "verify:hero-render": "npx --yes tsx ./scripts/verify-hero-render.mts",
+    "verify:splat-generate": "npx --yes tsx ./scripts/verify-splat-generate.mts",
+    "verify:scan-meshes": "npx --yes tsx ./scripts/verify-scan-meshes.mts",
+    "verify:preservation": "npx --yes tsx ./scripts/verify-preservation.mts",
+    "verify:ios-payload": "npx --yes tsx ./scripts/verify-ios-payload.mts",
+    "check": "npm run verify:fixtures && npm run verify:replays && npm run verify:quick-render && npm run verify:mutation-pipeline && npm run verify:planner && npm run verify:photoreal && npm run verify:splat && npm run verify:observability && npm run verify:demo && npm run verify:unit && npm run verify:capture-bundle && npm run verify:bundle-phase0-bridge && npm run verify:hero-render && npm run verify:splat-generate && npm run verify:scan-meshes && npm run verify:preservation && npm run verify:ios-payload"
   }
 }
