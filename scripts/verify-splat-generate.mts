@@ -126,7 +126,10 @@ function verifyFixtureSplat(fixtureId: string): void {
   assert.equal(splats.length, 1, `expected exactly 1 .splat file, found ${splats.length}`);
 
   const descriptor = readJson<SplatDescriptor>(resolve(splatDir, descriptors[0]));
-  assert.equal(descriptor.generator_kind, "rgbd_init", "committed descriptor should be rgbd_init");
+  assert.ok(
+    descriptor.generator_kind === "rgbd_init" || descriptor.generator_kind === "cohesive",
+    `committed descriptor must be 'rgbd_init' or 'cohesive' (real-backend path), got '${descriptor.generator_kind}'`,
+  );
   assert.ok(descriptor.splat_id.startsWith("splat:"), "splat_id format");
   assert.ok(descriptor.gaussian_count > 1000, `gaussian_count should be non-trivial, got ${descriptor.gaussian_count}`);
   assert.ok(
