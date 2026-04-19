@@ -4,16 +4,20 @@ Single-source reference for the pose math flowing through RoomView. If something
 
 ## World frame
 
-RoomView's world frame is **ARKit's world frame** — there is no rebase on ingest.
+RoomView's **scene world frame is right-handed Z-up**.
 
-- Right-handed
-- `+Y` is up (opposite gravity)
-- `+X` and `+Z` form the horizontal plane; the initial orientation of `+X`/`+Z` is defined by how ARKit initializes the session (typically first-frame-camera-aligned, unless a world map anchors it)
+- `+Z` is up (opposite gravity)
+- `+X` and `+Y` form the horizontal floor plane
+- Floor polygons carry 2D `(x, y)` coordinates that map directly to world `(X, Y)` with z=0
+- `Surface.type = "floor"` sits at z=0; ceilings sit at `shell.ceiling_height`
+- Object OBBs have `size_z` = vertical extent (e.g. a bed's `size_z ≈ 0.5–0.6` m for its height)
 - Units: meters
 
-When a scanner is started, ARKit's world origin coincides with the device's initial pose. Subsequent frames are expressed relative to that origin.
+This matches the fixture (`fixtures/roomplan/bedroom-primary`) and the web viewer (`apps/web/src/viewer.js` explicitly sets `camera.up = (0, 0, 1)`). The Z-up choice is called out in the viewer source as intentional: it eases future USD/DXF export without a root-rotation undo step.
 
-The RoomPlan `coordinate_frame` on an ingested scene describes the room's own axes, which may differ from the raw ARKit axes. For captured frames we record the raw ARKit pose (not room-relative) — downstream consumers that need room-relative poses compose with the room's frame.
+This is **not** the same as ARKit's runtime world frame (right-handed Y-up). An on-device iPhone bundle produced by the Swift `CaptureBundleWriter` emits Y-up pose data because that's what ARKit hands us; adapters like `scripts/arkitscenes-to-bundle.py` consume ARKitScenes which is natively Z-up. **The scene stores whatever frame the bundle arrives in**, so a real iPhone capture and an ARKitScenes import will not agree on "up" unless one of them is remapped before ingest. Remapping the Swift-emitted bundle to Z-up on-device (or in the TS ingest) is a known open question — see roadmap.md.
+
+The RoomPlan `coordinate_frame` on an ingested scene describes the room's own local axes. The `origin` is the room's corner; `x_axis`/`y_axis`/`z_axis` point along the room-local u/v/up directions. Object positions are in **world** coordinates but have been anchored so the room corner sits at the world origin — so world and room-local coordinates typically coincide.
 
 ## Camera frame
 
@@ -46,14 +50,22 @@ The transform is **world-from-camera**: it takes a point in camera-local coordin
 
 `CapturedFrame.camera_pose` is a `Pose3D = { position: Point3D, yaw_degrees: number }`. It is a **lossy projection** of `camera_transform`, kept for compatibility with `CameraBookmark` and other pose-consumers that never needed pitch/roll.
 
-Derivation (what the Swift recorder and the TS verifier both do):
+Derivation depends on which "up" the bundle is in:
 
-```
-position = (transform[12], transform[13], transform[14])
-forward  = -(transform[8], transform[9], transform[10])
-yaw_radians  = atan2(forward.x, forward.z)
-yaw_degrees  = yaw_radians * 180 / π
-```
+- **Z-up bundles** (ARKitScenes adapter, fixture-equivalent scenes):
+  ```
+  position = (transform[12], transform[13], transform[14])
+  yaw_radians = atan2(R[1][0], R[0][0])   // rotation about +Z
+  yaw_degrees = yaw_radians * 180 / π
+  ```
+
+- **Y-up bundles** (on-device iPhone CaptureBundleWriter, which carries raw ARKit poses):
+  ```
+  position = (transform[12], transform[13], transform[14])
+  forward  = -(transform[8], transform[9], transform[10])
+  yaw_radians = atan2(forward.x, forward.z)  // rotation about +Y
+  yaw_degrees = yaw_radians * 180 / π
+  ```
 
 Readers that need full orientation (pitch, roll) **must** use `camera_transform`. `camera_pose` is for UI/bookmarks only. This is called out at the point of use in `CaptureBundleWriter.poseRecord(for:)` and the TS `postCaptureFrames` path.
 
