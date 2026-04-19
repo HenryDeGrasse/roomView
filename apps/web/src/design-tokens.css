@@ -374,6 +374,38 @@ body:not(.app-shell) > main {
   max-height: 320px;
 }
 
+/* Drawer Objects list — reuse the .list + button[data-entity-id] styling
+   from the legacy layout pane, plus a selected-state pop so clicks are
+   visibly acknowledged. */
+#drawer-objects .list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+#drawer-objects button[data-entity-id] {
+  text-align: left;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-secondary);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-size-sm);
+  border-radius: var(--radius-md);
+  width: 100%;
+  white-space: normal;
+  line-height: var(--line-height-base);
+}
+#drawer-objects button[data-entity-id]:hover:not(.is-selected) {
+  background: var(--color-surface-raised-high);
+  border-color: var(--color-border-strong);
+  color: var(--color-text-primary);
+}
+#drawer-objects button[data-entity-id].is-selected {
+  background: var(--color-accent-primary-soft);
+  border-color: var(--color-accent-primary);
+  color: var(--color-text-primary);
+  box-shadow: 0 0 0 1px var(--color-accent-primary);
+}
+
 .stage {
   position: relative;
   overflow: hidden;

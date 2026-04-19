@@ -55,6 +55,119 @@ const CLASS_SYMMETRY_AXES = {
   generic_obstacle: [],
 };
 
+// --- OBB wireframes ------------------------------------------------------
+//
+// Every named scene object gets a thin wireframe box in the scan view. This
+// gives the 3 objects with no mesh/splat coverage (chairs/TVs the camera
+// never imaged) a visible presence, and makes selection legible — the
+// selected object's box lights up while the rest dim. The wireframes are
+// always layered above the splat/mesh content so they read clearly.
+//
+// Per-class accent color keeps object identity obvious in a single glance.
+
+const CLASS_ACCENTS = {
+  bed: 0x9fb6ff,          // periwinkle
+  storage: 0x9affc0,      // mint
+  nightstand: 0x9affc0,
+  dresser: 0x9affc0,
+  bookshelf: 0x9affc0,
+  chair: 0xffc57a,        // amber
+  sofa: 0xffc57a,
+  desk: 0xffc57a,
+  table: 0xffa8a8,        // coral
+  lamp: 0xfff4a8,         // butter
+  television: 0xc0a8ff,   // lavender
+  rug: 0x8d9aa8,          // slate
+  generic_obstacle: 0x8d9aa8,
+};
+
+const OBB_COLOR_DIM = 0.55;   // dim opacity for unselected OBBs
+const OBB_COLOR_BRIGHT = 1.0; // full opacity for the selected OBB
+const OBB_LINEWIDTH_NORMAL = 1;
+const OBB_LINEWIDTH_SELECTED = 2;
+
+/**
+ * Build a THREE.Group of line-box wireframes — one per object in
+ * scene.snapshot.state.room.objects. Each box carries userData.object_id
+ * so callers can target selection highlights by entity id.
+ */
+export function buildObjectOutlines(scene) {
+  const group = new THREE.Group();
+  group.name = 'scan_object_outlines';
+  const objects = scene?.snapshot?.state?.room?.objects ?? [];
+  for (const obj of objects) {
+    const line = buildOneOutline(obj);
+    if (line) group.add(line);
+  }
+  return group;
+}
+
+function buildOneOutline(obj) {
+  const obb = obj?.obb;
+  if (!obb) return null;
+  const hx = obb.size_x * 0.5;
+  const hy = obb.size_y * 0.5;
+  const hz = obb.size_z * 0.5;
+  // 8 corners in local frame
+  const corners = [];
+  for (const sx of [-1, 1]) {
+    for (const sy of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        corners.push([sx * hx, sy * hy, sz * hz]);
+      }
+    }
+  }
+  // 12 edges as index pairs into the 8-corner list (bit encoding)
+  const edges = [
+    [0, 1], [2, 3], [4, 5], [6, 7],  // along z
+    [0, 2], [1, 3], [4, 6], [5, 7],  // along y
+    [0, 4], [1, 5], [2, 6], [3, 7],  // along x
+  ];
+  const positions = new Float32Array(edges.length * 2 * 3);
+  for (let i = 0; i < edges.length; i += 1) {
+    const [a, b] = edges[i];
+    const pa = corners[a]; const pb = corners[b];
+    positions[i * 6 + 0] = pa[0]; positions[i * 6 + 1] = pa[1]; positions[i * 6 + 2] = pa[2];
+    positions[i * 6 + 3] = pb[0]; positions[i * 6 + 4] = pb[1]; positions[i * 6 + 5] = pb[2];
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const color = CLASS_ACCENTS[obj.class] ?? 0xcfd3da;
+  const material = new THREE.LineBasicMaterial({
+    color, transparent: true, opacity: OBB_COLOR_DIM,
+  });
+  const line = new THREE.LineSegments(geometry, material);
+  // Place the box in world space via the OBB's yaw + center.
+  const center = obb.center || { x: 0, y: 0, z: 0 };
+  const yawDeg = obb.yaw_degrees || 0;
+  line.position.set(center.x, center.y, center.z);
+  line.rotation.z = yawDeg * (Math.PI / 180);
+  line.userData = {
+    scan_obb: true,
+    object_id: obj.object_id,
+    object_class: obj.class,
+    base_color: color,
+  };
+  return line;
+}
+
+/**
+ * Apply a selection highlight to a set of outlines produced by
+ * buildObjectOutlines. Pass null/undefined to clear.
+ */
+export function setOutlineSelection(outlinesGroup, selectedObjectId) {
+  if (!outlinesGroup) return;
+  for (const child of outlinesGroup.children) {
+    if (!child.userData?.scan_obb) continue;
+    const isSelected = !!selectedObjectId && child.userData.object_id === selectedObjectId;
+    if (child.material) {
+      child.material.opacity = isSelected ? OBB_COLOR_BRIGHT : OBB_COLOR_DIM;
+      child.material.linewidth = isSelected ? OBB_LINEWIDTH_SELECTED : OBB_LINEWIDTH_NORMAL;
+      child.material.needsUpdate = true;
+    }
+  }
+}
+
 // --- Tier 2 — scan mesh loader (ASCII PLY) -------------------------------
 
 /**

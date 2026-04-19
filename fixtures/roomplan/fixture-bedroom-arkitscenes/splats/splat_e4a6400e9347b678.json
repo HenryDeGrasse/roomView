@@ -1,9 +1,0 @@
-{
-  "splat_id": "splat:e4a6400e9347b678",
-  "capture_id": "arkitscenes-bedroom-47333463",
-  "generator_kind": "rgbd_init",
-  "ply_uri": "/dev/fixtures/fixture-bedroom-arkitscenes/splats/splat_e4a6400e9347b678.splat",
-  "ply_bytes_sha256": "e4a6400e9347b678ff01c6cb6b393af92482dff433d6b6c3cebe932d0ca3d574",
-  "gaussian_count": 200000,
-  "generated_at": "2026-04-19T17:35:48.509461Z"
-}

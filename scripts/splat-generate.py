@@ -231,40 +231,202 @@ SCALE_MULTIPLIER = 1.5
 ROOM_CLIP_SLACK_M = 0.20
 
 
-def _unproject_frame(frame: Frame) -> tuple[np.ndarray, np.ndarray]:
-    """Unproject every valid depth pixel to world XYZ + RGB (normalized [0, 1])."""
-    mask = np.isfinite(frame.depth_m) & (frame.depth_m > 0.05) & (frame.depth_m < DEPTH_CAP_M)
+def _unproject_frame(frame: Frame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Unproject every valid depth pixel to world XYZ + RGB + surface-normal
+    estimated from local depth gradients. The normal is essential for
+    orienting each Gaussian as a disk aligned with the underlying surface
+    rather than a sphere; that alone is most of the "fuzzy → sharp" delta
+    on flat walls + the bed top.
+
+    Returns (world_xyz (N,3), rgb_01 (N,3), world_normals (N,3)).
+    """
+    depth_m = frame.depth_m
+    valid = np.isfinite(depth_m) & (depth_m > 0.05) & (depth_m < DEPTH_CAP_M)
+    if not np.any(valid):
+        return np.zeros((0, 3)), np.zeros((0, 3)), np.zeros((0, 3))
+
+    # Camera-space normals from depth gradients. We compute ∂/∂u, ∂/∂v of
+    # the unprojected camera-frame XYZ and cross them. Edge pixels where
+    # the gradient spans a depth discontinuity end up with long tangent
+    # vectors → we drop those via a max-gradient-length cutoff so we don't
+    # smear gaussians across occlusion boundaries.
+    dw, dh = frame.width, frame.height
+    uu, vv = np.meshgrid(np.arange(dw), np.arange(dh))
+    # Work in a full HxWx3 camera-frame grid so np.gradient behaves.
+    depth_safe = np.where(valid, depth_m, np.nan).astype(np.float32)
+    x_cam = (uu - frame.cx) * depth_safe / frame.fx
+    y_cam = -(vv - frame.cy) * depth_safe / frame.fy
+    z_cam = -depth_safe
+    cam_grid = np.stack([x_cam, y_cam, z_cam], axis=-1)  # (H, W, 3)
+    # np.gradient returns arrays ordered (∂/∂v, ∂/∂u). Any NaN → NaN here
+    # which carries through to the cross product and the final normal,
+    # which gets filtered below.
+    dvs, dus = np.gradient(cam_grid, axis=(0, 1))
+    cam_normals = np.cross(dus, dvs)  # right-hand: du × dv → outward
+    norm_mag = np.linalg.norm(cam_normals, axis=-1)
+    # Drop pixels whose normals are ill-conditioned (NaN, zero, or one of
+    # the neighbours straddled an occlusion edge → giant gradient).
+    valid_normal = np.isfinite(norm_mag) & (norm_mag > 1e-6) & (norm_mag < 0.5)
+    # Combine with the depth-validity mask.
+    mask = valid & valid_normal
     if not np.any(mask):
-        return np.zeros((0, 3)), np.zeros((0, 3))
-    uu, vv = np.meshgrid(np.arange(frame.width), np.arange(frame.height))
-    d = frame.depth_m[mask]
-    u = uu[mask]
-    v = vv[mask]
-    # ARKit OpenGL camera frame: +X right, +Y up, -Z forward.
-    # pixel (u, v) with v down; y flips to camera +Y up.
-    x_c = (u - frame.cx) * d / frame.fx
-    y_c = -(v - frame.cy) * d / frame.fy
+        return np.zeros((0, 3)), np.zeros((0, 3)), np.zeros((0, 3))
+
+    # Normalize normals, flip toward the camera origin (in camera frame,
+    # outward-facing means pointing at +Z: our cam frame has -Z forward).
+    safe_norm = np.where(norm_mag > 1e-6, norm_mag, 1.0)
+    cam_normals_unit = cam_normals / safe_norm[..., None]
+    # Flip so normals face toward the camera (z component > 0 ⇒ already
+    # pointing at the camera when camera looks down -Z; otherwise flip).
+    # Our camera frame has -Z forward, so a pixel's cam-space z is negative
+    # (z_cam = -depth). The outward surface normal should have cam_z > 0
+    # (point back toward the camera, which sits at z=0).
+    # Flip normals whose z is negative.
+    flip = cam_normals_unit[..., 2] < 0
+    cam_normals_unit[flip] *= -1
+
+    # Pull out valid pixels and transform to world frame.
+    d = depth_m[mask]
+    u_flat = uu[mask]
+    v_flat = vv[mask]
+    x_c = (u_flat - frame.cx) * d / frame.fx
+    y_c = -(v_flat - frame.cy) * d / frame.fy
     z_c = -d
     cam_pts = np.stack([x_c, y_c, z_c, np.ones_like(d)], axis=1)
     world_pts = cam_pts @ frame.world_from_camera.T
+    # Normals are directions, so the translation column of the pose
+    # doesn't matter; use only the rotation part.
+    rotation = frame.world_from_camera[:3, :3]
+    cam_n_valid = cam_normals_unit[mask]
+    world_normals = cam_n_valid @ rotation.T
+    # Renormalize (rotation should preserve length but float noise).
+    wn_mag = np.linalg.norm(world_normals, axis=-1, keepdims=True)
+    world_normals = world_normals / np.where(wn_mag > 1e-6, wn_mag, 1.0)
     colors = frame.rgb[mask].astype(np.float32) / 255.0
-    return world_pts[:, :3].astype(np.float32), colors
+    return (
+        world_pts[:, :3].astype(np.float32),
+        colors,
+        world_normals.astype(np.float32),
+    )
 
 
-def _estimate_scales(positions: np.ndarray, depth_at_pixel: np.ndarray, fx: float, fy: float) -> np.ndarray:
+def _estimate_scales(depth_at_pixel: np.ndarray, fx: float, fy: float) -> np.ndarray:
     """
     Estimate per-gaussian scale from projected pixel footprint at each gaussian's
     depth: one pixel at distance z covers roughly z/fx horizontally and z/fy
     vertically. SCALE_MULTIPLIER inflates that so neighbouring Gaussians
     overlap into visible surfaces rather than rendering as isolated dots.
+
+    Returns an (N, 3) array of anisotropic scales — the first two columns
+    are the in-plane (tangential) extent, the third is a thin out-of-plane
+    thickness. Combined with normal-aligned rotations this turns each
+    Gaussian into a small oriented disk that sits on the surface, which is
+    what makes flat walls + the bed top actually read as flat instead of
+    fuzzy volume.
     """
     pix_x = depth_at_pixel / fx
     pix_y = depth_at_pixel / fy
-    pix = np.maximum(pix_x, pix_y)
-    scale = (pix * SCALE_MULTIPLIER).reshape(-1, 1)
-    # Isotropic scale per gaussian — matches the "point-cloud-of-blobs" look.
-    # Real 3DGS training learns anisotropic scales; rgbd_init leaves them iso.
-    return np.repeat(scale, 3, axis=1).astype(np.float32)
+    pix = np.maximum(pix_x, pix_y) * SCALE_MULTIPLIER
+    tangential = pix.astype(np.float32)
+    # Out-of-plane thickness ≈ 35% of the tangential extent — thin enough
+    # to look like a disk edge-on, thick enough to survive tiny alignment
+    # errors in the normal estimate.
+    normal_thickness = tangential * 0.35
+    return np.stack([tangential, tangential, normal_thickness], axis=1).astype(np.float32)
+
+
+def _normals_to_quaternions(normals: np.ndarray) -> np.ndarray:
+    """
+    Build per-Gaussian rotation quaternions (x, y, z, w) that orient the
+    Gaussian's local +Z axis along the world-space surface normal. The
+    in-plane (X, Y) basis is picked to be stable but arbitrary rotation
+    around the normal — Gaussians are symmetric in-plane since
+    _estimate_scales returns the same X and Y magnitudes, so any in-plane
+    rotation is visually equivalent.
+
+    Uses the "shortest rotation between two unit vectors" formula:
+        q = (axis=sin(θ/2)*(a×b), scalar=cos(θ/2)) where cos θ = a·b.
+    Reference frame: local +Z → world normal.
+    """
+    n = normals.shape[0]
+    out = np.zeros((n, 4), dtype=np.float32)  # (x, y, z, w)
+    z_axis = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+    for i in range(n):
+        v = normals[i]
+        # Dot with local +Z
+        dot = float(np.clip(z_axis @ v, -1.0, 1.0))
+        if dot > 0.99999:
+            # Already aligned — identity quaternion.
+            out[i] = (0.0, 0.0, 0.0, 1.0)
+            continue
+        if dot < -0.99999:
+            # 180° flip — choose any in-plane axis.
+            out[i] = (1.0, 0.0, 0.0, 0.0)
+            continue
+        axis = np.cross(z_axis, v)
+        axis_norm = float(np.linalg.norm(axis))
+        if axis_norm < 1e-8:
+            out[i] = (0.0, 0.0, 0.0, 1.0)
+            continue
+        axis = axis / axis_norm
+        half_theta = np.arccos(dot) * 0.5
+        s = float(np.sin(half_theta))
+        c = float(np.cos(half_theta))
+        out[i, 0] = axis[0] * s
+        out[i, 1] = axis[1] * s
+        out[i, 2] = axis[2] * s
+        out[i, 3] = c
+    return out
+
+
+def _voxel_downsample(
+    positions: np.ndarray,
+    colors: np.ndarray,
+    scales: np.ndarray,
+    normals: np.ndarray,
+    voxel_size_m: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Collapse points to one representative per voxel. Random subsampling
+    across the raw 2M+ unprojected points tends to clump Gaussians where
+    the capture path dwelled and leaves gaps in briefly-imaged regions;
+    voxel downsampling spreads coverage evenly.
+
+    Representative = mean of (positions, colors, scales); the normal is
+    taken as the normalised mean as well, which averages out noisy
+    gradient estimates on the same underlying surface.
+    """
+    if positions.shape[0] == 0:
+        return positions, colors, scales, normals
+    # Quantise to voxel indices (int32 is plenty for a room).
+    voxel_idx = np.floor(positions / voxel_size_m).astype(np.int64)
+    # Pack 3D index into a single int64 key: (x * P + y) * P + z with a big prime P.
+    P = 1_000_003
+    keys = (voxel_idx[:, 0] * P + voxel_idx[:, 1]) * P + voxel_idx[:, 2]
+    unique_keys, inverse = np.unique(keys, return_inverse=True)
+    count = np.bincount(inverse, minlength=unique_keys.size)
+    def mean_cols(array: np.ndarray) -> np.ndarray:
+        # Per-column bincount to accumulate → divide by count.
+        cols = []
+        for c in range(array.shape[1]):
+            sums = np.bincount(inverse, weights=array[:, c], minlength=unique_keys.size)
+            cols.append(sums / count)
+        return np.stack(cols, axis=1)
+    pos_out = mean_cols(positions)
+    col_out = mean_cols(colors)
+    scale_out = mean_cols(scales)
+    norm_out = mean_cols(normals)
+    # Renormalize the averaged normals so the quaternion construction
+    # downstream gets unit vectors.
+    mag = np.linalg.norm(norm_out, axis=-1, keepdims=True)
+    norm_out = norm_out / np.where(mag > 1e-6, mag, 1.0)
+    return (
+        pos_out.astype(np.float32),
+        col_out.astype(np.float32),
+        scale_out.astype(np.float32),
+        norm_out.astype(np.float32),
+    )
 
 
 def _load_room_clip_bounds(scene: dict) -> dict | None:
@@ -320,67 +482,119 @@ def _subsample(positions: np.ndarray, colors: np.ndarray, scales: np.ndarray, ma
     return positions[idx], colors[idx], scales[idx]
 
 
+VOXEL_DOWNSAMPLE_SIZE_M = 0.015  # 1.5cm per Gaussian after downsampling
+
+
 def build_rgbd_init_gaussians(
     frames: list[Frame],
     max_gaussians: int,
     clip_bounds: dict | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Return (positions (N,3), colors (N,3) in [0,1], scales (N,3)) for N
-    gaussians, aggregated from every frame with per-pixel unprojection and
-    scale estimation, capped to `max_gaussians` via uniform random subsample.
+    Return (positions (N,3), colors (N,3) in [0,1], scales (N,3) anisotropic,
+    quaternions (N,4) xyzw) for N Gaussians aggregated from every frame.
 
-    When `clip_bounds` is provided (from _load_room_clip_bounds), points
-    outside the inflated room AABB are dropped before subsampling. That
-    removes the haze of depth-sensor outliers that otherwise float outside
-    the room wireframe — the single biggest visible artifact of the
-    untrained init.
+    Pipeline:
+      1. Unproject each frame into world-space points + per-pixel normals
+         (from local depth gradients, dropping occlusion-edge pixels).
+      2. Concatenate across frames.
+      3. Room-clip to the scene's floor-polygon AABB + ceiling (when
+         available), cutting the depth-sensor haze that falls outside the
+         room wireframe.
+      4. Voxel-downsample to VOXEL_DOWNSAMPLE_SIZE_M — one representative
+         Gaussian per voxel averages out the clumps that random subsample
+         leaves in over-scanned regions.
+      5. Random-subsample to max_gaussians as a final ceiling.
+      6. Convert each world normal into a rotation quaternion that orients
+         the Gaussian's local +Z along the normal (disk lying on surface).
     """
     pos_list: list[np.ndarray] = []
     col_list: list[np.ndarray] = []
     scale_list: list[np.ndarray] = []
+    norm_list: list[np.ndarray] = []
     for frame in frames:
-        world_pts, colors = _unproject_frame(frame)
+        world_pts, colors, world_normals = _unproject_frame(frame)
         if world_pts.shape[0] == 0:
             continue
-        # Recompute per-pixel depth for scale estimation; the mask has to
-        # match the one inside _unproject_frame exactly so every returned
-        # world point lines up with its corresponding depth value.
+        # The mask inside _unproject_frame already combined depth-validity
+        # with normal-gradient-validity; recompute the same-shaped depth
+        # array here so scales line up with the returned points.
         mask = np.isfinite(frame.depth_m) & (frame.depth_m > 0.05) & (frame.depth_m < DEPTH_CAP_M)
-        d = frame.depth_m[mask]
-        scales = _estimate_scales(world_pts, d, frame.fx, frame.fy)
+        # We need the same subset the function returned. The normal mask
+        # drops some extra pixels so the cardinalities won't match a plain
+        # depth mask. Instead, re-derive depth directly from the returned
+        # camera-space Z (world_pts' depth in camera frame).
+        # Simpler + correct: project world_pts back into the camera and
+        # read depth.
+        homog = np.concatenate([world_pts, np.ones((world_pts.shape[0], 1))], axis=1)
+        cam = homog @ np.linalg.inv(frame.world_from_camera).T
+        # In ARKit OpenGL, cam-z is negative for in-front points; depth = -z.
+        d = -cam[:, 2]
+        scales = _estimate_scales(d, frame.fx, frame.fy)
         pos_list.append(world_pts)
         col_list.append(colors)
         scale_list.append(scales)
+        norm_list.append(world_normals)
     if not pos_list:
         raise SystemExit("[splat-generate] rgbd_init: no frames produced valid depth pixels")
     positions = np.concatenate(pos_list, axis=0)
     colors = np.concatenate(col_list, axis=0)
     scales = np.concatenate(scale_list, axis=0)
+    normals = np.concatenate(norm_list, axis=0)
+
     if clip_bounds is not None:
         pre_clip = positions.shape[0]
-        positions, colors, scales = _apply_room_clip(positions, colors, scales, clip_bounds)
+        mask = (
+            (positions[:, 0] >= clip_bounds["min_x"]) & (positions[:, 0] <= clip_bounds["max_x"]) &
+            (positions[:, 1] >= clip_bounds["min_y"]) & (positions[:, 1] <= clip_bounds["max_y"]) &
+            (positions[:, 2] >= clip_bounds["min_z"]) & (positions[:, 2] <= clip_bounds["max_z"])
+        )
+        positions = positions[mask]
+        colors = colors[mask]
+        scales = scales[mask]
+        normals = normals[mask]
         kept = positions.shape[0]
         print(
-            f"[splat-generate] room-clip kept {kept}/{pre_clip} points ({kept/max(pre_clip,1)*100:.1f}%) "
-            f"within x=[{clip_bounds['min_x']:.2f},{clip_bounds['max_x']:.2f}] "
-            f"y=[{clip_bounds['min_y']:.2f},{clip_bounds['max_y']:.2f}] "
-            f"z=[{clip_bounds['min_z']:.2f},{clip_bounds['max_z']:.2f}]",
+            f"[splat-generate] room-clip kept {kept}/{pre_clip} points ({kept/max(pre_clip,1)*100:.1f}%)",
             file=sys.stderr,
         )
-    positions, colors, scales = _subsample(positions, colors, scales, max_gaussians)
-    return positions, colors, scales
+
+    pre_voxel = positions.shape[0]
+    positions, colors, scales, normals = _voxel_downsample(
+        positions, colors, scales, normals, VOXEL_DOWNSAMPLE_SIZE_M,
+    )
+    print(
+        f"[splat-generate] voxel-downsample {pre_voxel} → {positions.shape[0]} "
+        f"(voxel={VOXEL_DOWNSAMPLE_SIZE_M}m)",
+        file=sys.stderr,
+    )
+
+    if positions.shape[0] > max_gaussians:
+        rng = np.random.default_rng(seed=0)
+        idx = rng.choice(positions.shape[0], size=max_gaussians, replace=False)
+        positions = positions[idx]
+        colors = colors[idx]
+        scales = scales[idx]
+        normals = normals[idx]
+
+    quaternions = _normals_to_quaternions(normals)
+    return positions, colors, scales, quaternions
 
 
-def pack_splat_bytes(positions: np.ndarray, colors: np.ndarray, scales: np.ndarray) -> bytes:
+def pack_splat_bytes(
+    positions: np.ndarray,
+    colors: np.ndarray,
+    scales: np.ndarray,
+    quaternions: np.ndarray,
+) -> bytes:
     """
-    Pack the (positions, colors, scales) triple into the 32-byte-per-gaussian
-    binary .splat format used by antimatter15's viewer and gsplat.js. Rotation
-    is always identity (quaternion (0, 0, 0, 1) → bytes (128, 128, 128, 255)
-    after ((q+1)/2)*255 quantization).
+    Pack the (positions, colors, scales, quaternions) quad into the 32-byte-
+    per-gaussian binary .splat format used by antimatter15's viewer and
+    gsplat.js. The antimatter15 quaternion encoding is ((q + 1) / 2) * 255
+    per component in WXYZ order (see antimatter15/splat README).
     """
     n = positions.shape[0]
-    assert colors.shape == (n, 3) and scales.shape == (n, 3)
+    assert colors.shape == (n, 3) and scales.shape == (n, 3) and quaternions.shape == (n, 4)
     buf = bytearray(n * 32)
     view = memoryview(buf)
     # positions: 12 bytes (float32 x 3)
@@ -390,14 +604,11 @@ def pack_splat_bytes(positions: np.ndarray, colors: np.ndarray, scales: np.ndarr
     scale_f32 = scales.astype(np.float32, copy=False)
     # colors: 4 bytes per gaussian (R, G, B, alpha)
     rgb_u8 = np.clip(np.round(colors * 255.0), 0, 255).astype(np.uint8)
-    # rotation: identity quaternion → (0, 0, 0, 1) → quantized bytes.
-    # The quantization is (q + 1) / 2 * 255, rounded.
-    rot_identity = np.array([
-        round((0.0 + 1.0) * 0.5 * 255),
-        round((0.0 + 1.0) * 0.5 * 255),
-        round((0.0 + 1.0) * 0.5 * 255),
-        round((1.0 + 1.0) * 0.5 * 255),
-    ], dtype=np.uint8)
+    # Quantize quaternions. The .splat format orders bytes as (w, x, y, z);
+    # our quaternions array is (x, y, z, w), so rearrange.
+    q_xyzw = quaternions.astype(np.float32, copy=False)
+    q_wxyz = np.stack([q_xyzw[:, 3], q_xyzw[:, 0], q_xyzw[:, 1], q_xyzw[:, 2]], axis=1)
+    quat_u8 = np.clip(np.round((q_wxyz + 1.0) * 0.5 * 255.0), 0, 255).astype(np.uint8)
     # Build structured interleaved layout.
     for i in range(n):
         base = i * 32
@@ -407,7 +618,10 @@ def pack_splat_bytes(positions: np.ndarray, colors: np.ndarray, scales: np.ndarr
         view[base + 25] = int(rgb_u8[i, 1])
         view[base + 26] = int(rgb_u8[i, 2])
         view[base + 27] = 255  # alpha
-        view[base + 28:base + 32] = rot_identity.tobytes()
+        view[base + 28] = int(quat_u8[i, 0])
+        view[base + 29] = int(quat_u8[i, 1])
+        view[base + 30] = int(quat_u8[i, 2])
+        view[base + 31] = int(quat_u8[i, 3])
     return bytes(buf)
 
 
@@ -476,8 +690,10 @@ def render_rgbd_init(request: SplatRequest) -> tuple[dict, bytes, str]:
         frames = load_frames_from_fixture(request.fixture_dir)
         scene = json.loads((request.fixture_dir / "scene.json").read_text())
         clip_bounds = _load_room_clip_bounds(scene)
-    positions, colors, scales = build_rgbd_init_gaussians(frames, request.max_gaussians, clip_bounds)
-    splat_bytes = pack_splat_bytes(positions, colors, scales)
+    positions, colors, scales, quaternions = build_rgbd_init_gaussians(
+        frames, request.max_gaussians, clip_bounds,
+    )
+    splat_bytes = pack_splat_bytes(positions, colors, scales, quaternions)
     sha = hashlib.sha256(splat_bytes).hexdigest()
     # Deterministic splat_id from the content hash keeps re-runs stable.
     splat_id = f"splat:{sha[:16]}"

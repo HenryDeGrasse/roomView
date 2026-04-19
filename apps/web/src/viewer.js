@@ -83,6 +83,16 @@ function mountThreeView(container, opts) {
   scanProxiesRoot.layers.set(LAYER_SPLAT);
   scene.add(scanProxiesRoot);
 
+  // Per-object OBB wireframes — drawn on top of the scan content so every
+  // object (including the ones with no mesh/splat coverage) has a visible
+  // presence and selection has something to highlight. Populated by
+  // setObjectOutlines; cleared by the same call with null.
+  const scanObjectOutlines = new THREE.Group();
+  scanObjectOutlines.name = 'scan_object_outlines_root';
+  scanObjectOutlines.renderOrder = 5;
+  scanObjectOutlines.layers.set(LAYER_SPLAT);
+  scene.add(scanObjectOutlines);
+
   const resize = () => {
     const width = container.clientWidth;
     const height = container.clientHeight;
@@ -292,6 +302,43 @@ function mountThreeView(container, opts) {
     );
     controls.target.copy(center);
     controls.update();
+  }
+
+  /**
+   * Attach per-object OBB wireframes. `outlineGroup` is a THREE.Group whose
+   * children carry userData.scan_obb + userData.object_id (produced by
+   * scan-proxies.js buildObjectOutlines). Pass null to clear.
+   */
+  function setObjectOutlines(outlineGroup) {
+    for (const prev of [...scanObjectOutlines.children]) {
+      scanObjectOutlines.remove(prev);
+      prev.traverse((n) => {
+        if (n.geometry?.dispose) n.geometry.dispose();
+        if (n.material?.dispose) n.material.dispose();
+      });
+    }
+    if (!outlineGroup) return;
+    outlineGroup.traverse((node) => node.layers.set(LAYER_SPLAT));
+    scanObjectOutlines.add(outlineGroup);
+  }
+
+  /**
+   * Highlight the selected object's OBB wireframe. Scoped to the scan pane
+   * — the layout pane / main viewer have their own selection visuals.
+   */
+  function setScanSelection(objectId) {
+    for (const outlineGroup of scanObjectOutlines.children) {
+      for (const child of outlineGroup.children ?? []) {
+        if (!child.userData?.scan_obb) continue;
+        const isSelected = !!objectId && child.userData.object_id === objectId;
+        if (child.material) {
+          // Unselected: 0.35 opacity so the scene isn't cluttered, but
+          // still visible. Selected: full opacity + tint pop.
+          child.material.opacity = isSelected ? 1.0 : (objectId ? 0.22 : 0.55);
+          child.material.needsUpdate = true;
+        }
+      }
+    }
   }
 
   function disposeScanProxies() {
@@ -535,6 +582,8 @@ function mountThreeView(container, opts) {
     setSplatLoader,
     getSplatMeta,
     setScanProxies,
+    setObjectOutlines,
+    setScanSelection,
     captureConditioning,
     getCurrentCameraView,
     flyToPose,

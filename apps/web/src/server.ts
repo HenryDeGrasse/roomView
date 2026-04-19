@@ -1140,6 +1140,13 @@ function renderEditorShellHtml(input: {
             console.error("viewer.setSelection failed", err);
           }
         }
+        if (state.scanView && typeof state.scanView.setScanSelection === 'function') {
+          try {
+            state.scanView.setScanSelection(state.selectionId);
+          } catch (err) {
+            console.error("scanView.setScanSelection failed", err);
+          }
+        }
         if (state.scene && document.getElementById("layout-info-mount")) {
           document.getElementById("layout-info-mount").innerHTML = renderLayoutPaneInfo(state.scene, state.selectionId, Boolean(state.sessionId));
         }
@@ -2027,6 +2034,27 @@ function renderEditorShellHtml(input: {
         }
         updateScanModeBadge();
         void installScanProxies();
+        void installScanOutlines();
+      }
+
+      // Per-object OBB wireframes on the scan view. Runs once per scene so
+      // every named object has a visible box — the 3 that have no captured
+      // coverage get presence here, and selection highlights the matching
+      // box in CLASS_ACCENTS color.
+      async function installScanOutlines() {
+        if (!state.scene || !state.scanView || typeof state.scanView.setObjectOutlines !== 'function') return;
+        try {
+          const mod = await import('/scan-proxies.js');
+          if (typeof mod.buildObjectOutlines !== 'function') return;
+          const outlineGroup = mod.buildObjectOutlines(state.scene);
+          state.scanView.setObjectOutlines(outlineGroup);
+          if (typeof state.scanView.setScanSelection === 'function') {
+            state.scanView.setScanSelection(state.selectionId);
+          }
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('scan outlines install failed', err);
+        }
       }
 
       // Build scan-native object proxies (per-object point clouds from
@@ -2929,6 +2957,31 @@ function renderEditorShellHtml(input: {
           return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || node.isContentEditable;
         }
 
+        // Drawer-object clicks need to route through the existing selection
+        // pipeline. The layout pane has a delegated click listener on
+        // button[data-entity-id] that calls setSelection() (itself scoped
+        // inside the earlier IIFE and not directly reachable from here).
+        // Cloning buttons into the drawer loses the listener, so we forward
+        // each drawer click to the live layout-info-mount button with the
+        // matching data-entity-id — that button IS inside layout-pane and
+        // triggers the real handler.
+        const drawerObjectsEl2 = document.getElementById("drawer-objects");
+        drawerObjectsEl2?.addEventListener("click", (event) => {
+          const target = event.target;
+          if (!(target instanceof Element)) return;
+          const button = target.closest("button[data-entity-id]");
+          if (!button) return;
+          const entityId = button.getAttribute("data-entity-id");
+          if (!entityId) return;
+          event.preventDefault();
+          const liveButton = document.querySelector(
+            "#layout-info-mount button[data-entity-id='" + entityId.replace(/'/g, "\\'") + "']",
+          );
+          if (liveButton instanceof HTMLElement) {
+            liveButton.click();
+          }
+        });
+
         // Empty-state CTA → auto-select ARKitScenes fixture and load it.
         stageEmptyLoadBtn?.addEventListener("click", () => {
           const select = document.getElementById("fixture-select");
@@ -3063,6 +3116,19 @@ function renderEditorShellHtml(input: {
               drawerObjectsEl.innerHTML = '<p class="drawer__empty">Open the 2D layout overlay for the full object list.</p>';
             } else {
               drawerObjectsEl.innerHTML = '<p class="drawer__empty">No scene loaded yet.</p>';
+            }
+          }
+
+          // Highlight the currently-selected object's card in the drawer.
+          // The selection id lives on the real layout-pane button that the
+          // existing delegated click handler manipulates (via data-entity-id
+          // + aria-pressed). Mirror that state onto our cloned buttons.
+          if (drawerObjectsEl && layoutInfoMount) {
+            const liveSelected = layoutInfoMount.querySelector("button[data-entity-id][aria-pressed='true']");
+            const selectedId = liveSelected?.getAttribute("data-entity-id") ?? null;
+            for (const btn of drawerObjectsEl.querySelectorAll("button[data-entity-id]")) {
+              const id = btn.getAttribute("data-entity-id");
+              btn.classList.toggle("is-selected", id === selectedId);
             }
           }
 
