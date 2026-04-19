@@ -1130,22 +1130,6 @@
     },
     "hard_violations": [
       {
-        "entity_ids": [
-          "object-scene-capture-bedroom-obstacle-3309818a--08610b50",
-          "object-scene-capture-bedroom-obstacle-3309818a--bd27bdef"
-        ],
-        "reason_code": "OBJECT_OVERLAP",
-        "message": "bed overlaps nightstand."
-      },
-      {
-        "entity_ids": [
-          "object-scene-capture-bedroom-obstacle-3309818a--08610b50",
-          "object-scene-capture-bedroom-obstacle-3309818a--af4400c3"
-        ],
-        "reason_code": "OBJECT_OVERLAP",
-        "message": "bed overlaps generic_obstacle."
-      },
-      {
         "entity_id": "opening-scene-capture-bedroom-obstacle-3309818a--a14ddf85",
         "reason_code": "OPENING_BLOCKED",
         "blocked_by": [

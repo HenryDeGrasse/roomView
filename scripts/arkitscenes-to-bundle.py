@@ -66,6 +66,14 @@ Key design choices
    NaN. That matches what the Swift bundle writer produces on-device,
    and the Phase 0 render bench consumes .npy via --depth-source
    manifest out of the box.
+
+7. Overlap tolerance. Real rooms have chairs tucked under desks and
+   cabinets sitting against beds — AABB overlap between furniture is
+   normal, not a violation. The ingest overlap validator now uses the
+   same area-threshold heuristic as the mutation engine (flags only
+   overlap area > 0.18 m^2, with wall-cluster and nightstand/lamp
+   exceptions). The adapter emits raw OBB sizes; no shrink or nudge
+   pass is applied by default.
 """
 
 from __future__ import annotations
@@ -161,13 +169,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--obb-shrink",
         type=float,
-        default=0.2,
+        default=0.0,
         help=(
-            "Fractional shrink applied to each OBB's horizontal size (size_x, size_y). "
-            "Default 0.2 (20%%) compensates for loose ARKitScenes hand-drawn bounding "
-            "boxes that often overlap their neighbors by several centimeters, and for "
-            "rotated OBBs whose projected footprint is larger than size_x*size_z. "
-            "size_z (vertical) is untouched. Set to 0 to emit raw annotation sizes."
+            "Optional shrink applied to each OBB's horizontal size (size_x, size_y). "
+            "Default 0 emits raw annotation sizes. Non-zero values were previously "
+            "needed to work around an overly strict ingest overlap validator; that "
+            "validator now matches the mutation-engine heuristic (area-based with "
+            "wall-cluster tolerance) so the raw OBBs usually land cleanly. Leave "
+            "at 0 unless you hit a specific scan with pathological annotations."
         ),
     )
     return parser.parse_args(argv)
@@ -360,79 +369,6 @@ def normalize_vertical(
     return shift
 
 
-def _aabb_footprint(obj: dict[str, Any]) -> tuple[float, float, float, float]:
-    """Axis-aligned bounds of a yaw-rotated OBB footprint on the XY plane.
-
-    Matches the overlap check in apps/api/src/roomplan-ingest.ts
-    (`footprintFromObb` + `polygonBounds`).
-    """
-    obb = obj["obb"]
-    half_x = obb["size_x"] / 2.0
-    half_y = obb["size_y"] / 2.0
-    rad = math.radians(obb.get("yaw_degrees", 0.0))
-    cos = math.cos(rad)
-    sin = math.sin(rad)
-    cx = obb["center"]["x"]
-    cy = obb["center"]["y"]
-    corners = [(-half_x, -half_y), (half_x, -half_y), (half_x, half_y), (-half_x, half_y)]
-    xs = [cx + c[0] * cos - c[1] * sin for c in corners]
-    ys = [cy + c[0] * sin + c[1] * cos for c in corners]
-    return (min(xs), max(xs), min(ys), max(ys))
-
-
-def _aabb_overlap_magnitude(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
-    """Smallest axis overlap (positive) between two AABBs, or 0 if disjoint."""
-    ax_min, ax_max, ay_min, ay_max = a
-    bx_min, bx_max, by_min, by_max = b
-    overlap_x = min(ax_max, bx_max) - max(ax_min, bx_min)
-    overlap_y = min(ay_max, by_max) - max(ay_min, by_min)
-    if overlap_x <= 0 or overlap_y <= 0:
-        return 0.0
-    return min(overlap_x, overlap_y)
-
-
-def resolve_horizontal_overlaps(
-    objects: list[dict[str, Any]],
-    max_iterations: int = 40,
-    step: float = 0.03,
-) -> tuple[bool, int]:
-    """Nudge overlapping objects apart along their center-to-center axis.
-
-    Mirrors the ingest validator's overlap check (axis-aligned bounds of
-    the rotated footprint), so once this converges the layout pane has
-    zero OBJECT_OVERLAP violations. Returns (converged, iterations_run).
-    Each iteration moves each member of an overlapping pair by `step`
-    meters along the separation axis — a small value keeps scene
-    geometry close to the original annotation.
-    """
-    n = len(objects)
-    if n < 2:
-        return True, 0
-    for iteration in range(max_iterations):
-        any_overlap = False
-        for i in range(n):
-            a = _aabb_footprint(objects[i])
-            for j in range(i + 1, n):
-                b = _aabb_footprint(objects[j])
-                if _aabb_overlap_magnitude(a, b) <= 0:
-                    continue
-                any_overlap = True
-                dx = objects[j]["pose"]["position"]["x"] - objects[i]["pose"]["position"]["x"]
-                dy = objects[j]["pose"]["position"]["y"] - objects[i]["pose"]["position"]["y"]
-                norm = math.hypot(dx, dy)
-                if norm < 1e-6:
-                    # Degenerate: coincident centers. Push along +X arbitrarily.
-                    ux, uy = 1.0, 0.0
-                else:
-                    ux, uy = dx / norm, dy / norm
-                for obj, sign in ((objects[i], -1.0), (objects[j], +1.0)):
-                    obj["pose"]["position"]["x"] += sign * ux * step
-                    obj["pose"]["position"]["y"] += sign * uy * step
-                    obj["obb"]["center"]["x"] += sign * ux * step
-                    obj["obb"]["center"]["y"] += sign * uy * step
-        if not any_overlap:
-            return True, iteration + 1
-    return False, max_iterations
 
 
 def synthesize_shell(
@@ -649,29 +585,10 @@ def write_bundle(args: argparse.Namespace) -> Path:
 
     traj = load_trajectory(traj_path)
 
-    objects, _, _, _, _, min_vertical, max_vertical = load_objects(
+    objects, min_x, max_x, min_y, max_y, min_vertical, max_vertical = load_objects(
         annotation_path, obb_shrink=args.obb_shrink
     )
     vertical_shift = normalize_vertical(objects, min_vertical)
-    converged, overlap_iterations = resolve_horizontal_overlaps(objects)
-    if not converged:
-        print(
-            f"[arkitscenes-to-bundle] warning: overlap relaxation did not converge "
-            f"after {overlap_iterations} iterations; the editor may still show "
-            f"OBJECT_OVERLAP violations.",
-            flush=True,
-        )
-    # Recompute horizontal bounds from the (possibly nudged) positions.
-    xs: list[float] = []
-    ys: list[float] = []
-    for obj in objects:
-        obb = obj["obb"]
-        xs.extend([obb["center"]["x"] - 0.5 * obb["size_x"], obb["center"]["x"] + 0.5 * obb["size_x"]])
-        ys.extend([obb["center"]["y"] - 0.5 * obb["size_y"], obb["center"]["y"] + 0.5 * obb["size_y"]])
-    min_x = min(xs) - 0.4
-    max_x = max(xs) + 0.4
-    min_y = min(ys) - 0.4
-    max_y = max(ys) + 0.4
     # Anchor the room to local origin (0, 0, 0) so the synthesized floor
     # polygon in local u/v coords matches object positions in world
     # space. The fixture-format convention is: floor_polygon starts at

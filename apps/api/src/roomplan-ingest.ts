@@ -79,6 +79,7 @@ import {
   SceneMutationError,
   simulateScenePreview,
 } from "./mutation-engine";
+import { findHardObjectOverlaps } from "./overlap-policy";
 import { OpenRouterPlanner, type AiPlannerResult, type OpenRouterPlannerOptions } from "./ai-planner";
 import { planDeterministicTurn } from "./planner";
 import {
@@ -2864,23 +2865,12 @@ function deriveInitialStateCache(
     }
   }
 
-  for (let index = 0; index < objects.length; index += 1) {
-    const left = objects[index];
-    const leftBounds = polygonBounds(footprintFromObb(left.obb));
-    for (let inner = index + 1; inner < objects.length; inner += 1) {
-      const right = objects[inner];
-      if (canObjectsLegallyOverlap(left, right)) {
-        continue;
-      }
-      const rightBounds = polygonBounds(footprintFromObb(right.obb));
-      if (intersectsBounds(leftBounds, rightBounds)) {
-        hardViolations.push({
-          entity_ids: [left.object_id, right.object_id],
-          reason_code: "OBJECT_OVERLAP",
-          message: `${left.class} overlaps ${right.class}.`,
-        });
-      }
-    }
+  for (const overlap of findHardObjectOverlaps(objects)) {
+    hardViolations.push({
+      entity_ids: [overlap.left.object_id, overlap.right.object_id],
+      reason_code: "OBJECT_OVERLAP",
+      message: `${overlap.left.class} overlaps ${overlap.right.class}.`,
+    });
   }
 
   for (const opening of openings) {
@@ -3334,19 +3324,6 @@ function blocksFloorZones(object: SceneObject): boolean {
   return object.support.support_kind === "floor";
 }
 
-function canObjectsLegallyOverlap(left: SceneObject, right: SceneObject): boolean {
-  if (left.support.support_kind !== "floor" || right.support.support_kind !== "floor") {
-    return true;
-  }
-  if (left.class === "rug" || right.class === "rug") {
-    return true;
-  }
-  if (left.parent_id === right.object_id || right.parent_id === left.object_id) {
-    return true;
-  }
-  return false;
-}
-
 function createSelectionSummary(objects: SceneObject[], openings: Opening[]): string {
   const parts: string[] = [];
   const bed = objects.find((object) => object.class === "bed");
@@ -3584,6 +3561,15 @@ function boundsToPolygon(bounds: { min_x: number; max_x: number; min_y: number; 
 
 function pointInBounds(point: Point2D, bounds: { min_x: number; max_x: number; min_y: number; max_y: number }): boolean {
   return point.x >= bounds.min_x && point.x <= bounds.max_x && point.y >= bounds.min_y && point.y <= bounds.max_y;
+}
+
+function intersectionArea(
+  left: { min_x: number; max_x: number; min_y: number; max_y: number },
+  right: { min_x: number; max_x: number; min_y: number; max_y: number }
+): number {
+  const overlapX = Math.max(0, Math.min(left.max_x, right.max_x) - Math.max(left.min_x, right.min_x));
+  const overlapY = Math.max(0, Math.min(left.max_y, right.max_y) - Math.max(left.min_y, right.min_y));
+  return roundNumber(overlapX * overlapY);
 }
 
 function intersectsBounds(
