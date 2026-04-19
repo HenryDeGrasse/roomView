@@ -392,6 +392,8 @@ function mountThreeView(container, opts) {
       gltfCache,
       gltfLoader,
       resolveAssetUri: assetUriResolver,
+      captureInpaintTextureManifest: options?.captureInpaintTextureManifest ?? null,
+      captureInpaintTextureBaseUri: options?.captureInpaintTextureBaseUri ?? null,
       versionToken,
       getVersion: () => setRoomVersion,
     };
@@ -636,7 +638,10 @@ function buildRoomGroup(room, ctx) {
   // the 3 of 6 walls the ARKitScenes clip never imaged), while still
   // letting outside orbits see straight through via FrontSide culling.
   if (ctx?.appearanceMode === 'capture') {
-    buildCaptureInpaintShell(room, shell);
+    buildCaptureInpaintShell(room, shell, {
+      textureManifest: ctx?.captureInpaintTextureManifest ?? null,
+      textureBaseUri: ctx?.captureInpaintTextureBaseUri ?? null,
+    });
   }
   setLayerDeep(shell, LAYER_SHELL);
   group.add(shell);
@@ -787,6 +792,26 @@ function updateDollhouseVisibility(camera, roomsRoot, scanProxiesRoot, state) {
   }
 }
 
+function encodePathSegment(s) {
+  return encodeURIComponent(String(s ?? ''));
+}
+
+
+function buildSurfaceUVs(geometry, texture) {
+  if (!texture) return null;
+  const positions = geometry.getAttribute('position').array;
+  const { u_min, u_max, v_min, v_max } = texture;
+  const u_span = Math.max(1e-6, u_max - u_min);
+  const v_span = Math.max(1e-6, v_max - v_min);
+  const uvs = new Float32Array((positions.length / 3) * 2);
+  for (let i = 0, j = 0; i < positions.length; i += 3, j += 2) {
+    uvs[j] = (positions[i] - u_min) / u_span;            // local x → u
+    uvs[j + 1] = (positions[i + 1] - v_min) / v_span;    // local y → v
+  }
+  return uvs;
+}
+
+
 function pointInPolygonWithMargin(px, py, vertices, margin) {
   // Expand polygon by `margin` along each edge's inward normal. Rather
   // than computing a Minkowski sum exactly, approximate by inflating
@@ -826,10 +851,45 @@ function pointInPolygonWithMargin(px, py, vertices, margin) {
  * walls fell back to these defaults anyway, so skipping the lattice
  * approach costs little and frees 34k gaussians for the observed tiers.
  */
-function buildCaptureInpaintShell(room, parent) {
+function buildCaptureInpaintShell(room, parent, opts = {}) {
   const shell = room?.shell;
   if (!shell) return;
   const ceilingHeight = Number(shell.ceiling_height) || 2.4;
+  // Optional texture manifest from scripts/bake-wall-textures.py —
+  // each texture lives at `{textureBaseUri}/{surface_id}.png` and
+  // replaces the flat CAPTURE_INPAINT_COLORS swatch with a gradient
+  // sampled from nearby splat points.
+  const textureManifest = opts.textureManifest ?? null;
+  const textureBaseUri = opts.textureBaseUri ?? null;
+  // Keep loaded THREE.Texture objects around by URI so repeat loads
+  // reuse one GPU upload.
+  const textureCache = new Map();
+  const textureLoader = new THREE.TextureLoader();
+
+  const resolveTexture = (surfaceId) => {
+    if (!textureManifest || !textureBaseUri || !surfaceId) return null;
+    const entry = textureManifest.textures?.[surfaceId];
+    if (!entry) return null;
+    const uri = `${textureBaseUri}/${encodePathSegment(entry.path.split('/').pop())}`;
+    return {
+      ...entry,
+      loader: () => {
+        const cached = textureCache.get(uri);
+        if (cached) return cached;
+        const tex = textureLoader.load(uri);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = 4;
+        textureCache.set(uri, tex);
+        return tex;
+      },
+    };
+  };
+
+  const surfaceTextureFor = resolveTexture;
+  // Find the scene's floor surface_id, since the floor polygon isn't
+  // tagged with a surface_id directly.
+  const floorSurface = (shell.surfaces || []).find((s) => s.type === 'floor');
+  const ceilingSurface = (shell.surfaces || []).find((s) => s.type === 'ceiling');
 
   // Floor polygon → inward-facing +Z plane at z=0.
   const floorVertices = shell.floor_polygon?.vertices;
@@ -841,7 +901,8 @@ function buildCaptureInpaintShell(room, parent) {
       { x: 0, y: 0, z: 0 },
       { x: 1, y: 0, z: 0 },
       { x: 0, y: 1, z: 0 },
-      { x: 0, y: 0, z: 1 });
+      { x: 0, y: 0, z: 1 },
+      { texture: surfaceTextureFor(floorSurface?.surface_id) });
     // Ceiling: lift the SAME polygon (in its natural +Y orientation)
     // to z=ceiling_height. We keep v_axis=+Y so (x, y) polygon vertices
     // land at (x, y, ceiling_h) — otherwise flipping v_axis to get a
@@ -856,11 +917,15 @@ function buildCaptureInpaintShell(room, parent) {
       { x: 1, y: 0, z: 0 },
       { x: 0, y: 1, z: 0 },
       { x: 0, y: 0, z: 1 },
-      { side: THREE.BackSide });
+      { side: THREE.BackSide, texture: surfaceTextureFor(ceilingSurface?.surface_id) });
   }
 
   // Walls — each one has its own `surface_frame` pointing inward.
   const walls = (shell.surfaces || []).filter((s) => s.type === 'wall');
+  // Map openings to their host wall so we can punch holes in the
+  // inpaint mesh (detected doors/windows should not be rendered as
+  // solid shell — the viewer is supposed to see *through* them).
+  const openingsBySurface = groupOpeningsBySurface(shell.openings || []);
   for (const wall of walls) {
     const frame = wall.surface_frame;
     const boundary = wall.boundary?.vertices;
@@ -868,22 +933,49 @@ function buildCaptureInpaintShell(room, parent) {
     const points = boundary.map((v) => new THREE.Vector2(v.x, v.y));
     if (shoelaceSignedArea(points) < 0) points.reverse();
     const shape = new THREE.Shape(points);
+    for (const opening of openingsBySurface.get(wall.surface_id) ?? []) {
+      const { min_u, min_v, width, height } = opening.rect ?? {};
+      if (!Number.isFinite(min_u) || !Number.isFinite(min_v) ||
+          !Number.isFinite(width) || !Number.isFinite(height) ||
+          width <= 0 || height <= 0) continue;
+      const hole = new THREE.Path();
+      hole.moveTo(min_u, min_v);
+      hole.lineTo(min_u + width, min_v);
+      hole.lineTo(min_u + width, min_v + height);
+      hole.lineTo(min_u, min_v + height);
+      hole.closePath();
+      shape.holes.push(hole);
+    }
     addInpaintSurface(parent, shape, 'wall',
-      frame.origin, frame.u_axis, frame.v_axis, frame.normal);
+      frame.origin, frame.u_axis, frame.v_axis, frame.normal,
+      { texture: surfaceTextureFor(wall.surface_id) });
   }
 }
 
 function addInpaintSurface(parent, shape, category, origin, uAxis, vAxis, normal, opts = {}) {
   const geom = new THREE.ShapeGeometry(shape);
-  const mat = new THREE.MeshBasicMaterial({
-    color: CAPTURE_INPAINT_COLORS[category] ?? 0xbbbbbb,
+  // Compute UVs from the shape's XY vertices so a baked texture tiles
+  // into the polygon correctly (ShapeGeometry uses raw XY as positions;
+  // we normalise those into [0, 1] UV space covering the boundary's
+  // axis-aligned extent).
+  const uvs = buildSurfaceUVs(geom, opts.texture);
+  if (uvs) geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  const matConfig = {
     // FrontSide by default → auto-transparent from outside. Ceiling
     // passes side:BackSide because its shape is emitted with a +Z face
     // normal (to avoid a Y-flip) but we want it visible from below.
     side: opts.side ?? THREE.FrontSide,
     transparent: false,
     depthWrite: true,
-  });
+  };
+  if (opts.texture?.loader) {
+    const tex = opts.texture.loader();
+    matConfig.map = tex;
+    matConfig.color = 0xffffff; // unfiltered — let the texture pixels speak
+  } else {
+    matConfig.color = CAPTURE_INPAINT_COLORS[category] ?? 0xbbbbbb;
+  }
+  const mat = new THREE.MeshBasicMaterial(matConfig);
   const mesh = new THREE.Mesh(geom, mat);
   const basis = new THREE.Matrix4().makeBasis(
     new THREE.Vector3(uAxis.x, uAxis.y, uAxis.z),

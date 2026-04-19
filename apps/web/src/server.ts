@@ -166,6 +166,23 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
         sendStaticFile(response, resolved, fixtureSplatContentType(splatRequest.file));
         return;
       }
+
+      const textureRequest = extractFixtureTextureRequest(requestUrl.pathname);
+      if (textureRequest) {
+        const fixture = fixtures.find((candidate) => candidate.fixture_id === textureRequest.fixture_id);
+        if (!fixture) {
+          sendJson(response, 404, { message: `Fixture ${textureRequest.fixture_id} was not found.` });
+          return;
+        }
+        const fixtureDir = resolve(repoRoot, "fixtures", "roomplan", textureRequest.fixture_id, "textures");
+        const resolved = resolve(fixtureDir, textureRequest.file);
+        if (!resolved.startsWith(fixtureDir + sep) && resolved !== fixtureDir) {
+          sendJson(response, 400, { message: "Invalid texture path." });
+          return;
+        }
+        sendStaticFile(response, resolved, fixtureTextureContentType(textureRequest.file));
+        return;
+      }
     }
 
     const fixtureId = extractFixtureId(requestUrl.pathname);
@@ -212,6 +229,19 @@ function extractFixtureSplatRequest(pathname: string): { fixture_id: string; fil
   const match = pathname.match(/^\/dev\/fixtures\/([^/]+)\/splats\/([^/]+)$/);
   if (!match) return null;
   return { fixture_id: decodeURIComponent(match[1]), file: decodeURIComponent(match[2]) };
+}
+
+function extractFixtureTextureRequest(pathname: string): { fixture_id: string; file: string } | null {
+  const match = pathname.match(/^\/dev\/fixtures\/([^/]+)\/textures\/([^/]+)$/);
+  if (!match) return null;
+  return { fixture_id: decodeURIComponent(match[1]), file: decodeURIComponent(match[2]) };
+}
+
+function fixtureTextureContentType(file: string): string {
+  const lower = file.toLowerCase();
+  if (lower.endsWith(".json")) return "application/json; charset=utf-8";
+  if (lower.endsWith(".png")) return "image/png";
+  return "application/octet-stream";
 }
 
 function fixtureFrameContentType(file: string): string {
@@ -1975,12 +2005,47 @@ function renderEditorShellHtml(input: {
         scanPane.innerHTML = '<div class="scan-viewer"><div id="scan-viewer-mount" style="width:100%;height:100%"></div><span class="scan-mode-badge" id="scan-mode-badge">RoomPlan preview</span></div><div id="scan-info-mount"></div>';
       }
 
+      // Fetch a fixture's texture manifest (baked by bake-wall-textures.py).
+      // Returns { manifest, baseUri } or null if the fixture has no textures.
+      async function loadCaptureInpaintTextures() {
+        const sceneId = state.scene?.scene_id;
+        // Only committed fixtures carry /dev/fixtures/... texture routes.
+        const fixtureId = (state.scene?.derived_state_cache?.fixture_id)
+          || (sceneId && sceneId.startsWith('scene-fixture-') ? sceneId.replace('scene-fixture-', 'fixture-').replace(/-[a-z0-9]{8}$/, '') : null)
+          || null;
+        if (!fixtureId) {
+          const activeSelect = document.getElementById('fixture-select');
+          const selectValue = activeSelect instanceof HTMLSelectElement ? activeSelect.value : null;
+          if (!selectValue) return null;
+          try {
+            const base = '/dev/fixtures/' + encodeURIComponent(selectValue) + '/textures/manifest.json';
+            const res = await fetch(base);
+            if (!res.ok) return null;
+            const manifest = await res.json();
+            return { manifest, baseUri: '/dev/fixtures/' + encodeURIComponent(selectValue) + '/textures' };
+          } catch (err) {
+            console.warn('texture manifest fetch failed', err);
+            return null;
+          }
+        }
+        try {
+          const base = '/dev/fixtures/' + encodeURIComponent(fixtureId) + '/textures/manifest.json';
+          const res = await fetch(base);
+          if (!res.ok) return null;
+          const manifest = await res.json();
+          return { manifest, baseUri: '/dev/fixtures/' + encodeURIComponent(fixtureId) + '/textures' };
+        } catch (err) {
+          console.warn('texture manifest fetch failed', err);
+          return null;
+        }
+      }
+
       function syncScanView() {
         const room = state.scene && state.scene.snapshot && state.scene.snapshot.state && state.scene.snapshot.state.room;
         if (!room) return;
         updateScanModeBadge();
         if (state.scanView) {
-          try { state.scanView.setRoom(room); } catch (err) { console.error('scanView.setRoom failed', err); }
+          try { state.scanView.setRoom(room, { captureInpaintTextureManifest: state.captureInpaintTextureManifest ?? null, captureInpaintTextureBaseUri: state.captureInpaintTextureBaseUri ?? null }); } catch (err) { console.error('scanView.setRoom failed', err); }
           void installSplatOnScanView();
           return;
         }
@@ -2003,8 +2068,17 @@ function renderEditorShellHtml(input: {
             } catch (splatErr) {
               console.warn('splat-loader unavailable; scan pane will fall back to meshes/shell', splatErr);
             }
+            // Preload the baked wall-texture manifest in parallel with first setRoom.
+            const textures = await loadCaptureInpaintTextures();
+            if (textures) {
+              state.captureInpaintTextureManifest = textures.manifest;
+              state.captureInpaintTextureBaseUri = textures.baseUri;
+            }
             if (state.scene && state.scene.snapshot) {
-              view.setRoom(state.scene.snapshot.state.room);
+              view.setRoom(state.scene.snapshot.state.room, {
+                captureInpaintTextureManifest: state.captureInpaintTextureManifest ?? null,
+                captureInpaintTextureBaseUri: state.captureInpaintTextureBaseUri ?? null,
+              });
             }
             await installSplatOnScanView();
             return view;

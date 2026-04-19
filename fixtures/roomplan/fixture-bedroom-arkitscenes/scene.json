@@ -467,7 +467,28 @@
               }
             }
           ],
-          "openings": [],
+          "openings": [
+            {
+              "opening_id": "opening-fit-b92521a1573f",
+              "host_surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-860f783b",
+              "type": "window",
+              "rect": {
+                "min_u": 1.6,
+                "min_v": 0.05,
+                "width": 0.65,
+                "height": 0.8
+              },
+              "swing_zone": null,
+              "keepout_zone": null,
+              "connects_to_room_id": null,
+              "provenance": {
+                "source_kind": "measured",
+                "source_ref": "scan:detect-openings",
+                "confidence": 0.85,
+                "updated_at": "2026-04-19T00:00:00.000Z"
+              }
+            }
+          ],
           "fixed_elements": []
         },
         "objects": [
@@ -1193,6 +1214,21 @@
               "minimum_front_clearance_m": 0.6
             },
             "reason_code_on_fail": "CLEARANCE_VIOLATION"
+          },
+          {
+            "constraint_id": "constraint-opening-fit-b92521a1573f-preserved",
+            "kind": "opening_preserved",
+            "scope": {
+              "opening_ids": [
+                "opening-fit-b92521a1573f"
+              ]
+            },
+            "provenance": {
+              "source_kind": "measured",
+              "source_ref": "scan:detect-openings",
+              "confidence": 0.85,
+              "updated_at": "2026-04-19T00:00:00.000Z"
+            }
           }
         ],
         "focal_elements": [
@@ -4572,6 +4608,23 @@
         "content_type": "application/x-numpy"
       },
       "confidence": null
+    }
+  ],
+  "constraints": [
+    {
+      "constraint_id": "constraint-opening-fit-b92521a1573f-preserved",
+      "kind": "opening_preserved",
+      "scope": {
+        "opening_ids": [
+          "opening-fit-b92521a1573f"
+        ]
+      },
+      "provenance": {
+        "source_kind": "measured",
+        "source_ref": "scan:detect-openings",
+        "confidence": 0.85,
+        "updated_at": "2026-04-19T00:00:00.000Z"
+      }
     }
   ]
 }
