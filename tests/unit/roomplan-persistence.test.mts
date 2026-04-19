@@ -21,7 +21,7 @@ import type {
   HandoffGrantRecord,
   Scene,
 } from "../../packages/contracts/src/index.ts";
-import { buildMinimalScene } from "../helpers/scene-builder.ts";
+import { buildMinimalScene } from "../helpers/scene-builder.mts";
 
 function buildIngested(scene: Scene): IngestedCaptureArtifacts {
   const handoff: HandoffGrantRecord = {

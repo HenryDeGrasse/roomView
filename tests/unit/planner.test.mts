@@ -16,7 +16,7 @@ import { describe, test } from "node:test";
 import { RoomPlanCaptureService } from "../../apps/api/src/index.ts";
 import { planDeterministicTurn } from "../../apps/api/src/planner.ts";
 import type { OperationPlanRequest, RoomPlanCaptureRequest } from "../../packages/contracts/src/index.ts";
-import { buildMinimalScene } from "../helpers/scene-builder.ts";
+import { buildMinimalScene } from "../helpers/scene-builder.mts";
 
 function buildRequest(
   overrides: Partial<OperationPlanRequest> = {},

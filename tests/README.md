@@ -50,11 +50,11 @@ and requires no new dependencies.
    `../../apps/api/src/mutation-engine.ts` or
    `../../packages/contracts/src/index.ts`).
 4. If you need a minimal canonical `Scene`, use
-   `buildMinimalScene` from `tests/helpers/scene-builder.ts`. It gives you a
+   `buildMinimalScene` from `tests/helpers/scene-builder.mts`. It gives you a
    4×3 m bedroom with four named walls; pass `objects: [...]` to populate
    editable objects without having to spell out every field.
 5. If you need to hit the HTTP layer, use `startApiHarness` from
-   `tests/helpers/http-harness.ts`. It boots the real server on an ephemeral
+   `tests/helpers/http-harness.mts`. It boots the real server on an ephemeral
    port with a temp storage directory.
 
 ## Philosophy
