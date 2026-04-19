@@ -14,8 +14,12 @@ const webAppRoot = resolve(serverDir, "..");
 const repoRoot = resolve(serverDir, "..", "..", "..");
 const viewerModulePath = resolve(serverDir, "viewer.js");
 const layoutViewModulePath = resolve(serverDir, "layout-view.js");
+const scanProxiesModulePath = resolve(serverDir, "scan-proxies.js");
+const splatLoaderModulePath = resolve(serverDir, "splat-loader.js");
+const designTokensPath = resolve(serverDir, "design-tokens.css");
 const vendorThreeRoot = resolve(webAppRoot, "public", "vendor", "three");
 const vendorModelsRoot = resolve(webAppRoot, "public", "vendor", "models");
+const vendorGaussianSplatsRoot = resolve(webAppRoot, "public", "vendor", "gaussian-splats-3d");
 const DEFAULT_FIXTURE_SCENE_ID = "fixture-bedroom-primary";
 const DEFAULT_FIXTURE_MANIFEST_PATH = "fixtures/manifest.json";
 export const DEFAULT_WEB_EDITOR_PORT = 4173;
@@ -57,6 +61,32 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
       return;
     }
 
+    if (request.method === "GET" && requestUrl.pathname === "/scan-proxies.js") {
+      sendStaticFile(response, scanProxiesModulePath, "application/javascript; charset=utf-8");
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/splat-loader.js") {
+      sendStaticFile(response, splatLoaderModulePath, "application/javascript; charset=utf-8");
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname.startsWith("/vendor/gaussian-splats-3d/")) {
+      const rel = requestUrl.pathname.slice("/vendor/gaussian-splats-3d/".length);
+      const resolved = resolve(vendorGaussianSplatsRoot, rel);
+      if (!resolved.startsWith(vendorGaussianSplatsRoot + sep) && resolved !== vendorGaussianSplatsRoot) {
+        sendJson(response, 400, { message: "Invalid vendor path." });
+        return;
+      }
+      sendStaticFile(response, resolved, "application/javascript; charset=utf-8");
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/design-tokens.css") {
+      sendStaticFile(response, designTokensPath, "text/css; charset=utf-8");
+      return;
+    }
+
     if (request.method === "GET" && requestUrl.pathname.startsWith("/vendor/three/")) {
       const rel = requestUrl.pathname.slice("/vendor/three/".length);
       const resolved = resolve(vendorThreeRoot, rel);
@@ -85,6 +115,59 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
       return;
     }
 
+    if (request.method === "GET") {
+      const frameRequest = extractFixtureFrameRequest(requestUrl.pathname);
+      if (frameRequest) {
+        const fixture = fixtures.find((candidate) => candidate.fixture_id === frameRequest.fixture_id);
+        if (!fixture) {
+          sendJson(response, 404, { message: `Fixture ${frameRequest.fixture_id} was not found.` });
+          return;
+        }
+        const fixtureDir = resolve(repoRoot, "fixtures", "roomplan", frameRequest.fixture_id, "frames");
+        const resolved = resolve(fixtureDir, frameRequest.file);
+        if (!resolved.startsWith(fixtureDir + sep) && resolved !== fixtureDir) {
+          sendJson(response, 400, { message: "Invalid frame path." });
+          return;
+        }
+        sendStaticFile(response, resolved, fixtureFrameContentType(frameRequest.file));
+        return;
+      }
+
+      const meshRequest = extractFixtureMeshRequest(requestUrl.pathname);
+      if (meshRequest) {
+        const fixture = fixtures.find((candidate) => candidate.fixture_id === meshRequest.fixture_id);
+        if (!fixture) {
+          sendJson(response, 404, { message: `Fixture ${meshRequest.fixture_id} was not found.` });
+          return;
+        }
+        const fixtureDir = resolve(repoRoot, "fixtures", "roomplan", meshRequest.fixture_id, "meshes");
+        const resolved = resolve(fixtureDir, meshRequest.file);
+        if (!resolved.startsWith(fixtureDir + sep) && resolved !== fixtureDir) {
+          sendJson(response, 400, { message: "Invalid mesh path." });
+          return;
+        }
+        sendStaticFile(response, resolved, fixtureMeshContentType(meshRequest.file));
+        return;
+      }
+
+      const splatRequest = extractFixtureSplatRequest(requestUrl.pathname);
+      if (splatRequest) {
+        const fixture = fixtures.find((candidate) => candidate.fixture_id === splatRequest.fixture_id);
+        if (!fixture) {
+          sendJson(response, 404, { message: `Fixture ${splatRequest.fixture_id} was not found.` });
+          return;
+        }
+        const fixtureDir = resolve(repoRoot, "fixtures", "roomplan", splatRequest.fixture_id, "splats");
+        const resolved = resolve(fixtureDir, splatRequest.file);
+        if (!resolved.startsWith(fixtureDir + sep) && resolved !== fixtureDir) {
+          sendJson(response, 400, { message: "Invalid splat path." });
+          return;
+        }
+        sendStaticFile(response, resolved, fixtureSplatContentType(splatRequest.file));
+        return;
+      }
+    }
+
     const fixtureId = extractFixtureId(requestUrl.pathname);
     if (request.method === "GET" && fixtureId) {
       const fixture = fixtures.find((candidate) => candidate.fixture_id === fixtureId);
@@ -111,6 +194,47 @@ function extractFixtureId(pathname: string): string | null {
   }
   const quickRenderMatch = pathname.match(/^\/dev\/fixtures\/([^/]+)\/quick-render$/);
   return quickRenderMatch ? decodeURIComponent(quickRenderMatch[1]) : null;
+}
+
+function extractFixtureFrameRequest(pathname: string): { fixture_id: string; file: string } | null {
+  const match = pathname.match(/^\/dev\/fixtures\/([^/]+)\/frames\/([^/]+)$/);
+  if (!match) return null;
+  return { fixture_id: decodeURIComponent(match[1]), file: decodeURIComponent(match[2]) };
+}
+
+function extractFixtureMeshRequest(pathname: string): { fixture_id: string; file: string } | null {
+  const match = pathname.match(/^\/dev\/fixtures\/([^/]+)\/meshes\/([^/]+)$/);
+  if (!match) return null;
+  return { fixture_id: decodeURIComponent(match[1]), file: decodeURIComponent(match[2]) };
+}
+
+function extractFixtureSplatRequest(pathname: string): { fixture_id: string; file: string } | null {
+  const match = pathname.match(/^\/dev\/fixtures\/([^/]+)\/splats\/([^/]+)$/);
+  if (!match) return null;
+  return { fixture_id: decodeURIComponent(match[1]), file: decodeURIComponent(match[2]) };
+}
+
+function fixtureFrameContentType(file: string): string {
+  const lower = file.toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".npy")) return "application/x-numpy";
+  return "application/octet-stream";
+}
+
+function fixtureMeshContentType(file: string): string {
+  const lower = file.toLowerCase();
+  if (lower.endsWith(".json")) return "application/json; charset=utf-8";
+  if (lower.endsWith(".ply")) return "text/plain; charset=utf-8";
+  return "application/octet-stream";
+}
+
+function fixtureSplatContentType(file: string): string {
+  const lower = file.toLowerCase();
+  if (lower.endsWith(".json")) return "application/json; charset=utf-8";
+  if (lower.endsWith(".splat")) return "application/octet-stream";
+  if (lower.endsWith(".ply")) return "text/plain; charset=utf-8";
+  return "application/octet-stream";
 }
 
 function loadFixtureScenes(): EditorFixtureRecord[] {
@@ -144,6 +268,7 @@ function renderEditorShellHtml(input: {
     defaultApiBaseUrl: input.defaultApiBaseUrl,
     defaultFixtureId: DEFAULT_FIXTURE_SCENE_ID,
     fixtureSources: input.fixtureSources,
+    curatedAssetManifest: CURATED_ASSET_MANIFEST,
   });
 
   return `<!doctype html>
@@ -156,268 +281,12 @@ function renderEditorShellHtml(input: {
       {
         "imports": {
           "three": "/vendor/three/three.module.js",
-          "three/addons/": "/vendor/three/addons/"
+          "three/addons/": "/vendor/three/addons/",
+          "@mkkellogg/gaussian-splats-3d": "/vendor/gaussian-splats-3d/gaussian-splats-3d.module.js"
         }
       }
     </script>
-    <style>
-      :root {
-        color-scheme: dark;
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-        background: #0b1020;
-        color: #e5e7eb;
-      }
-      * { box-sizing: border-box; }
-      body { margin: 0; background: #0b1020; color: #e5e7eb; }
-      header {
-        padding: 16px 20px;
-        border-bottom: 1px solid #1f2937;
-        background: #111827;
-      }
-      h1 { margin: 0 0 6px; font-size: 20px; }
-      p { margin: 0; color: #9ca3af; }
-      .toolbar {
-        display: grid;
-        gap: 12px;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-        margin-top: 16px;
-      }
-      .card {
-        background: #0f172a;
-        border: 1px solid #1f2937;
-        border-radius: 12px;
-        padding: 14px;
-      }
-      .card h2 { margin: 0 0 10px; font-size: 15px; }
-      label { display: block; font-size: 12px; color: #93c5fd; margin-bottom: 6px; }
-      input, select, button, textarea {
-        width: 100%;
-        border-radius: 8px;
-        border: 1px solid #374151;
-        background: #111827;
-        color: #f9fafb;
-        padding: 10px 12px;
-        font: inherit;
-      }
-      textarea { min-height: 82px; resize: vertical; }
-      button {
-        cursor: pointer;
-        background: #2563eb;
-        border-color: #2563eb;
-        font-weight: 600;
-      }
-      button.secondary {
-        background: #1f2937;
-        border-color: #374151;
-      }
-      .actions { display: flex; gap: 10px; margin-top: 10px; }
-      .actions > * { flex: 1; }
-      #status {
-        margin: 16px 20px 0;
-        padding: 12px 14px;
-        border-radius: 10px;
-        border: 1px solid #1f2937;
-        background: #0f172a;
-        color: #cbd5e1;
-      }
-      main {
-        display: grid;
-        gap: 16px;
-        padding: 16px 20px 24px;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-      .pane {
-        min-height: 520px;
-        background: #0f172a;
-        border: 1px solid #1f2937;
-        border-radius: 14px;
-        overflow: hidden;
-      }
-      .pane header {
-        margin: 0;
-        padding: 14px 16px;
-        border: 0;
-        border-bottom: 1px solid #1f2937;
-        background: #111827;
-      }
-      .pane header h2 { margin: 0; font-size: 15px; }
-      .pane header p { margin-top: 4px; font-size: 12px; }
-      .pane-body { padding: 16px; }
-      .badge {
-        display: inline-block;
-        margin-bottom: 10px;
-        padding: 4px 8px;
-        border-radius: 999px;
-        background: rgba(59, 130, 246, 0.15);
-        color: #93c5fd;
-        font-size: 12px;
-        font-weight: 600;
-      }
-      .list { display: grid; gap: 8px; margin-top: 12px; }
-      .list button {
-        text-align: left;
-        background: #111827;
-        border-color: #374151;
-      }
-      .list button[data-selected="true"] {
-        border-color: #60a5fa;
-        box-shadow: 0 0 0 1px #60a5fa inset;
-      }
-      pre {
-        margin: 0;
-        overflow: auto;
-        white-space: pre-wrap;
-        word-break: break-word;
-        font-size: 12px;
-        line-height: 1.5;
-        color: #bfdbfe;
-      }
-      dl { margin: 0; display: grid; gap: 8px; }
-      dt { font-size: 12px; color: #93c5fd; }
-      dd { margin: 2px 0 0; color: #e5e7eb; }
-      .muted { color: #9ca3af; }
-      .chat-selection {
-        margin-bottom: 10px;
-        padding: 10px 12px;
-        border-radius: 8px;
-        border: 1px solid #374151;
-        background: #111827;
-        font-size: 12px;
-        color: #cbd5e1;
-      }
-      .chat-thread {
-        display: grid;
-        gap: 10px;
-        margin-top: 12px;
-      }
-      .chat-entry {
-        border: 1px solid #1f2937;
-        border-radius: 10px;
-        padding: 10px 12px;
-        background: #111827;
-      }
-      .chat-entry strong {
-        display: block;
-        margin-bottom: 6px;
-        color: #93c5fd;
-        font-size: 12px;
-      }
-      .chat-entry.error {
-        border-color: #7f1d1d;
-        background: rgba(127, 29, 29, 0.2);
-      }
-      .chat-entry.success {
-        border-color: #14532d;
-        background: rgba(20, 83, 45, 0.22);
-      }
-      .render-section { margin-top: 14px; }
-      .gallery-grid {
-        display: grid;
-        gap: 10px;
-        margin-top: 10px;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-      }
-      .gallery-item {
-        border: 1px solid #374151;
-        border-radius: 10px;
-        padding: 10px 12px;
-        background: #111827;
-      }
-      .gallery-item strong {
-        display: block;
-        margin-bottom: 6px;
-        color: #93c5fd;
-        font-size: 12px;
-      }
-      .hidden { display: none; }
-      .render-viewer {
-        height: 380px;
-        width: 100%;
-        border-radius: 12px;
-        overflow: hidden;
-        background: #07090f;
-        margin-bottom: 14px;
-        position: relative;
-      }
-      .render-viewer canvas { display: block; width: 100%; height: 100%; }
-      .scan-viewer {
-        height: 240px;
-        width: 100%;
-        border-radius: 10px;
-        overflow: hidden;
-        background: #07090f;
-        margin-bottom: 12px;
-        position: relative;
-      }
-      .scan-viewer canvas { display: block; width: 100%; height: 100%; }
-      .scan-mode-badge {
-        position: absolute;
-        top: 8px;
-        left: 8px;
-        padding: 3px 8px;
-        border-radius: 999px;
-        font-size: 11px;
-        font-weight: 600;
-        background: rgba(59, 130, 246, 0.15);
-        color: #93c5fd;
-        border: 1px solid rgba(59, 130, 246, 0.4);
-        pointer-events: none;
-      }
-      .scan-mode-badge.splat {
-        background: rgba(34, 197, 94, 0.15);
-        color: #86efac;
-        border-color: rgba(34, 197, 94, 0.4);
-      }
-      .layout-svg-mount {
-        width: 100%;
-        aspect-ratio: 4 / 3;
-        max-height: 300px;
-        border-radius: 10px;
-        overflow: hidden;
-        background: #0a0e1a;
-        margin-bottom: 12px;
-      }
-      .layout-svg-mount svg [data-entity-id]:hover {
-        filter: brightness(1.25);
-        cursor: pointer;
-      }
-      .layout-svg-mount svg [data-object-id]:hover {
-        cursor: grab;
-      }
-      .layout-svg-mount svg [data-transform-handle="rotate"] {
-        cursor: crosshair;
-      }
-      .layout-svg-mount svg [data-transform-handle="resize"] {
-        cursor: nwse-resize;
-      }
-      .layout-svg-mount svg .rv-selected {
-        stroke: #fbbf24 !important;
-        stroke-width: 0.08 !important;
-      }
-      .layout-violations-summary {
-        margin: 8px 0 12px;
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: 1px solid #7f1d1d;
-        background: rgba(127, 29, 29, 0.18);
-        color: #fecaca;
-        font-size: 12px;
-      }
-      .layout-violations-summary ul { margin: 6px 0 0; padding-left: 18px; }
-      .layout-scores {
-        margin: 4px 0 12px;
-        font-size: 12px;
-        color: #a7f3d0;
-      }
-      .pane-body:focus-visible {
-        outline: 2px solid #60a5fa;
-        outline-offset: -2px;
-      }
-      @media (max-width: 1100px) {
-        main { grid-template-columns: 1fr; }
-        .pane { min-height: 0; }
-      }
-    </style>
+    <link rel="stylesheet" href="/design-tokens.css" />
   </head>
   <body>
     <header>
@@ -460,7 +329,7 @@ function renderEditorShellHtml(input: {
       </div>
     </header>
 
-    <section id="status">Choose a live handoff or a development fixture scene.</section>
+    <div id="toast-region" aria-live="polite" aria-atomic="true"></div>
 
     <main>
       <section class="pane">
@@ -520,9 +389,11 @@ function renderEditorShellHtml(input: {
         layoutViewLoading: null,
         scanView: null,
         scanViewLoading: null,
+        scanProxiesSnapshotId: null,
+        scanProxiesLoading: null,
       };
 
-      const statusNode = document.getElementById("status");
+      const toastRegion = document.getElementById("toast-region");
       const scanPane = document.getElementById("scan-pane");
       const layoutPane = document.getElementById("layout-pane");
       const renderPane = document.getElementById("render-pane");
@@ -596,6 +467,53 @@ function renderEditorShellHtml(input: {
           setStatus(error.message || "Failed to load fixture.", true);
         }
       });
+
+      scanPane.addEventListener("click", (event) => {
+        const target = event.target instanceof HTMLElement ? event.target : null;
+        if (!target) return;
+        const viewpointCard = target.closest("button.viewpoint-card");
+        if (viewpointCard) {
+          event.preventDefault();
+          handleViewpointClick(viewpointCard);
+          return;
+        }
+        const flythroughButton = target.closest("#scan-flythrough");
+        if (flythroughButton) {
+          event.preventDefault();
+          handleFlythroughClick();
+        }
+      });
+
+      function handleViewpointClick(buttonElement) {
+        if (!state.scanView || typeof state.scanView.flyToPose !== "function") return;
+        const poseRaw = buttonElement.getAttribute("data-viewpoint-pose");
+        if (!poseRaw) return;
+        let pose;
+        try { pose = JSON.parse(poseRaw); } catch { pose = null; }
+        if (!pose || typeof pose !== "object") return;
+        const fovAttr = buttonElement.getAttribute("data-viewpoint-fov");
+        const fov = fovAttr ? Number.parseFloat(fovAttr) : null;
+        const options = fov && Number.isFinite(fov) ? { duration_ms: 900, fov } : { duration_ms: 900 };
+        state.scanView.flyToPose(pose, options).catch((err) => console.error("flyToPose failed", err));
+      }
+
+      async function handleFlythroughClick() {
+        if (!state.scanView || typeof state.scanView.flyThroughPoses !== "function") return;
+        const frames = Array.isArray(state.scene?.captured_frames) ? state.scene.captured_frames : [];
+        if (frames.length === 0) return;
+        const button = document.getElementById("scan-flythrough");
+        if (button) button.setAttribute("disabled", "disabled");
+        try {
+          await state.scanView.flyThroughPoses(
+            frames.map((frame) => frame.camera_pose).filter((pose) => pose && typeof pose === "object"),
+            { duration_ms: 900, dwell_ms: 600 },
+          );
+        } catch (err) {
+          console.error("flyThroughPoses failed", err);
+        } finally {
+          if (button) button.removeAttribute("disabled");
+        }
+      }
 
       layoutPane.tabIndex = 0;
       layoutPane.addEventListener("pointerdown", () => {
@@ -692,6 +610,36 @@ function renderEditorShellHtml(input: {
         void rotateSelectedObject(event.deltaY < 0 ? 15 : -15);
       }, { passive: false });
 
+      renderPane.addEventListener("input", (event) => {
+        const target = event.target instanceof HTMLInputElement ? event.target : null;
+        if (!target || !target.classList.contains("before-after__range")) return;
+        const container = target.closest(".before-after");
+        if (!container) return;
+        const value = Math.max(0, Math.min(100, Number(target.value) || 0));
+        container.style.setProperty("--reveal", value + "%");
+      });
+
+      // Track C — live OBB preview on material-card hover.
+      // Hovering a material card paints a preview outline on every OBB of the
+      // same object_class in the layout pane, so the user can see *what* would
+      // change before committing to the prompt. Pure CSS highlight, toggled by
+      // a data-preview-class attribute on the layout-svg-mount element.
+      renderPane.addEventListener("mouseenter", (event) => {
+        const target = event.target instanceof HTMLElement ? event.target.closest("button.material-card") : null;
+        if (!target) return;
+        const cls = target.getAttribute("data-material-class");
+        const layoutMount = document.getElementById("layout-svg-mount");
+        if (cls && layoutMount) {
+          layoutMount.setAttribute("data-preview-class", cls);
+        }
+      }, true);
+      renderPane.addEventListener("mouseleave", (event) => {
+        const target = event.target instanceof HTMLElement ? event.target.closest("button.material-card") : null;
+        if (!target) return;
+        const layoutMount = document.getElementById("layout-svg-mount");
+        if (layoutMount) layoutMount.removeAttribute("data-preview-class");
+      }, true);
+
       renderPane.addEventListener("click", (event) => {
         const actionButton = event.target instanceof HTMLElement ? event.target.closest("button[data-render-action]") : null;
         if (actionButton) {
@@ -713,6 +661,22 @@ function renderEditorShellHtml(input: {
         if (bookmarkButton) {
           state.activeBookmarkId = bookmarkButton.getAttribute("data-bookmark-id");
           renderScene();
+          return;
+        }
+        const materialCard = event.target instanceof HTMLElement ? event.target.closest("button.material-card") : null;
+        if (materialCard) {
+          event.preventDefault();
+          const prompt = materialCard.getAttribute("data-material-prompt") || "";
+          if (prompt && chatInput) {
+            const existing = chatInput.value.trim();
+            chatInput.value = existing ? existing + "\\n" + prompt : prompt;
+            chatInput.focus();
+            showToast({
+              message: "Added '" + prompt + "' to the chat prompt.",
+              level: "success",
+              duration_ms: 3200,
+            });
+          }
         }
       });
 
@@ -906,6 +870,120 @@ function renderEditorShellHtml(input: {
           return providerUri;
         }
         return null;
+      }
+
+      // Showcase Track C — gallery entry renderer.
+      // When a photoreal entry carries captured_frame_id (Showcase flux_inpaint_stack
+      // path) we pair it with the reference RGB from the captured frame and render a
+      // before/after slider. Legacy synthetic-conditioning entries fall back to the
+      // single-image layout.
+      function renderGalleryEntry(entry, scene) {
+        const providerUri = entry.provider_metadata?.uri || '<none>';
+        const imageUrl = resolveGalleryImageUrl(entry.provider_metadata?.uri || null);
+        const providerStatus = entry.provider_metadata?.status || 'ready';
+        const styleTag = Array.isArray(entry.prompt_modifiers) && entry.prompt_modifiers.length > 0
+          ? entry.prompt_modifiers.join(', ')
+          : null;
+        const styleBadge = styleTag
+          ? '<div class="badge warm">' + escapeHtml(styleTag) + '</div>'
+          : '';
+        const capturedFrame = entry.captured_frame_id
+          ? (scene.captured_frames || []).find((frame) => frame.frame_id === entry.captured_frame_id) || null
+          : null;
+        const referenceUrl = capturedFrame ? resolveGalleryImageUrl(capturedFrame.rgb?.uri || null) : null;
+
+        const visualHtml = imageUrl && referenceUrl
+          ? renderBeforeAfter(imageUrl, referenceUrl, entry.entry_id)
+          : imageUrl
+            ? '<img class="gallery-item__image" src="' + escapeHtml(imageUrl) + '" alt="Photoreal render ' + escapeHtml(entry.entry_id) + '" />'
+            : '';
+
+        const metadataPre = '<pre>' + escapeHtml(JSON.stringify({
+          scene_version: entry.scene_version,
+          scene_snapshot_id: entry.scene_snapshot_id,
+          bookmark_id: entry.bookmark_id,
+          asset_id: entry.asset_id,
+          provider_uri: providerUri,
+          created_at: entry.created_at,
+          render_group_id: entry.render_group_id || undefined,
+          captured_frame_id: entry.captured_frame_id || undefined,
+        }, null, 2)) + '</pre>';
+
+        const materialsHtml = renderPinnedMaterialsList(entry, scene);
+        const statusBadge = '<div class="badge">' + escapeHtml(String(providerStatus)) + '</div>';
+        const headerBadges = [styleBadge, statusBadge].filter(Boolean).join('');
+        return '<div class="gallery-item">'
+          + '<div class="gallery-item__badges">' + headerBadges + '</div>'
+          + visualHtml
+          + '<strong>' + escapeHtml(entry.entry_id) + '</strong>'
+          + metadataPre
+          + materialsHtml
+          + '</div>';
+      }
+
+      // Showcase Track C — materials list pinned to each gallery render.
+      // Walks the snapshot's editing_asset_refs (or scene.snapshot.state.room
+      // objects) and emits a small row per material with the BOM catalog's
+      // retailer link when available. This is where Track 3 ("professional
+      // outputs") pays rent inside every rendered image.
+      function renderPinnedMaterialsList(entry, scene) {
+        const refs = Array.isArray(scene.snapshot?.editing_asset_refs) ? scene.snapshot.editing_asset_refs : [];
+        if (refs.length === 0) return '';
+        const manifest = bootstrap.curatedAssetManifest;
+        const assetsById = new Map();
+        if (manifest && Array.isArray(manifest.assets)) {
+          for (const asset of manifest.assets) assetsById.set(asset.asset_id, asset);
+        }
+        const roomObjects = scene.snapshot?.state?.room?.objects || [];
+        const objectsById = new Map();
+        for (const obj of roomObjects) objectsById.set(obj.object_id, obj);
+        // Cap at 5 so the card stays compact — gallery thumbnails shouldn't
+        // scroll. A "+N more" hint replaces the overflow.
+        const rows = refs.slice(0, 5).map((ref) => {
+          const asset = assetsById.get(ref.asset_id) || null;
+          const obj = objectsById.get(ref.bound_to) || null;
+          const className = obj?.class ? obj.class.replace(/_/g, " ") : (asset?.object_class || "asset");
+          const material = asset?.material_state || obj?.material_state || null;
+          const swatch = swatchColorFor(material);
+          const materialBits = [material?.color, material?.finish].filter(Boolean).join(" · ");
+          const retailer = ref.retailer_url || asset?.uri;
+          const retailerName = ref.retailer_name || null;
+          const linkText = retailerName || (retailer ? "spec" : null);
+          const priceBits = typeof ref.price_cents === "number"
+            ? [(ref.price_cents / 100).toFixed(2), (ref.currency || "USD").toUpperCase()].join(" ")
+            : null;
+          const metaParts = [];
+          if (materialBits) metaParts.push(escapeHtml(materialBits));
+          if (priceBits) metaParts.push(escapeHtml(priceBits));
+          if (retailer && linkText) {
+            metaParts.push('<a href="' + escapeHtml(retailer) + '" target="_blank" rel="noopener">' + escapeHtml(linkText) + '</a>');
+          }
+          const metaHtml = metaParts.length ? '<span class="gallery-item__material-meta">' + metaParts.join(" · ") + '</span>' : '';
+          return '<div class="gallery-item__material-row">'
+            + '<span class="gallery-item__material-swatch" style="background:' + swatch + '"></span>'
+            + '<span class="gallery-item__material-label">' + escapeHtml(className) + '</span>'
+            + metaHtml
+            + '</div>';
+        }).join("");
+        const overflow = refs.length > 5
+          ? '<span class="muted" style="font-size:var(--font-size-xs)">+ ' + (refs.length - 5) + ' more</span>'
+          : '';
+        return '<div class="gallery-item__materials">'
+          + '<div class="gallery-item__materials-heading">Materials in this render</div>'
+          + rows
+          + overflow
+          + '</div>';
+      }
+
+      function renderBeforeAfter(renderedUrl, referenceUrl, entryId) {
+        const safeEntry = escapeHtml(entryId);
+        return '<div class="before-after" data-before-after style="--reveal:50%">'
+          + '<img class="before-after__before" src="' + escapeHtml(referenceUrl) + '" alt="Reference capture for ' + safeEntry + '" />'
+          + '<img class="before-after__after" src="' + escapeHtml(renderedUrl) + '" alt="Photoreal render ' + safeEntry + '" />'
+          + '<div class="before-after__handle" aria-hidden="true"></div>'
+          + '<div class="before-after__labels"><span>Before</span><span>After</span></div>'
+          + '<input type="range" class="before-after__range" min="0" max="100" value="50" step="1" aria-label="Reveal after render" />'
+          + '</div>';
       }
 
       function cloneValue(value) {
@@ -1796,6 +1874,7 @@ function renderEditorShellHtml(input: {
         updateScanModeBadge();
         if (state.scanView) {
           try { state.scanView.setRoom(room); } catch (err) { console.error('scanView.setRoom failed', err); }
+          void installSplatOnScanView();
           return;
         }
         if (state.scanViewLoading) return;
@@ -1806,9 +1885,21 @@ function renderEditorShellHtml(input: {
             if (!mount) return null;
             const view = mod.mountScanView(mount);
             state.scanView = view;
+            // Register the Gaussian Splatting renderer (Track B). Guarded import so a
+            // failure in the renderer never breaks the scan pane — setSplat simply
+            // reports 'metadata_only' and the RoomPlan shell + scan proxies stay.
+            try {
+              const splatMod = await import('/splat-loader.js');
+              if (typeof splatMod.installSplatLoader === 'function') {
+                splatMod.installSplatLoader(view);
+              }
+            } catch (splatErr) {
+              console.warn('splat-loader unavailable; scan pane will fall back to meshes/shell', splatErr);
+            }
             if (state.scene && state.scene.snapshot) {
               view.setRoom(state.scene.snapshot.state.room);
             }
+            await installSplatOnScanView();
             return view;
           } catch (err) {
             console.error('scan view failed to load', err);
@@ -1819,13 +1910,108 @@ function renderEditorShellHtml(input: {
         })();
       }
 
+      async function installSplatOnScanView() {
+        if (!state.scanView || typeof state.scanView.setSplat !== 'function') return;
+        const splat = state.scene?.splat;
+        if (splat && splat.status === 'ready' && splat.uri) {
+          try {
+            await state.scanView.setSplat({
+              uri: splat.uri,
+              gaussian_count: splat.gaussian_count ?? null,
+            });
+          } catch (err) {
+            console.error('setSplat failed', err);
+          }
+        } else {
+          try { await state.scanView.setSplat(null); } catch { /* noop */ }
+        }
+        updateScanModeBadge();
+        void installScanProxies();
+      }
+
+      // Build scan-native object proxies (per-object point clouds from
+      // captured_frames) and hand them to the scan view. Idempotent per
+      // scene snapshot. Prefers Tier 2 committed meshes when available
+      // (fixtures/roomplan/{id}/meshes/manifest.json), falls back to the
+      // Tier 1 point-cloud proxies for objects without a cached mesh.
+      async function installScanProxies() {
+        const scene = state.scene;
+        if (!scene || !state.scanView || typeof state.scanView.setScanProxies !== 'function') return;
+        const frames = Array.isArray(scene.captured_frames) ? scene.captured_frames : [];
+        if (frames.length === 0) {
+          try { state.scanView.setScanProxies(null); } catch { /* noop */ }
+          state.scanProxiesSnapshotId = null;
+          return;
+        }
+        const snapshotId = scene.snapshot?.snapshot_id || null;
+        if (snapshotId && state.scanProxiesSnapshotId === snapshotId) return;
+        if (state.scanProxiesLoading) return;
+        const fixtureId = state.loadedFrom === 'fixture' ? fixtureSelect.value : null;
+        state.scanProxiesLoading = (async () => {
+          try {
+            const mod = await import('/scan-proxies.js');
+            const t0 = performance.now();
+            const meshResult = fixtureId ? await mod.loadScanMeshes(fixtureId) : null;
+            const meshMap = meshResult?.meshes || new Map();
+            const meshMode = meshResult?.manifest?.mode || null;
+            const proxies = await mod.buildScanProxies(scene);
+            // Prefer meshes where available; keep point-cloud proxies for
+            // objects the Tier 2 pipeline couldn't reconstruct (sparse
+            // coverage). Compose into one map the viewer consumes.
+            const combined = new Map();
+            proxies.forEach((entry, objectId) => combined.set(objectId, entry));
+            meshMap.forEach((mesh, objectId) => {
+              combined.set(objectId, { mesh, stats: { vertex_count: mesh.userData?.vertex_count || 0, tier: 'mesh:' + (meshMode || 'tsdf') } });
+            });
+            const ms = Math.round(performance.now() - t0);
+            if (state.scene !== scene) return;
+            state.scanView.setScanProxies(combined);
+            state.scanProxiesSnapshotId = snapshotId;
+            const meshCount = meshMap.size;
+            const pointCount = proxies.size - meshCount >= 0 ? Math.max(0, proxies.size - meshCount) : 0;
+            const detail = meshCount > 0
+              ? meshCount + ' mesh' + (meshCount === 1 ? '' : 'es') + ' (' + (meshMode || 'tsdf') + ')' + (pointCount > 0 ? ' · ' + pointCount + ' point proxy' + (pointCount === 1 ? '' : 's') : '')
+              : proxies.size + ' object' + (proxies.size === 1 ? '' : 's');
+            showToast({
+              message: 'Scan proxies ready · ' + detail + ' · ' + ms + ' ms',
+              level: 'success',
+              duration_ms: 3600,
+            });
+          } catch (err) {
+            console.error('scan proxies failed', err);
+            showToast({ message: 'Scan proxies failed: ' + (err?.message || err), level: 'error' });
+          } finally {
+            state.scanProxiesLoading = null;
+          }
+        })();
+      }
+
       function updateScanModeBadge() {
         const badge = document.getElementById('scan-mode-badge');
         if (!badge) return;
         const splat = state.scene?.splat;
         if (splat && splat.status === 'ready') {
-          badge.textContent = 'Splat ready';
+          // The splat loader is a Week 4 scaffold — metadata is plumbed through the
+          // viewer even though the real renderer (gsplat.js / GaussianSplats3D) isn't
+          // wired yet. The badge reflects what the viewer actually did: showed the
+          // splat ("Splat ready") vs. accepted the URI but is still drawing the
+          // RoomPlan shell because no loader is installed ("Splat metadata only").
+          const meta = state.scanView && typeof state.scanView.getSplatMeta === 'function'
+            ? state.scanView.getSplatMeta()
+            : null;
+          if (meta && meta.status === 'ready') {
+            badge.textContent = 'Splat live';
+          } else if (meta && meta.status === 'metadata_only') {
+            badge.textContent = 'Splat metadata only';
+          } else if (meta && meta.status === 'failed') {
+            badge.textContent = 'Splat load failed';
+          } else {
+            badge.textContent = 'Splat ready';
+          }
           badge.classList.add('splat');
+        } else if (splat && splat.status === 'processing') {
+          badge.textContent = 'Splat processing';
+          badge.classList.remove('splat');
         } else {
           badge.textContent = 'RoomPlan preview';
           badge.classList.remove('splat');
@@ -2149,22 +2335,35 @@ function renderEditorShellHtml(input: {
           const depthUrl = resolveGalleryImageUrl(frame.depth?.uri || null);
           const confidenceUrl = resolveGalleryImageUrl(frame.confidence?.uri || null);
           const imageHtml = rgbUrl
-            ? '<img src="' + escapeHtml(rgbUrl) + '" alt="Captured frame ' + escapeHtml(frame.frame_id) + '" style="width:100%;border-radius:10px;margin:0 0 8px 0;display:block;background:#0b1020;object-fit:cover" />'
-            : '<div class="muted" style="margin-bottom:8px">RGB unavailable</div>';
-          const links = [
-            depthUrl ? '<a href="' + escapeHtml(depthUrl) + '" target="_blank" rel="noopener" style="color:#93c5fd">depth</a>' : null,
-            confidenceUrl ? '<a href="' + escapeHtml(confidenceUrl) + '" target="_blank" rel="noopener" style="color:#93c5fd">confidence</a>' : null,
-          ].filter(Boolean).join(' · ') || '<span class="muted">no sidecars</span>';
-          const bookmark = frame.bookmark_id ? 'bookmark ' + escapeHtml(frame.bookmark_id) : '<span class="muted">no bookmark</span>';
-          return '<div class="gallery-item">' + imageHtml
+            ? '<img src="' + escapeHtml(rgbUrl) + '" alt="Captured frame ' + escapeHtml(frame.frame_id) + '" />'
+            : '<div class="muted viewpoint-card__placeholder">RGB unavailable</div>';
+          const linkHtmlParts = [];
+          if (depthUrl) linkHtmlParts.push('<a href="' + escapeHtml(depthUrl) + '" target="_blank" rel="noopener">depth</a>');
+          if (confidenceUrl) linkHtmlParts.push('<a href="' + escapeHtml(confidenceUrl) + '" target="_blank" rel="noopener">confidence</a>');
+          const links = linkHtmlParts.length ? linkHtmlParts.join(' · ') : '<span class="muted">no sidecars</span>';
+          const poseJson = escapeHtml(JSON.stringify(frame.camera_pose || null));
+          const fovAttr = typeof frame.intrinsics?.fy === 'number' && typeof frame.intrinsics?.height === 'number'
+            ? String(2 * Math.atan(frame.intrinsics.height / (2 * frame.intrinsics.fy)) * 180 / Math.PI)
+            : '';
+          return '<button type="button" class="viewpoint-card"'
+            + ' data-viewpoint-pose="' + poseJson + '"'
+            + (fovAttr ? ' data-viewpoint-fov="' + escapeHtml(fovAttr) + '"' : '')
+            + ' data-viewpoint-id="' + escapeHtml(frame.frame_id) + '"'
+            + ' aria-label="Fly scan camera to ' + escapeHtml(frame.frame_id) + '">'
+            + '<div class="viewpoint-card__media">' + imageHtml + '<span class="viewpoint-card__hint">Fly here</span></div>'
             + '<strong>' + escapeHtml(frame.frame_id) + '</strong>'
-            + '<p class="muted" style="margin:4px 0 6px 0">' + escapeHtml(frame.captured_at || '') + '</p>'
-            + '<p style="font-size:12px;margin:0">' + links + '</p>'
-            + '<p style="font-size:12px;margin:4px 0 0 0">' + bookmark + '</p>'
-            + '</div>';
+            + '<p class="muted viewpoint-card__timestamp">' + escapeHtml(frame.captured_at || '') + '</p>'
+            + '<p class="viewpoint-card__links">' + links + '</p>'
+            + '</button>';
         }).join('');
-        return '<div class="badge" style="margin-top:12px">Captured views · ' + capturedFrames.length + '</div>'
-          + '<div class="gallery-grid">' + items + '</div>';
+        const flyThroughDisabled = capturedFrames.length < 2 ? ' disabled' : '';
+        return '<div class="captured-views-toolbar">'
+          + '<div class="badge">Captured views · ' + capturedFrames.length + '</div>'
+          + '<button type="button" class="secondary viewpoint-flythrough-button" id="scan-flythrough"' + flyThroughDisabled + '>'
+          + 'Fly through ' + capturedFrames.length + ' views'
+          + '</button>'
+          + '</div>'
+          + '<div class="viewpoint-grid">' + items + '</div>';
       }
 
       function renderLayoutPaneInfo(scene, selectionId, hasLiveSession) {
@@ -2288,17 +2487,7 @@ function renderEditorShellHtml(input: {
             }).join('') + '</div>';
         const gallery = scene.photoreal_gallery.length === 0
           ? '<p class="muted">No photoreal outputs yet. Use the buttons below to generate one from the active bookmark, or request a grid of style variants.</p>'
-          : '<div class="gallery-grid">' + [...scene.photoreal_gallery].reverse().map((entry) => {
-              const providerUri = entry.provider_metadata?.uri || '<none>';
-              const imageUrl = resolveGalleryImageUrl(entry.provider_metadata?.uri || null);
-              const providerStatus = entry.provider_metadata?.status || 'ready';
-              const styleTag = Array.isArray(entry.prompt_modifiers) && entry.prompt_modifiers.length > 0 ? entry.prompt_modifiers.join(', ') : null;
-              const styleBadge = styleTag ? '<div class="badge" style="background:rgba(251,191,36,0.15);color:#fcd34d;margin-bottom:6px">' + escapeHtml(styleTag) + '</div>' : '';
-              const imageHtml = imageUrl
-                ? '<img src="' + escapeHtml(imageUrl) + '" alt="Photoreal render ' + escapeHtml(entry.entry_id) + '" style="width:100%;border-radius:12px;margin:0 0 10px 0;display:block;background:#0b1020;object-fit:cover" />'
-                : '';
-              return '<div class="gallery-item">' + styleBadge + '<div class="badge" style="margin-bottom:6px">' + escapeHtml(String(providerStatus)) + '</div>' + imageHtml + '<strong>' + escapeHtml(entry.entry_id) + '</strong><pre>' + escapeHtml(JSON.stringify({ scene_version: entry.scene_version, scene_snapshot_id: entry.scene_snapshot_id, bookmark_id: entry.bookmark_id, asset_id: entry.asset_id, provider_uri: providerUri, created_at: entry.created_at }, null, 2)) + '</pre></div>';
-            }).join('') + '</div>';
+          : renderPhotorealGallery(scene);
         const details = {
           loaded_from: loadedFrom,
           layout_scene_version: scene.head.current_scene_version,
@@ -2326,10 +2515,100 @@ function renderEditorShellHtml(input: {
           '</dl>',
           '<section class="render-section"><div class="badge">Bookmarks</div>' + bookmarkList + '</section>',
           '<section class="render-section"><div class="actions"><button type="button" data-render-action="save-bookmark">Save current camera as bookmark</button><button type="button" class="secondary" data-render-action="generate-photoreal">Generate photoreal</button><button type="button" class="secondary" data-render-action="generate-style-grid">Generate 4 styles</button></div><p class="muted" style="margin-top:10px">Buttons are live only after redeeming an authenticated scene handoff. Photoreal generation now uses the current render-camera position when available, not just the last saved bookmark. “Generate 4 styles” fires parallel /photoreal requests with different prompt modifiers ([stretch.md Track 2 v1.3] Photoreal style exploration).</p></section>',
+          '<section class="render-section">' + renderMaterialLibrary() + '</section>',
           '<section class="render-section"><div class="badge">Photoreal gallery</div>' + gallery + '</section>',
           '<section class="render-section">' + renderBomStrip(scene) + '</section>',
           '<div style="margin-top:12px"><pre>' + escapeHtml(JSON.stringify(details, null, 2)) + '</pre></div>'
         ].join('');
+      }
+
+      // Showcase Track C — BOM catalog browser.
+      // Renders CURATED_ASSET_MANIFEST as a grid of swatch cards grouped by
+      // object class. Each card shows the material color as a swatch dot,
+      // the class + style tags, and clicks populate the chat prompt so the
+      // planner can act on it ("replace the chair with modern walnut").
+      const MATERIAL_SWATCH_COLORS = {
+        oatmeal: "#e6ddc8",
+        walnut: "#5a3924",
+        oak: "#b58a5e",
+        ash: "#d5c4a1",
+        charcoal: "#3a3d42",
+        sage: "#93a480",
+        terracotta: "#c97b56",
+        cream: "#f2ead6",
+        navy: "#2a3858",
+        black: "#1f2024",
+        white: "#f6f6f2",
+        linen: "#eadfce",
+        slate: "#626a75",
+        brass: "#b08947",
+        "warm-gray": "#8a8680",
+      };
+      function swatchColorFor(material) {
+        if (!material) return "var(--color-surface-raised-high)";
+        const key = String(material.color || "").toLowerCase().trim();
+        if (MATERIAL_SWATCH_COLORS[key]) return MATERIAL_SWATCH_COLORS[key];
+        // Fallback: hash the color name to a stable pastel so unknown tags still
+        // render something distinct rather than collapsing to one generic swatch.
+        let hash = 0;
+        for (let i = 0; i < key.length; i += 1) {
+          hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+        }
+        const hue = Math.abs(hash) % 360;
+        return "hsl(" + hue + " 30% 55%)";
+      }
+
+      function renderMaterialLibrary() {
+        const manifest = bootstrap.curatedAssetManifest || null;
+        const entries = manifest && Array.isArray(manifest.assets) ? manifest.assets : [];
+        if (entries.length === 0) {
+          return '<div class="badge">Material library</div>'
+            + '<p class="muted">Curated asset manifest unavailable.</p>';
+        }
+        // Group by object_class so the catalog reads like a product directory
+        // (beds with beds, chairs with chairs), not a flat dump.
+        const groups = new Map();
+        for (const entry of entries) {
+          const key = entry.object_class || "other";
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(entry);
+        }
+        const groupOrder = [...groups.keys()].sort();
+        const groupedHtml = groupOrder.map((cls) => {
+          const items = groups.get(cls).map((entry) => {
+            const swatch = swatchColorFor(entry.material_state);
+            const materialLabel = entry.material_state
+              ? [entry.material_state.color, entry.material_state.finish].filter(Boolean).join(" · ")
+              : "";
+            const tags = Array.isArray(entry.style_tags) && entry.style_tags.length > 0
+              ? entry.style_tags.slice(0, 3).map((t) => '<span class="material-card__tag">' + escapeHtml(t) + '</span>').join('')
+              : '';
+            const promptHint = 'Replace with ' + (entry.style_tags?.[0] || 'modern') + ' ' + cls.replace(/_/g, ' ');
+            return '<button type="button" class="material-card"'
+              + ' data-material-asset="' + escapeHtml(entry.asset_id) + '"'
+              + ' data-material-class="' + escapeHtml(cls) + '"'
+              + ' data-material-prompt="' + escapeHtml(promptHint) + '"'
+              + ' aria-label="Use ' + escapeHtml(entry.asset_id) + ' in chat prompt">'
+              + '<div class="material-card__swatch" style="background:' + swatch + '"></div>'
+              + '<div class="material-card__body">'
+              + '<strong>' + escapeHtml(cls.replace(/_/g, ' ')) + '</strong>'
+              + (materialLabel ? '<span class="material-card__material muted">' + escapeHtml(materialLabel) + '</span>' : '')
+              + (tags ? '<div class="material-card__tags">' + tags + '</div>' : '')
+              + '</div>'
+              + '</button>';
+          }).join('');
+          return '<div class="material-group">'
+            + '<div class="material-group__heading">' + escapeHtml(cls.replace(/_/g, ' ')) + '</div>'
+            + '<div class="material-card-grid">' + items + '</div>'
+            + '</div>';
+        }).join('');
+        const manifestVersion = manifest.manifest_version || 'unknown';
+        return '<div class="material-library__heading">'
+          + '<div class="badge">Material library</div>'
+          + '<span class="muted material-library__version">v' + escapeHtml(manifestVersion) + ' · ' + entries.length + ' assets</span>'
+          + '</div>'
+          + '<p class="muted">Click any material to stage a replace prompt. The planner resolves the asset and emits a validated edit.</p>'
+          + groupedHtml;
       }
 
       function findSelectedEntity(scene, selectionId) {
@@ -2347,11 +2626,102 @@ function renderEditorShellHtml(input: {
         return '<p class="muted">' + escapeHtml(message) + '</p>';
       }
 
+      // Showcase Track C — photoreal gallery rendering.
+      // Groups entries by render_group_id so multi-view renders of the same
+      // edit show up as a small cluster (3 viewpoints of "paint north wall
+      // sage") instead of three disconnected tiles. Entries without a group
+      // id render as standalone tiles. Newest first for both groups and
+      // standalones.
+      function renderPhotorealGallery(scene) {
+        const entries = [...scene.photoreal_gallery].reverse();
+        const groups = new Map();
+        const standalones = [];
+        const ordered = [];
+        for (const entry of entries) {
+          const key = entry.render_group_id || null;
+          if (key) {
+            if (!groups.has(key)) {
+              const bucket = { key, entries: [] };
+              groups.set(key, bucket);
+              ordered.push({ kind: "group", bucket });
+            }
+            groups.get(key).entries.push(entry);
+          } else {
+            const item = { kind: "solo", entry };
+            standalones.push(item);
+            ordered.push(item);
+          }
+        }
+        const blocks = ordered.map((item) => {
+          if (item.kind === "group") {
+            const { key, entries } = item.bucket;
+            const cards = entries.map((entry) => renderGalleryEntry(entry, scene)).join("");
+            return '<div class="render-group">'
+              + '<div class="render-group__heading">'
+              + '<div class="badge warm">Multi-view · ' + entries.length + '</div>'
+              + '<span class="muted render-group__key">' + escapeHtml(key) + '</span>'
+              + '</div>'
+              + '<div class="gallery-grid gallery-grid--compact">' + cards + '</div>'
+              + '</div>';
+          }
+          return '<div class="gallery-grid">' + renderGalleryEntry(item.entry, scene) + '</div>';
+        });
+        return blocks.join('');
+      }
+
+      // Showcase Track C toast system.
+      // Replaces the persistent #status bar with a stacked, auto-dismissing
+      // queue anchored to the viewport. Success / info / error levels render
+      // with the same accent tokens as the badges so the visual language stays
+      // consistent across the app.
+      const TOAST_DEFAULT_DURATION_MS = 4200;
+      const TOAST_ERROR_DURATION_MS = 6500;
+
       function setStatus(message, isError = false) {
-        statusNode.textContent = message;
-        statusNode.style.borderColor = isError ? '#7f1d1d' : '#1f2937';
-        statusNode.style.color = isError ? '#fecaca' : '#cbd5e1';
-        statusNode.style.background = isError ? 'rgba(127, 29, 29, 0.35)' : '#0f172a';
+        showToast({ message, level: isError ? "error" : "info" });
+      }
+
+      function showToast(options) {
+        if (!toastRegion) return;
+        const level = options?.level === "error" ? "error"
+          : options?.level === "success" ? "success"
+          : "info";
+        const message = String(options?.message ?? "");
+        if (!message) return;
+        const durationMs = typeof options?.duration_ms === "number" && options.duration_ms > 0
+          ? options.duration_ms
+          : level === "error" ? TOAST_ERROR_DURATION_MS : TOAST_DEFAULT_DURATION_MS;
+        const toast = document.createElement("div");
+        toast.className = "toast toast--" + level;
+        toast.setAttribute("role", level === "error" ? "alert" : "status");
+        const dot = document.createElement("span");
+        dot.className = "toast__dot";
+        const body = document.createElement("div");
+        body.className = "toast__body";
+        body.textContent = message;
+        const close = document.createElement("button");
+        close.type = "button";
+        close.className = "toast__close";
+        close.setAttribute("aria-label", "Dismiss notification");
+        close.textContent = "×";
+        toast.appendChild(dot);
+        toast.appendChild(body);
+        toast.appendChild(close);
+        toastRegion.appendChild(toast);
+        requestAnimationFrame(() => toast.classList.add("toast--visible"));
+        const dismiss = () => {
+          if (toast.classList.contains("toast--dismissing")) return;
+          toast.classList.add("toast--dismissing");
+          toast.addEventListener("transitionend", () => {
+            if (toast.parentNode) toast.parentNode.removeChild(toast);
+          }, { once: true });
+          // Safety net in case transitionend doesn't fire (reduced-motion, display:none).
+          setTimeout(() => {
+            if (toast.parentNode) toast.parentNode.removeChild(toast);
+          }, 600);
+        };
+        close.addEventListener("click", dismiss);
+        setTimeout(dismiss, durationMs);
       }
 
       function escapeHtml(value) {
