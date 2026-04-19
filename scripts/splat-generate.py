@@ -1232,23 +1232,18 @@ def render_cohesive(request: SplatRequest) -> tuple[dict, bytes, str]:
         file=sys.stderr,
     )
 
-    # Tier 3 — shell inpaint, with colors borrowed from rgbd observations.
-    shell_positions, shell_colors, shell_scales, shell_normals, shell_alphas = (
-        build_shell_inpaint_gaussians(scene, rgbd_positions, rgbd_colors)
-    )
-    print(
-        f"[splat-generate] tier3 shell: {shell_positions.shape[0]} gaussians "
-        f"at {SHELL_LATTICE_SPACING_M}m lattice, alpha={SHELL_INPAINT_ALPHA}",
-        file=sys.stderr,
-    )
+    # Tier 3 — shell inpaint is NOT emitted into the .splat anymore. The
+    # viewer renders shell surfaces as FrontSide Three.js meshes (so they
+    # auto-disappear when the camera is outside, giving a dollhouse view
+    # on outside orbits). Leaving shell gaussians in the splat blocked
+    # that view and produced a 60%-flat-color "box" effect. See viewer.js
+    # `buildCaptureInpaintShell` for the replacement.
 
     tiers = [
         {"positions": mesh_positions, "colors": mesh_colors, "scales": mesh_scales,
          "normals": mesh_normals, "alphas": mesh_alphas, "source": SOURCE_MESH},
         {"positions": rgbd_positions, "colors": rgbd_colors, "scales": rgbd_scales,
          "normals": rgbd_normals, "alphas": rgbd_alphas, "source": SOURCE_RGBD},
-        {"positions": shell_positions, "colors": shell_colors, "scales": shell_scales,
-         "normals": shell_normals, "alphas": shell_alphas, "source": SOURCE_SHELL},
     ]
     merged_positions, merged_colors, merged_scales, merged_normals, merged_alphas, merged_sources = (
         merge_tiers_by_voxel_priority(tiers, voxel_size_m=VOXEL_DOWNSAMPLE_SIZE_M)
@@ -1256,8 +1251,7 @@ def render_cohesive(request: SplatRequest) -> tuple[dict, bytes, str]:
     print(
         f"[splat-generate] merged: {merged_positions.shape[0]} gaussians "
         f"(mesh={int((merged_sources == SOURCE_MESH).sum())}, "
-        f"rgbd={int((merged_sources == SOURCE_RGBD).sum())}, "
-        f"shell={int((merged_sources == SOURCE_SHELL).sum())})",
+        f"rgbd={int((merged_sources == SOURCE_RGBD).sum())})",
         file=sys.stderr,
     )
 

@@ -608,6 +608,13 @@ function buildRoomGroup(room, ctx) {
   buildFloor(room, shell, ctx);
   buildWalls(room, shell, ctx);
   buildFixedElements(room, shell, ctx);
+  // Scan pane only: solid inward-facing planes on every shell surface.
+  // Fills in the walls/floor/ceiling that the splat never covered (e.g.
+  // the 3 of 6 walls the ARKitScenes clip never imaged), while still
+  // letting outside orbits see straight through via FrontSide culling.
+  if (ctx?.appearanceMode === 'capture') {
+    buildCaptureInpaintShell(room, shell);
+  }
   setLayerDeep(shell, LAYER_SHELL);
   group.add(shell);
 
@@ -710,6 +717,77 @@ function buildWalls(room, parent, ctx) {
     parent.add(mesh);
   }
 }
+
+/**
+ * Scan-pane inpaint: one inward-facing plane per shell surface (floor,
+ * ceiling, every wall). Uses THREE.FrontSide culling so the plane only
+ * renders when the camera is on the inside — orbits from outside see
+ * straight through to the captured splat/mesh content. The color is a
+ * neutral class default; at capture time 60%+ of the lattice-color-borrow
+ * walls fell back to these defaults anyway, so skipping the lattice
+ * approach costs little and frees 34k gaussians for the observed tiers.
+ */
+function buildCaptureInpaintShell(room, parent) {
+  const shell = room?.shell;
+  if (!shell) return;
+  const ceilingHeight = Number(shell.ceiling_height) || 2.4;
+
+  // Floor polygon → inward-facing +Z plane at z=0.
+  const floorVertices = shell.floor_polygon?.vertices;
+  if (floorVertices && floorVertices.length >= 3) {
+    const points = floorVertices.map((v) => new THREE.Vector2(v.x, v.y));
+    if (shoelaceSignedArea(points) < 0) points.reverse();
+    const shape = new THREE.Shape(points);
+    addInpaintSurface(parent, shape, 'floor',
+      { x: 0, y: 0, z: 0 },
+      { x: 1, y: 0, z: 0 },
+      { x: 0, y: 1, z: 0 },
+      { x: 0, y: 0, z: 1 });
+    // Ceiling — same polygon, lifted to z=ceiling, normal -Z so it
+    // renders only when the camera is below.
+    const ceilShape = new THREE.Shape(points);
+    addInpaintSurface(parent, ceilShape, 'ceiling',
+      { x: 0, y: 0, z: ceilingHeight },
+      { x: 1, y: 0, z: 0 },
+      { x: 0, y: -1, z: 0 }, // flip v so face winding matches the -Z normal
+      { x: 0, y: 0, z: -1 });
+  }
+
+  // Walls — each one has its own `surface_frame` pointing inward.
+  const walls = (shell.surfaces || []).filter((s) => s.type === 'wall');
+  for (const wall of walls) {
+    const frame = wall.surface_frame;
+    const boundary = wall.boundary?.vertices;
+    if (!frame || !boundary || boundary.length < 3) continue;
+    const points = boundary.map((v) => new THREE.Vector2(v.x, v.y));
+    if (shoelaceSignedArea(points) < 0) points.reverse();
+    const shape = new THREE.Shape(points);
+    addInpaintSurface(parent, shape, 'wall',
+      frame.origin, frame.u_axis, frame.v_axis, frame.normal);
+  }
+}
+
+function addInpaintSurface(parent, shape, category, origin, uAxis, vAxis, normal) {
+  const geom = new THREE.ShapeGeometry(shape);
+  const mat = new THREE.MeshBasicMaterial({
+    color: CAPTURE_INPAINT_COLORS[category] ?? 0xbbbbbb,
+    side: THREE.FrontSide,   // auto-transparent from outside
+    transparent: false,
+    depthWrite: true,
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  const basis = new THREE.Matrix4().makeBasis(
+    new THREE.Vector3(uAxis.x, uAxis.y, uAxis.z),
+    new THREE.Vector3(vAxis.x, vAxis.y, vAxis.z),
+    new THREE.Vector3(normal.x, normal.y, normal.z),
+  );
+  basis.setPosition(origin.x, origin.y, origin.z);
+  mesh.applyMatrix4(basis);
+  mesh.renderOrder = -1;         // draw before splats so their alpha composes correctly
+  mesh.userData = { kind: 'capture_inpaint', category };
+  parent.add(mesh);
+}
+
 
 function buildFixedElements(room, parent, ctx) {
   const elements = room.shell.fixed_elements ?? [];
@@ -933,6 +1011,17 @@ const CLASS_PALETTE = {
 const CAPTURE_SHELL_COLORS = {
   floor: 0x384152,
   wall: 0xcfd7e3,
+};
+
+// Colors for the inpainted fallback shell surfaces rendered in capture mode
+// when a splat lands without coverage on the room's walls/floor/ceiling.
+// Neutral warm palette so the synthesized fill doesn't dominate the captured
+// content — these appear only as the inward face, so outside orbits see
+// straight through to the observed RGBD/mesh tiers.
+const CAPTURE_INPAINT_COLORS = {
+  floor:   0xa38560,   // medium oak
+  ceiling: 0xeae6e0,   // warm off-white
+  wall:    0xd8d1c4,   // soft beige
 };
 
 function objectColor(object) {

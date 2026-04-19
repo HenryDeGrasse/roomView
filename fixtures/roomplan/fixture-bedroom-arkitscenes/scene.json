@@ -2122,11 +2122,11 @@
     "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
     "source_scene_version": 1,
     "status": "ready",
-    "asset_id": "splat:b3003b739f19b03f",
-    "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/splats/splat_b3003b739f19b03f.splat",
+    "asset_id": "splat:1ed53d4128b98b14",
+    "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/splats/splat_1ed53d4128b98b14.splat",
     "job_id": null,
     "updated_at": "2026-04-19T17:49:01.075094Z",
-    "gaussian_count": 400000
+    "gaussian_count": 379823
   },
   "captured_frames": [
     {

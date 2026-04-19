@@ -1,9 +1,0 @@
-{
-  "splat_id": "splat:b3003b739f19b03f",
-  "capture_id": "fixture-bedroom-arkitscenes",
-  "generator_kind": "cohesive",
-  "ply_uri": "/dev/fixtures/fixture-bedroom-arkitscenes/splats/splat_b3003b739f19b03f.splat",
-  "ply_bytes_sha256": "b3003b739f19b03f216d40c3d6655cd77e384e8cbb629b2e49b68d88ff245591",
-  "gaussian_count": 400000,
-  "generated_at": "2026-04-19T18:43:04.706561Z"
-}
