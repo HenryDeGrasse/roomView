@@ -467,13 +467,13 @@ async function unprojectFrameToWorld(frame) {
       const idx = v * depthW + u;
       const d = depth[idx];
       if (!(d > 0.05 && d < 8.0 && Number.isFinite(d))) continue;
-      // ARKit camera: +X right, +Y up in image, -Z forward. Image pixel
-      // coordinates: (0,0) top-left, u right, v down. Flip Y to bring the
-      // image y-down convention to the camera y-up convention before lifting
-      // to 3D (see docs/pose-conventions.md "Camera frame").
+      // ARKitScenes camera poses are in OpenCV convention: +X right,
+      // +Y DOWN in image, +Z forward into scene. Image pixel (0,0) is
+      // top-left with v increasing downward, which matches cam +Y
+      // directly — no sign flip. See docs/pose-conventions.md.
       const xC = (u - cx) * d / fx;
-      const yC = -(v - cy) * d / fy;
-      const zC = -d;
+      const yC = (v - cy) * d / fy;
+      const zC = d;
       const wx = T[0] * xC + T[4] * yC + T[8] * zC + T[12];
       const wy = T[1] * xC + T[5] * yC + T[9] * zC + T[13];
       const wz = T[2] * xC + T[6] * yC + T[10] * zC + T[14];

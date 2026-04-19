@@ -251,13 +251,21 @@ def _unproject_frame(frame: Frame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     # the gradient spans a depth discontinuity end up with long tangent
     # vectors → we drop those via a max-gradient-length cutoff so we don't
     # smear gaussians across occlusion boundaries.
+    #
+    # Convention note: the ARKitScenes trajectory (.traj) stores camera
+    # poses in OpenCV convention (+X right, +Y DOWN in image, +Z forward
+    # into scene) — verified by checking frame 24's cam_Y axis in world
+    # coords (points in -Z_world, meaning phone's "up" is anti-aligned
+    # with world up). Earlier code here assumed OpenGL, which rendered
+    # the splat mirror-flipped through each camera (objects near floor
+    # ended up on the ceiling). See docs/pose-conventions.md.
     dw, dh = frame.width, frame.height
     uu, vv = np.meshgrid(np.arange(dw), np.arange(dh))
     # Work in a full HxWx3 camera-frame grid so np.gradient behaves.
     depth_safe = np.where(valid, depth_m, np.nan).astype(np.float32)
     x_cam = (uu - frame.cx) * depth_safe / frame.fx
-    y_cam = -(vv - frame.cy) * depth_safe / frame.fy
-    z_cam = -depth_safe
+    y_cam = (vv - frame.cy) * depth_safe / frame.fy   # OpenCV: +Y is image-down
+    z_cam = depth_safe                                  # OpenCV: +Z is forward
     cam_grid = np.stack([x_cam, y_cam, z_cam], axis=-1)  # (H, W, 3)
     # np.gradient returns arrays ordered (∂/∂v, ∂/∂u). Any NaN → NaN here
     # which carries through to the cross product and the final normal,
@@ -273,17 +281,12 @@ def _unproject_frame(frame: Frame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     if not np.any(mask):
         return np.zeros((0, 3)), np.zeros((0, 3)), np.zeros((0, 3))
 
-    # Normalize normals, flip toward the camera origin (in camera frame,
-    # outward-facing means pointing at +Z: our cam frame has -Z forward).
+    # Normalize normals. Under OpenCV, cam +Z is forward into the scene,
+    # so outward-facing normals (pointing back at the camera, which sits
+    # at z=0) should have cam_z < 0. Flip any whose z is positive.
     safe_norm = np.where(norm_mag > 1e-6, norm_mag, 1.0)
     cam_normals_unit = cam_normals / safe_norm[..., None]
-    # Flip so normals face toward the camera (z component > 0 ⇒ already
-    # pointing at the camera when camera looks down -Z; otherwise flip).
-    # Our camera frame has -Z forward, so a pixel's cam-space z is negative
-    # (z_cam = -depth). The outward surface normal should have cam_z > 0
-    # (point back toward the camera, which sits at z=0).
-    # Flip normals whose z is negative.
-    flip = cam_normals_unit[..., 2] < 0
+    flip = cam_normals_unit[..., 2] > 0
     cam_normals_unit[flip] *= -1
 
     # Pull out valid pixels and transform to world frame.
@@ -291,8 +294,8 @@ def _unproject_frame(frame: Frame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     u_flat = uu[mask]
     v_flat = vv[mask]
     x_c = (u_flat - frame.cx) * d / frame.fx
-    y_c = -(v_flat - frame.cy) * d / frame.fy
-    z_c = -d
+    y_c = (v_flat - frame.cy) * d / frame.fy   # OpenCV: +Y image-down
+    z_c = d                                      # OpenCV: +Z forward
     cam_pts = np.stack([x_c, y_c, z_c, np.ones_like(d)], axis=1)
     world_pts = cam_pts @ frame.world_from_camera.T
     # Normals are directions, so the translation column of the pose
@@ -528,8 +531,8 @@ def build_rgbd_init_gaussians(
         # read depth.
         homog = np.concatenate([world_pts, np.ones((world_pts.shape[0], 1))], axis=1)
         cam = homog @ np.linalg.inv(frame.world_from_camera).T
-        # In ARKit OpenGL, cam-z is negative for in-front points; depth = -z.
-        d = -cam[:, 2]
+        # ARKitScenes OpenCV convention: cam-z is positive for in-front points.
+        d = cam[:, 2]
         scales = _estimate_scales(d, frame.fx, frame.fy)
         pos_list.append(world_pts)
         col_list.append(colors)

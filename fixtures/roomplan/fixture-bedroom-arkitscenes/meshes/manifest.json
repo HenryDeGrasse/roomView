@@ -2,29 +2,38 @@
   "fixture_id": "fixture-bedroom-arkitscenes",
   "mode": "tsdf",
   "voxel_m": 0.015,
-  "mesh_count": 6,
+  "mesh_count": 9,
   "meshes": {
     "object-scene-fixture-fixture-bedroom-arkitscene-01a4d62d": "meshes/object-scene-fixture-fixture-bedroom-arkitscene-01a4d62d.ply",
+    "object-scene-fixture-fixture-bedroom-arkitscene-e099c0d6": "meshes/object-scene-fixture-fixture-bedroom-arkitscene-e099c0d6.ply",
+    "object-scene-fixture-fixture-bedroom-arkitscene-d5bf6c2c": "meshes/object-scene-fixture-fixture-bedroom-arkitscene-d5bf6c2c.ply",
+    "object-scene-fixture-fixture-bedroom-arkitscene-eaa69bda": "meshes/object-scene-fixture-fixture-bedroom-arkitscene-eaa69bda.ply",
+    "object-scene-fixture-fixture-bedroom-arkitscene-60652152": "meshes/object-scene-fixture-fixture-bedroom-arkitscene-60652152.ply",
     "object-scene-fixture-fixture-bedroom-arkitscene-49861c03": "meshes/object-scene-fixture-fixture-bedroom-arkitscene-49861c03.ply",
     "object-scene-fixture-fixture-bedroom-arkitscene-d3192ea9": "meshes/object-scene-fixture-fixture-bedroom-arkitscene-d3192ea9.ply",
     "object-scene-fixture-fixture-bedroom-arkitscene-28ca61f1": "meshes/object-scene-fixture-fixture-bedroom-arkitscene-28ca61f1.ply",
-    "object-scene-fixture-fixture-bedroom-arkitscene-0e81ca07": "meshes/object-scene-fixture-fixture-bedroom-arkitscene-0e81ca07.ply",
-    "object-scene-fixture-fixture-bedroom-arkitscene-e099c0d6": "meshes/object-scene-fixture-fixture-bedroom-arkitscene-e099c0d6.ply"
+    "object-scene-fixture-fixture-bedroom-arkitscene-0e81ca07": "meshes/object-scene-fixture-fixture-bedroom-arkitscene-0e81ca07.ply"
   },
   "methods": {
     "object-scene-fixture-fixture-bedroom-arkitscene-01a4d62d": "tsdf",
+    "object-scene-fixture-fixture-bedroom-arkitscene-e099c0d6": "tsdf",
+    "object-scene-fixture-fixture-bedroom-arkitscene-d5bf6c2c": "tsdf",
+    "object-scene-fixture-fixture-bedroom-arkitscene-eaa69bda": "tsdf",
+    "object-scene-fixture-fixture-bedroom-arkitscene-60652152": "tsdf",
     "object-scene-fixture-fixture-bedroom-arkitscene-49861c03": "tsdf",
     "object-scene-fixture-fixture-bedroom-arkitscene-d3192ea9": "tsdf",
     "object-scene-fixture-fixture-bedroom-arkitscene-28ca61f1": "tsdf",
-    "object-scene-fixture-fixture-bedroom-arkitscene-0e81ca07": "tsdf",
-    "object-scene-fixture-fixture-bedroom-arkitscene-e099c0d6": "poisson"
+    "object-scene-fixture-fixture-bedroom-arkitscene-0e81ca07": "tsdf"
   },
   "vertex_counts": {
-    "object-scene-fixture-fixture-bedroom-arkitscene-01a4d62d": 5235,
-    "object-scene-fixture-fixture-bedroom-arkitscene-49861c03": 3668,
-    "object-scene-fixture-fixture-bedroom-arkitscene-d3192ea9": 363,
-    "object-scene-fixture-fixture-bedroom-arkitscene-28ca61f1": 28114,
-    "object-scene-fixture-fixture-bedroom-arkitscene-0e81ca07": 5649,
-    "object-scene-fixture-fixture-bedroom-arkitscene-e099c0d6": 18540
+    "object-scene-fixture-fixture-bedroom-arkitscene-01a4d62d": 21288,
+    "object-scene-fixture-fixture-bedroom-arkitscene-e099c0d6": 4647,
+    "object-scene-fixture-fixture-bedroom-arkitscene-d5bf6c2c": 10665,
+    "object-scene-fixture-fixture-bedroom-arkitscene-eaa69bda": 17978,
+    "object-scene-fixture-fixture-bedroom-arkitscene-60652152": 10253,
+    "object-scene-fixture-fixture-bedroom-arkitscene-49861c03": 8285,
+    "object-scene-fixture-fixture-bedroom-arkitscene-d3192ea9": 14873,
+    "object-scene-fixture-fixture-bedroom-arkitscene-28ca61f1": 12027,
+    "object-scene-fixture-fixture-bedroom-arkitscene-0e81ca07": 11424
   }
 }

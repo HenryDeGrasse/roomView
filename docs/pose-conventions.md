@@ -21,13 +21,17 @@ The RoomPlan `coordinate_frame` on an ingested scene describes the room's own lo
 
 ## Camera frame
 
-ARKit uses the standard computer-vision camera convention:
+**ARKitScenes bundles** (adapter-sourced) use **OpenCV** camera convention:
 
 - `+X` is right across the image
-- `+Y` is up in the image
-- `-Z` is the direction the camera is looking (forward)
+- `+Y` is DOWN in the image (matches v increasing downward in the JPG)
+- `+Z` is forward, into the scene (matches the direction the lens points)
 
-So the forward vector in world space is `-transform.columns.2.xyz` (negate the third column's xyz).
+The forward vector in world space is `+transform.columns.2.xyz` (third column, positive).
+
+This was verified empirically: the stored `camera_transform` columns point image-"up" in -Z_world for ~95% of the fixture frames, meaning the phone's sensor +Y is anti-aligned with world-up — which only makes sense if image-DOWN is cam +Y (OpenCV). Earlier drafts of this doc claimed OpenGL convention; that was wrong and produced upside-down splats (floor content rendered on the ceiling). See `scripts/splat-generate.py` `_unproject_frame` and `scripts/bundle-to-meshes.py` `arkit_world_from_camera_to_opencv_camera_from_world`.
+
+**On-device iPhone bundles** (`CaptureBundleWriter`, not yet wired end-to-end) produce raw ARKit poses in OpenGL camera convention (+X right, +Y up in image, -Z forward). When we wire that path, the ingest adapter will need to translate to the canonical ARKitScenes/OpenCV convention so every downstream consumer can assume one frame.
 
 ## `camera_transform` — 16-element column-major 4x4
 

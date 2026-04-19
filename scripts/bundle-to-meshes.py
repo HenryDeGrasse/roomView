@@ -199,14 +199,14 @@ def column_major_to_4x4(flat16: list[float]) -> np.ndarray:
 
 def arkit_world_from_camera_to_opencv_camera_from_world(world_from_camera: np.ndarray) -> np.ndarray:
     """
-    RoomView's ARKit-style camera_transform is world-from-camera in OpenGL
-    convention (+X right, +Y up, -Z forward). Open3D wants world-to-camera
-    (extrinsic) in OpenCV convention (+X right, +Y down, +Z forward).
-    Invert then flip Y/Z axes.
+    ARKitScenes camera_transform is world-from-camera in OpenCV convention
+    already (+X right, +Y DOWN in image, +Z forward into scene) — verified
+    by checking the cam_Y column direction in world across frames (points
+    anti-aligned with +Z_world, matching "image-down → world-down" when
+    the phone is held upright). Open3D also expects OpenCV convention for
+    the extrinsic, so we just invert — no axis flip needed.
     """
-    T_opengl_from_opencv = np.diag([1.0, -1.0, -1.0, 1.0])
-    camera_from_world_opengl = np.linalg.inv(world_from_camera)
-    return T_opengl_from_opencv @ camera_from_world_opengl
+    return np.linalg.inv(world_from_camera)
 
 
 @dataclass(frozen=True)
