@@ -1,0 +1,47 @@
+name: RoomViewApp
+options:
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "17.0"
+
+packages:
+  RoomViewCapture:
+    path: ../RoomViewCapture
+
+targets:
+  RoomViewApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: RoomViewApp
+        excludes:
+          - "Info.plist"
+    dependencies:
+      - package: RoomViewCapture
+    info:
+      path: RoomViewApp/Info.plist
+      properties:
+        CFBundleName: $(PRODUCT_NAME)
+        CFBundleDisplayName: RoomView Capture
+        CFBundleShortVersionString: "0.1"
+        CFBundleVersion: "1"
+        UILaunchScreen:
+          UIColorName: ""
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UIRequiredDeviceCapabilities:
+          - arm64
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSCameraUsageDescription: "Scan rooms with RoomPlan."
+        NSLocalNetworkUsageDescription: "Upload captured scans to your Mac on the local network."
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: roomview.RoomViewApp
+        DEVELOPMENT_TEAM: ZYDZ2387Y4
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        ENABLE_PREVIEWS: "YES"
