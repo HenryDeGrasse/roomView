@@ -28,8 +28,16 @@ import type { CuratedAssetManifest, QuickRenderScene } from "./render";
 export const COMMAND_KIND_VALUES = ["generate_photoreal", "undo_last_change"] as const;
 export type CommandKind = (typeof COMMAND_KIND_VALUES)[number];
 
-export const JOB_KIND_VALUES = ["photoreal", "splat"] as const;
+export const JOB_KIND_VALUES = ["photoreal", "splat", "capture_pipeline"] as const;
 export type JobKind = (typeof JOB_KIND_VALUES)[number];
+
+export const CAPTURE_PIPELINE_STAGE_VALUES = [
+  "promoting",
+  "splat",
+  "textures",
+  "complete",
+] as const;
+export type CapturePipelineStage = (typeof CAPTURE_PIPELINE_STAGE_VALUES)[number];
 
 export const JOB_STATUS_VALUES = ["queued", "processing", "ready", "failed"] as const;
 export type JobStatus = (typeof JOB_STATUS_VALUES)[number];
@@ -69,6 +77,8 @@ export const REASON_CODE_VALUES = [
   "VIDEO_UPLOAD_TOKEN_INVALID",
   "VIDEO_UPLOAD_TOKEN_EXPIRED",
   "VIDEO_UPLOAD_TOKEN_ALREADY_USED",
+  "CAPTURE_PIPELINE_FAILED",
+  "CAPTURE_NO_FRAMES",
 ] as const;
 export type ReasonCode = (typeof REASON_CODE_VALUES)[number];
 
@@ -458,12 +468,35 @@ export interface JobRecord {
   updated_at: ISO8601Timestamp;
   output_asset_id: AssetId | null;
   error_code: ReasonCode | null;
+  /** Optional stage tag for multi-stage pipelines (e.g. capture_pipeline). */
+  stage?: CapturePipelineStage | null;
+  /** Optional human-readable progress message for the editor UI. */
+  progress_message?: string | null;
 }
 
 export interface JobReadResponse {
   job: JobRecord;
   photoreal_entry?: PhotorealEntry | null;
   splat_asset_record?: SplatAssetRecord | null;
+  capture_pipeline_result?: FinalizeCaptureResult | null;
+}
+
+export interface FinalizeCaptureRequest {
+  video_upload_token: string;
+  idempotency_key: string;
+  /** Optional free-text label chosen by the user ("Living room"). Used to mint a stable, human-readable fixture id. */
+  room_label?: string | null;
+}
+
+export interface FinalizeCaptureResult {
+  fixture_id: string;
+  fixture_url: string;
+  scene_url: string;
+}
+
+export interface FinalizeCaptureResponse {
+  job: JobRecord;
+  result: FinalizeCaptureResult;
 }
 
 export interface HandoffGrantRecord {

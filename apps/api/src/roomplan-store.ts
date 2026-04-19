@@ -2,9 +2,11 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFile
 import { resolve } from "node:path";
 
 import type {
+  FinalizeCaptureResult,
   IdempotencyRecord,
   ISO8601Timestamp,
   JobRecord,
+  RoomPlanCaptureRequest,
   SceneEditOperation,
   SceneSnapshot,
 } from "@roomview/contracts";
@@ -42,6 +44,17 @@ export interface PersistedRoomPlanCaptureRecord {
   preview_records?: PersistedPreviewRecord[];
   idempotency_records?: PersistedStoredIdempotencyRecord[];
   job_records?: JobRecord[];
+  /**
+   * Original RoomPlanCaptureRequest as-received. Needed to write
+   * capture-request.json when promoting an iOS capture into a replayable
+   * fixture. Optional so older durable records keep loading.
+   */
+  original_capture_request?: RoomPlanCaptureRequest;
+  /**
+   * Snapshot of finalize results keyed by job_id. Lets /jobs/:job_id return
+   * the fixture url after a capture_pipeline job finishes.
+   */
+  capture_pipeline_results?: Array<{ job_id: string; result: FinalizeCaptureResult }>;
 }
 
 export interface StoredPhotorealArtifact {

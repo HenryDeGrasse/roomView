@@ -42,8 +42,19 @@ On the iPhone (plugged into the Mac):
 - `NSLocalNetworkUsageDescription` — required for LAN uploads on iOS 14+
 - `NSAppTransportSecurity → NSAllowsLocalNetworking = true` — permits HTTP to private-range IPs + `.local` hostnames without a full ATS exception
 
+## What the capture now does
+
+The upload button triggers a three-stage pipeline:
+
+1. **Upload RoomPlan scan** — the parametric room (walls, doors, windows, objects) goes to `POST /captures/roomplan`. Returns `scene_id` + `video_upload_token`.
+2. **Upload captured frames** — the app samples ARKit `ARFrame`s at ~0.5s intervals while the user scans. Each sample carries RGB (JPEG) + LiDAR depth (Float32 numpy) + 6DoF pose + intrinsics. Up to 48 frames are posted to `POST /captures/:scene_id/frames`.
+3. **Finalize** — `POST /captures/:scene_id/finalize` asks the Mac to promote the capture into `fixtures/roomplan/capture-<room-label>-<timestamp>/` and kick off the Python pipeline (`splat-generate.py` → `bake-wall-textures.py`). The response includes a `fixture_url` you can open in the browser any time to re-load the same room.
+
+The result screen polls `GET /jobs/:job_id` so the user sees "generating splat… / baking textures… / ready" progress live.
+
 ## Known limitations
 
 - **LiDAR required.** iPhone Pro (12 Pro or newer) or iPad Pro (2020+). No Simulator support.
 - **Free personal team provisioning lasts 7 days.** Re-install from Xcode when it expires.
-- **Per-frame depth capture not yet wired.** `ARFrame.sceneDepth` is empty during an active RoomCaptureSession ([Apple forum 723818](https://developer.apple.com/forums/thread/723818)); needs a two-phase ARSession. Deferred.
+- **`ARFrame.sceneDepth` during a RoomCaptureSession.** On iOS 17+ this is usually populated (the recorder silently drops frames without depth). If a scan finishes with 0 frames recorded, the upload falls back to RoomPlan-only — the scene still loads, but splat + textures are skipped. Two-phase capture (RoomPlan → plain ARSession) is the fallback if the simultaneous approach proves unreliable in the field.
+- **`uv` must be on the Mac's PATH.** The finalize pipeline spawns `uv run scripts/splat-generate.py` + `scripts/bake-wall-textures.py`.

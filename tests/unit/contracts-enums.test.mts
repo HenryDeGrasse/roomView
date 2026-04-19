@@ -136,7 +136,7 @@ describe("Contract enum constants", () => {
   });
 
   test("JOB_KIND_VALUES", () => {
-    assert.deepEqual([...JOB_KIND_VALUES].sort(), ["photoreal", "splat"]);
+    assert.deepEqual([...JOB_KIND_VALUES].sort(), ["capture_pipeline", "photoreal", "splat"]);
   });
 
   test("JOB_STATUS_VALUES", () => {

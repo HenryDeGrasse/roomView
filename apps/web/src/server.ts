@@ -39,15 +39,41 @@ export interface RoomViewEditorServerOptions {
 }
 
 export function createRoomViewEditorServer(options: RoomViewEditorServerOptions = {}): Server {
-  const fixtures = loadFixtureScenes();
-  const fixtureSources: EditorFixtureSource[] = fixtures.map(({ fixture_id, notes }) => ({ fixture_id, notes }));
+  // Fixtures are hot-reloaded: we stat() manifest.json on each access and reload
+  // when the mtime changes. This lets a just-finalized iOS capture show up in the
+  // editor's fixture picker without restarting the web server.
+  let cachedFixtures: EditorFixtureRecord[] = loadFixtureScenes();
+  let cachedManifestMtimeMs: number = safeManifestMtimeMs(cachedFixtures);
+  const getFixtures = (): EditorFixtureRecord[] => {
+    const manifestPath = resolve(repoRoot, DEFAULT_FIXTURE_MANIFEST_PATH);
+    let currentMtimeMs = cachedManifestMtimeMs;
+    try {
+      currentMtimeMs = statSync(manifestPath).mtimeMs;
+    } catch {
+      // manifest missing — treat as no-change and return cache
+      return cachedFixtures;
+    }
+    if (currentMtimeMs !== cachedManifestMtimeMs) {
+      try {
+        cachedFixtures = loadFixtureScenes();
+        cachedManifestMtimeMs = currentMtimeMs;
+      } catch (err) {
+        // malformed manifest or missing fixture files — keep the last-good cache
+        // eslint-disable-next-line no-console
+        console.warn("[roomview-web] fixture manifest reload failed", err);
+      }
+    }
+    return cachedFixtures;
+  };
+  const getFixtureSources = (): EditorFixtureSource[] =>
+    getFixtures().map(({ fixture_id, notes }) => ({ fixture_id, notes }));
   const defaultApiBaseUrl = options.default_api_base_url ?? "http://127.0.0.1:3000";
 
   return createServer((request, response) => {
     const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
 
     if (request.method === "GET" && requestUrl.pathname === "/") {
-      sendHtml(response, renderEditorShellHtml({ defaultApiBaseUrl, fixtureSources }));
+      sendHtml(response, renderEditorShellHtml({ defaultApiBaseUrl, fixtureSources: getFixtureSources() }));
       return;
     }
 
@@ -111,14 +137,14 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
     }
 
     if (request.method === "GET" && requestUrl.pathname === "/dev/fixtures") {
-      sendJson(response, 200, { fixtures: fixtureSources });
+      sendJson(response, 200, { fixtures: getFixtureSources() });
       return;
     }
 
     if (request.method === "GET") {
       const frameRequest = extractFixtureFrameRequest(requestUrl.pathname);
       if (frameRequest) {
-        const fixture = fixtures.find((candidate) => candidate.fixture_id === frameRequest.fixture_id);
+        const fixture = getFixtures().find((candidate) => candidate.fixture_id === frameRequest.fixture_id);
         if (!fixture) {
           sendJson(response, 404, { message: `Fixture ${frameRequest.fixture_id} was not found.` });
           return;
@@ -135,7 +161,7 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
 
       const meshRequest = extractFixtureMeshRequest(requestUrl.pathname);
       if (meshRequest) {
-        const fixture = fixtures.find((candidate) => candidate.fixture_id === meshRequest.fixture_id);
+        const fixture = getFixtures().find((candidate) => candidate.fixture_id === meshRequest.fixture_id);
         if (!fixture) {
           sendJson(response, 404, { message: `Fixture ${meshRequest.fixture_id} was not found.` });
           return;
@@ -152,7 +178,7 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
 
       const splatRequest = extractFixtureSplatRequest(requestUrl.pathname);
       if (splatRequest) {
-        const fixture = fixtures.find((candidate) => candidate.fixture_id === splatRequest.fixture_id);
+        const fixture = getFixtures().find((candidate) => candidate.fixture_id === splatRequest.fixture_id);
         if (!fixture) {
           sendJson(response, 404, { message: `Fixture ${splatRequest.fixture_id} was not found.` });
           return;
@@ -169,7 +195,7 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
 
       const textureRequest = extractFixtureTextureRequest(requestUrl.pathname);
       if (textureRequest) {
-        const fixture = fixtures.find((candidate) => candidate.fixture_id === textureRequest.fixture_id);
+        const fixture = getFixtures().find((candidate) => candidate.fixture_id === textureRequest.fixture_id);
         if (!fixture) {
           sendJson(response, 404, { message: `Fixture ${textureRequest.fixture_id} was not found.` });
           return;
@@ -187,7 +213,7 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
 
     const fixtureId = extractFixtureId(requestUrl.pathname);
     if (request.method === "GET" && fixtureId) {
-      const fixture = fixtures.find((candidate) => candidate.fixture_id === fixtureId);
+      const fixture = getFixtures().find((candidate) => candidate.fixture_id === fixtureId);
       if (!fixture) {
         sendJson(response, 404, { message: `Fixture ${fixtureId} was not found.` });
         return;
@@ -284,6 +310,15 @@ function loadFixtureScenes(): EditorFixtureRecord[] {
       },
     };
   });
+}
+
+function safeManifestMtimeMs(_fixtures: EditorFixtureRecord[]): number {
+  const manifestPath = resolve(repoRoot, DEFAULT_FIXTURE_MANIFEST_PATH);
+  try {
+    return statSync(manifestPath).mtimeMs;
+  } catch {
+    return 0;
+  }
 }
 
 function readFixtureScene(fixture: FixtureDescriptor): SceneReadResponse["scene"] {

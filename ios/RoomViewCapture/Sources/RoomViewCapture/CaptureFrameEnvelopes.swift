@@ -139,3 +139,75 @@ public struct CaptureFramesResponseEnvelope: Codable, Equatable, Sendable {
         case capturedFrames = "captured_frames"
     }
 }
+
+// MARK: - Finalize capture
+
+/// Sent by the iOS app after RoomPlan + frames are uploaded. Tells the server
+/// to promote the capture into a persistent fixture dir and kick off the
+/// splat-generate → bake-wall-textures pipeline.
+public struct FinalizeCaptureRequestEnvelope: Codable, Equatable, Sendable {
+    public let videoUploadToken: String
+    public let idempotencyKey: String
+    /// Optional human-readable room label (e.g. "Living room"). Used to build
+    /// the fixture_id slug. `nil` falls back to a timestamped id.
+    public let roomLabel: String?
+
+    public init(videoUploadToken: String, idempotencyKey: String, roomLabel: String? = nil) {
+        self.videoUploadToken = videoUploadToken
+        self.idempotencyKey = idempotencyKey
+        self.roomLabel = roomLabel
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case videoUploadToken = "video_upload_token"
+        case idempotencyKey = "idempotency_key"
+        case roomLabel = "room_label"
+    }
+}
+
+public struct FinalizeCaptureResultEnvelope: Codable, Equatable, Sendable {
+    public let fixtureId: String
+    public let fixtureURL: String
+    public let sceneURL: String
+
+    enum CodingKeys: String, CodingKey {
+        case fixtureId = "fixture_id"
+        case fixtureURL = "fixture_url"
+        case sceneURL = "scene_url"
+    }
+}
+
+public struct JobRecordEnvelope: Codable, Equatable, Sendable {
+    public let jobId: String
+    public let sceneId: String
+    public let jobKind: String
+    public let status: String
+    public let stage: String?
+    public let progressMessage: String?
+    public let errorCode: String?
+
+    enum CodingKeys: String, CodingKey {
+        case jobId = "job_id"
+        case sceneId = "scene_id"
+        case jobKind = "job_kind"
+        case status
+        case stage
+        case progressMessage = "progress_message"
+        case errorCode = "error_code"
+    }
+}
+
+public struct FinalizeCaptureResponseEnvelope: Codable, Equatable, Sendable {
+    public let job: JobRecordEnvelope
+    public let result: FinalizeCaptureResultEnvelope
+}
+
+public struct JobReadResponseEnvelope: Codable, Equatable, Sendable {
+    public let job: JobRecordEnvelope
+    public let capturePipelineResult: FinalizeCaptureResultEnvelope?
+
+    enum CodingKeys: String, CodingKey {
+        case job
+        case capturePipelineResult = "capture_pipeline_result"
+    }
+}

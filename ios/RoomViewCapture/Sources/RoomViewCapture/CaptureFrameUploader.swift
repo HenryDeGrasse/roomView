@@ -13,24 +13,54 @@ public extension CaptureBootstrapConfiguration {
     var framesUploadEndpointTemplate: String {
         "/captures/{scene_id}/frames"
     }
+
+    /// Path template for the per-scene finalize endpoint.
+    var finalizeEndpointTemplate: String {
+        "/captures/{scene_id}/finalize"
+    }
+
+    /// Path template for polling a specific job record.
+    var jobReadEndpointTemplate: String {
+        "/jobs/{job_id}"
+    }
 }
 
 public extension RoomViewCaptureCompanion {
     static func framesUploadURL(sceneId: String, baseURL: URL, configuration: CaptureBootstrapConfiguration = .init()) -> URL {
         let resolved = configuration.framesUploadEndpointTemplate.replacingOccurrences(of: "{scene_id}", with: sceneId)
-        return resolved
-            .split(separator: "/")
-            .map(String.init)
-            .filter { !$0.isEmpty }
-            .reduce(baseURL) { partial, component in
-                partial.appendingPathComponent(component)
-            }
+        return appendTrimmedPath(resolved, to: baseURL)
+    }
+
+    static func finalizeCaptureURL(sceneId: String, baseURL: URL, configuration: CaptureBootstrapConfiguration = .init()) -> URL {
+        let resolved = configuration.finalizeEndpointTemplate.replacingOccurrences(of: "{scene_id}", with: sceneId)
+        return appendTrimmedPath(resolved, to: baseURL)
+    }
+
+    static func jobReadURL(jobId: String, baseURL: URL, configuration: CaptureBootstrapConfiguration = .init()) -> URL {
+        let resolved = configuration.jobReadEndpointTemplate.replacingOccurrences(of: "{job_id}", with: jobId)
+        return appendTrimmedPath(resolved, to: baseURL)
     }
 
     static func encodeCaptureFramesRequest(_ request: CaptureFramesRequestEnvelope) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return try encoder.encode(request)
+    }
+
+    static func encodeFinalizeCaptureRequest(_ request: FinalizeCaptureRequestEnvelope) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(request)
+    }
+
+    private static func appendTrimmedPath(_ path: String, to baseURL: URL) -> URL {
+        path
+            .split(separator: "/")
+            .map(String.init)
+            .filter { !$0.isEmpty }
+            .reduce(baseURL) { partial, component in
+                partial.appendingPathComponent(component)
+            }
     }
 }
 
@@ -51,6 +81,42 @@ public extension RoomPlanCaptureUploader {
             throw RoomViewCaptureCompanionError.unsuccessfulStatusCode(code, String(data: data, encoding: .utf8))
         }
         return try JSONDecoder().decode(CaptureFramesResponseEnvelope.self, from: data)
+    }
+
+    /// Posts a `FinalizeCaptureRequestEnvelope` to `/captures/{scene_id}/finalize`.
+    /// The server promotes the capture into a persistent fixture dir and kicks
+    /// off the splat + texture pipeline. The returned job can be polled via
+    /// `pollJob(jobId:)` until it hits status=ready/failed.
+    func finalizeCapture(sceneId: String, request: FinalizeCaptureRequestEnvelope) async throws -> FinalizeCaptureResponseEnvelope {
+        let url = RoomViewCaptureCompanion.finalizeCaptureURL(sceneId: sceneId, baseURL: baseURL, configuration: configuration)
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.httpBody = try RoomViewCaptureCompanion.encodeFinalizeCaptureRequest(request)
+        let (data, response) = try await session.data(for: urlRequest)
+        guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw RoomViewCaptureCompanionError.unsuccessfulStatusCode(code, String(data: data, encoding: .utf8))
+        }
+        return try JSONDecoder().decode(FinalizeCaptureResponseEnvelope.self, from: data)
+    }
+
+    /// GET /jobs/{jobId} — returns current job state so the iOS UI can show
+    /// "generating splat…" / "baking textures…" / "ready" progress.
+    /// Requires a scene session bearer token; pass the handoff token here.
+    func pollJob(jobId: String, sessionToken: String? = nil) async throws -> JobReadResponseEnvelope {
+        let url = RoomViewCaptureCompanion.jobReadURL(jobId: jobId, baseURL: baseURL, configuration: configuration)
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "GET"
+        if let sessionToken {
+            urlRequest.setValue("Bearer \(sessionToken)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await session.data(for: urlRequest)
+        guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw RoomViewCaptureCompanionError.unsuccessfulStatusCode(code, String(data: data, encoding: .utf8))
+        }
+        return try JSONDecoder().decode(JobReadResponseEnvelope.self, from: data)
     }
 }
 

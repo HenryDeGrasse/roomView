@@ -7,6 +7,7 @@ import type {
   ApplyPlanRequest,
   CaptureFramesRequest,
   CreateBookmarkRequest,
+  FinalizeCaptureRequest,
   GeneratePhotorealRequest,
   HandoffRedeemRequest,
   JobReadResponse,
@@ -28,6 +29,7 @@ import {
   RoomPlanCaptureService,
   type RoomPlanCaptureServiceOptions,
 } from "./roomplan-ingest";
+import { checkPipelinePrerequisites } from "./capture-pipeline";
 
 const serverDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(serverDir, "..", "..", "..");
@@ -65,12 +67,26 @@ export function createRoomPlanApiServer(options: RoomPlanApiServerOptions = {}):
     ...options,
     observability,
     storage_directory: options.storage_directory ?? DEFAULT_ROOMPLAN_CAPTURE_STORAGE_DIRECTORY,
+    fixture_repo_root: options.fixture_repo_root ?? repoRoot,
+    // Defaults to port 4288 to match `npm run dev:web`. If you point the
+    // iPhone at a LAN IP, override via ROOMVIEW_WEB_BASE_URL so the returned
+    // fixture_url works from the phone too.
+    fixture_web_base_url: options.fixture_web_base_url ?? process.env.ROOMVIEW_WEB_BASE_URL ?? "http://127.0.0.1:4288",
   });
   const context: RoomPlanApiRequestContext = {
     service,
     session_ttl_ms: options.session_ttl_ms ?? DEFAULT_SESSION_TTL_MS,
     sceneSessionsById: new Map(),
   };
+
+  // Pre-flight check: warn early if `uv` is missing. Doesn't prevent the
+  // server from starting — the editor and all non-finalize endpoints still
+  // work — but finalize will fail until it's installed.
+  const uvWarning = checkPipelinePrerequisites();
+  if (uvWarning) {
+    // eslint-disable-next-line no-console
+    console.warn(`[roomview-api] capture pipeline preflight: ${uvWarning}`);
+  }
 
   return createServer((request, response) => {
     void handleRequest(request, response, context);
@@ -92,6 +108,19 @@ async function handleRequest(
     }
 
     const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
+
+    // Unauthenticated health probe — the iPhone pings this pre-upload to
+    // confirm LAN reachability and capture-pipeline readiness.
+    if (request.method === "GET" && requestUrl.pathname === "/health") {
+      const uvIssue = checkPipelinePrerequisites();
+      sendJson(response, 200, {
+        status: "ok",
+        capture_pipeline_ready: uvIssue === null,
+        capture_pipeline_error: uvIssue,
+        now: new Date().toISOString(),
+      });
+      return;
+    }
 
     const photorealArtifactPath = extractPhotorealArtifactPath(requestUrl.pathname);
     if (request.method === "GET" && photorealArtifactPath) {
@@ -128,6 +157,14 @@ async function handleRequest(
       const framesRequest = await readJsonBody<CaptureFramesRequest>(request);
       const framesResponse = context.service.postCaptureFrames(captureFramesSceneId, framesRequest);
       sendJson(response, 200, framesResponse);
+      return;
+    }
+
+    const captureFinalizeSceneId = extractCaptureFinalizeSceneId(requestUrl.pathname);
+    if (request.method === "POST" && captureFinalizeSceneId) {
+      const finalizeRequest = await readJsonBody<FinalizeCaptureRequest>(request);
+      const finalizeResponse = context.service.finalizeCapture(captureFinalizeSceneId, finalizeRequest);
+      sendJson(response, 200, finalizeResponse);
       return;
     }
 
@@ -207,10 +244,14 @@ async function handleRequest(
       const job = context.service.pollJob(jobId) ?? knownJob;
       const scene = context.service.getScene(knownJob.scene_id);
       const photorealEntry = scene?.photoreal_gallery.find((entry) => entry.asset_id === job.output_asset_id) ?? null;
+      const capturePipelineResult = job.job_kind === "capture_pipeline"
+        ? context.service.getCapturePipelineResult(job.job_id)
+        : null;
       const jobResponse: JobReadResponse = {
         job,
         photoreal_entry: photorealEntry,
         splat_asset_record: scene?.splat ?? null,
+        capture_pipeline_result: capturePipelineResult,
       };
       sendJson(response, 200, jobResponse);
       return;
@@ -307,6 +348,11 @@ function extractCaptureVideoSceneId(pathname: string): string | null {
 
 function extractCaptureFramesSceneId(pathname: string): string | null {
   const match = pathname.match(/^\/captures\/([^/]+)\/frames$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function extractCaptureFinalizeSceneId(pathname: string): string | null {
+  const match = pathname.match(/^\/captures\/([^/]+)\/finalize$/);
   return match ? decodeURIComponent(match[1]) : null;
 }
 
@@ -409,6 +455,7 @@ function statusCodeForCaptureError(error: RoomPlanCaptureError): number {
     case "INVALID_CAPTURE":
     case "ROOM_TYPE_NOT_SUPPORTED":
     case "MULTI_ROOM_NOT_SUPPORTED":
+    case "CAPTURE_NO_FRAMES":
       return 400;
     case "SCENE_ACCESS_DENIED":
       return 403;
