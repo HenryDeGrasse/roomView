@@ -288,72 +288,172 @@ function renderEditorShellHtml(input: {
     </script>
     <link rel="stylesheet" href="/design-tokens.css" />
   </head>
-  <body>
-    <header>
-      <h1>RoomView MVP Editor</h1>
-      <p>Redeem a one-time handoff or load a golden fixture. All pane content comes from server-supplied canonical scene JSON.</p>
-      <div class="toolbar">
-        <section class="card">
-          <h2>Live API handoff</h2>
-          <label for="api-base-url">API base URL</label>
-          <input id="api-base-url" type="url" placeholder="http://127.0.0.1:3000" />
-          <label for="handoff-input">Handoff token / handoff URL / QR payload JSON</label>
-          <textarea id="handoff-input" placeholder="Paste a handoff token, https://.../handoff_token, or the qr_payload JSON"></textarea>
-          <div class="actions">
-            <button id="redeem-button" type="button">Redeem and load scene</button>
-          </div>
-        </section>
-        <section class="card">
-          <h2>Fixture-backed local load</h2>
-          <label for="fixture-select">Fixture</label>
-          <select id="fixture-select"></select>
-          <div class="actions">
-            <button id="fixture-button" class="secondary" type="button">Load local fixture</button>
-          </div>
-        </section>
-        <section class="card">
-          <h2>Chat planner</h2>
-          <p class="muted">Use layout selection as context for prompts like “this wall” or “that chair.” Live API sessions auto-apply validated edits and keep Undo one click away.</p>
-          <label for="chat-selection">Current selection</label>
-          <div id="chat-selection" class="chat-selection">No scene loaded.</div>
-          <label for="chat-input">Prompt</label>
-          <textarea id="chat-input" placeholder="Try: move the desk under the window"></textarea>
-          <div class="actions">
-            <button id="chat-send-button" type="button">Plan from chat</button>
-            <button id="undo-button" class="secondary" type="button">Undo last change</button>
-            <button id="chat-clear-button" class="secondary" type="button">Clear thread</button>
-          </div>
-          <div id="chat-options" class="list"></div>
-          <div id="chat-thread" class="chat-thread"></div>
-        </section>
+  <body class="app-shell">
+    <!--
+      Splat-first editor shell. The scan/splat canvas is the main event,
+      everything else lives in collapsible drawers or on-demand overlays so
+      nothing competes with the 3D scene.
+
+      Drawer contents are mount points for JS — the inline script below
+      still reads #scan-pane, #layout-pane, #render-pane, #chat-*,
+      #api-base-url, #handoff-input, #fixture-*, #redeem-button,
+      #undo-button, #toast-region. Those IDs are preserved; only their
+      parent DOM containers moved.
+    -->
+    <header class="topbar">
+      <div class="topbar__brand">
+        <span class="brand-mark" aria-hidden="true">◉</span>
+        <span class="brand-title">RoomView</span>
+        <span id="topbar-scene-label" class="topbar__scene">No scene loaded</span>
+      </div>
+      <div class="topbar__actions">
+        <button id="topbar-toggle-layout" class="iconbtn" type="button" title="Toggle 2D layout overlay (L)">
+          <span aria-hidden="true">▦</span><span class="iconbtn__label">Layout</span>
+        </button>
+        <button id="topbar-toggle-render" class="iconbtn" type="button" title="Toggle render panel (R)">
+          <span aria-hidden="true">✦</span><span class="iconbtn__label">Render</span>
+        </button>
+        <button id="undo-button" class="iconbtn iconbtn--ghost" type="button" title="Undo last change (⌘Z)">
+          <span aria-hidden="true">⎌</span><span class="iconbtn__label">Undo</span>
+        </button>
+        <button id="topbar-toggle-settings" class="iconbtn iconbtn--ghost" type="button" title="Load scene / Live handoff">
+          <span aria-hidden="true">⚙</span><span class="iconbtn__label">Load</span>
+        </button>
       </div>
     </header>
 
-    <div id="toast-region" aria-live="polite" aria-atomic="true"></div>
+    <div class="workbench">
+      <aside id="left-drawer" class="drawer drawer--left" data-open="true" aria-label="Scene navigator">
+        <div class="drawer__inner">
+          <section class="drawer__section" id="drawer-objects-section">
+            <h3 class="drawer__heading">Objects</h3>
+            <div id="drawer-objects" class="drawer__scroll drawer__scroll--compact">
+              <p class="drawer__empty">No scene loaded yet.</p>
+            </div>
+          </section>
+          <section class="drawer__section" id="drawer-views-section">
+            <h3 class="drawer__heading">Captured views</h3>
+            <div id="drawer-views" class="drawer__scroll drawer__views">
+              <p class="drawer__empty">Load a fixture with captured_frames to see thumbnails.</p>
+            </div>
+          </section>
+        </div>
+      </aside>
 
-    <main>
-      <section class="pane">
-        <header>
-          <h2>Scan pane</h2>
-          <p>Read-only capture preview (RoomPlan shell or splat sidecar) and scan summary.</p>
+      <main id="stage" class="stage">
+        <div id="scan-pane" class="stage__canvas"></div>
+
+        <div id="stage-floating" class="stage__overlay">
+          <div id="viewmode-pill" class="viewmode-pill" role="tablist" aria-label="View mode">
+            <button class="viewmode-pill__btn is-active" data-viewmode="combined" role="tab" aria-selected="true">Splat + Meshes</button>
+            <button class="viewmode-pill__btn" data-viewmode="splat" role="tab" aria-selected="false">Splat</button>
+            <button class="viewmode-pill__btn" data-viewmode="meshes" role="tab" aria-selected="false">Meshes</button>
+            <button class="viewmode-pill__btn" data-viewmode="wireframe" role="tab" aria-selected="false">Wireframe</button>
+          </div>
+          <div id="stage-empty" class="stage__empty">
+            <div class="stage__empty-inner">
+              <div class="stage__empty-mark" aria-hidden="true">◉</div>
+              <h2>Your actual room, in the browser.</h2>
+              <p>Load an ARKitScenes fixture to see a Gaussian-Splat scan, or paste a handoff token from the iOS capture app.</p>
+              <button id="stage-empty-load" class="stage__empty-cta" type="button">Load ARKitScenes bedroom</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="toast-region" aria-live="polite" aria-atomic="true" class="stage__toasts"></div>
+      </main>
+
+      <aside id="right-drawer" class="drawer drawer--right" data-open="true" aria-label="Selection + chat">
+        <div class="drawer__inner">
+          <section class="drawer__section drawer__section--selection">
+            <h3 class="drawer__heading">Selection</h3>
+            <div id="chat-selection" class="chat-selection">No scene loaded.</div>
+          </section>
+          <section class="drawer__section drawer__section--chat">
+            <h3 class="drawer__heading">Chat</h3>
+            <div id="chat-thread" class="chat-thread"></div>
+            <div id="chat-options" class="list"></div>
+            <div class="composer">
+              <textarea id="chat-input" placeholder="Describe a change, e.g. 'repaint this wall warm white'"></textarea>
+              <div class="composer__actions">
+                <button id="chat-send-button" type="button">Plan from chat</button>
+                <button id="chat-clear-button" class="secondary" type="button">Clear thread</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="statusbar">
+      <div class="statusbar__left">
+        <span id="statusbar-sceneid" class="statusbar__item statusbar__item--mono">—</span>
+        <span id="statusbar-scan-mode" class="statusbar__item">
+          <span id="scan-mode-badge" class="scan-mode-badge">RoomPlan preview</span>
+        </span>
+      </div>
+      <div class="statusbar__right">
+        <span id="statusbar-counts" class="statusbar__item">—</span>
+        <span id="statusbar-version" class="statusbar__item">—</span>
+      </div>
+    </footer>
+
+    <!-- Settings sheet: scene loading controls live here, pulled from the old toolbar cards. -->
+    <div id="settings-sheet" class="sheet" aria-hidden="true">
+      <div class="sheet__backdrop" data-sheet-dismiss></div>
+      <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="settings-sheet-title">
+        <header class="sheet__head">
+          <h2 id="settings-sheet-title">Load a scene</h2>
+          <button class="iconbtn iconbtn--ghost" type="button" data-sheet-dismiss aria-label="Close">✕</button>
         </header>
-        <div id="scan-pane" class="pane-body"></div>
-      </section>
-      <section class="pane">
-        <header>
-          <h2>Layout pane</h2>
-          <p>Server-authored surfaces, openings, and objects with selection state.</p>
+        <div class="sheet__body">
+          <section class="sheet__card">
+            <h3>Fixture-backed local load</h3>
+            <label for="fixture-select">Fixture</label>
+            <select id="fixture-select"></select>
+            <div class="actions">
+              <button id="fixture-button" class="secondary" type="button">Load local fixture</button>
+            </div>
+          </section>
+          <section class="sheet__card">
+            <h3>Live API handoff</h3>
+            <label for="api-base-url">API base URL</label>
+            <input id="api-base-url" type="url" placeholder="http://127.0.0.1:3000" />
+            <label for="handoff-input">Handoff token / handoff URL / QR payload JSON</label>
+            <textarea id="handoff-input" placeholder="Paste a handoff token, https://.../handoff_token, or the qr_payload JSON"></textarea>
+            <div class="actions">
+              <button id="redeem-button" type="button">Redeem and load scene</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2D layout overlay: full-screen modal housing the layout pane. -->
+    <div id="layout-overlay" class="overlay" aria-hidden="true">
+      <div class="overlay__backdrop" data-overlay-dismiss></div>
+      <div class="overlay__panel" role="dialog" aria-modal="true" aria-labelledby="layout-overlay-title">
+        <header class="overlay__head">
+          <h2 id="layout-overlay-title">2D layout</h2>
+          <p class="overlay__sub">Server-authored surfaces, openings, and objects. Click any object to select it in the chat context.</p>
+          <button class="iconbtn iconbtn--ghost" type="button" data-overlay-dismiss aria-label="Close">✕</button>
         </header>
-        <div id="layout-pane" class="pane-body"></div>
-      </section>
-      <section class="pane">
-        <header>
-          <h2>Render pane</h2>
-          <p>Derived cache, bookmarks, asset refs, and quick-render inputs.</p>
+        <div id="layout-pane" class="overlay__body"></div>
+      </div>
+    </div>
+
+    <!-- Render drawer: side-panel for quick-render inputs, bookmarks, asset refs. -->
+    <div id="render-overlay" class="overlay overlay--side" aria-hidden="true">
+      <div class="overlay__backdrop" data-overlay-dismiss></div>
+      <aside class="overlay__panel overlay__panel--side" role="dialog" aria-modal="true" aria-labelledby="render-overlay-title">
+        <header class="overlay__head">
+          <h2 id="render-overlay-title">Render</h2>
+          <p class="overlay__sub">Derived cache, bookmarks, asset refs, and quick-render inputs.</p>
+          <button class="iconbtn iconbtn--ghost" type="button" data-overlay-dismiss aria-label="Close">✕</button>
         </header>
-        <div id="render-pane" class="pane-body"></div>
-      </section>
-    </main>
+        <div id="render-pane" class="overlay__body overlay__body--scroll"></div>
+      </aside>
+    </div>
 
     <script id="roomview-bootstrap" type="application/json">${bootstrapJson}</script>
     <script>
@@ -2732,6 +2832,275 @@ function renderEditorShellHtml(input: {
           .replaceAll('"', '&quot;')
           .replaceAll("'", '&#39;');
       }
+
+      // =================================================================
+      // New splat-first shell — chrome wiring.
+      //
+      // The old 3-column layout rendered every pane side-by-side. The new
+      // shell puts the scan canvas front-and-center with collapsible
+      // drawers for objects/captured-views (left) and selection/chat
+      // (right). The layout pane and render pane move into on-demand
+      // overlays opened from top-bar buttons.
+      //
+      // This block:
+      //   1. Mirrors scene state into the new shell chrome (topbar label,
+      //      drawer contents, status bar) after every renderScene() call.
+      //   2. Wires up sheet/overlay open + close handlers.
+      //   3. Hooks the view-mode pill and empty-state CTA.
+      //
+      // All original pane rendering stays — the layout/render panes are
+      // now inside overlays, so ensureLayoutPaneSkeleton / ensureRender-
+      // PaneSkeleton still work unchanged.
+      // =================================================================
+
+      (function initAppShell() {
+        const shellOnly = document.body.classList.contains("app-shell");
+        if (!shellOnly) return;
+
+        const sceneLabelEl = document.getElementById("topbar-scene-label");
+        const drawerObjectsEl = document.getElementById("drawer-objects");
+        const drawerViewsEl = document.getElementById("drawer-views");
+        const statusSceneIdEl = document.getElementById("statusbar-sceneid");
+        const statusCountsEl = document.getElementById("statusbar-counts");
+        const statusVersionEl = document.getElementById("statusbar-version");
+        const stageEmptyEl = document.getElementById("stage-empty");
+        const settingsSheet = document.getElementById("settings-sheet");
+        const layoutOverlay = document.getElementById("layout-overlay");
+        const renderOverlay = document.getElementById("render-overlay");
+        const viewmodePill = document.getElementById("viewmode-pill");
+        const toggleLayoutBtn = document.getElementById("topbar-toggle-layout");
+        const toggleRenderBtn = document.getElementById("topbar-toggle-render");
+        const toggleSettingsBtn = document.getElementById("topbar-toggle-settings");
+        const stageEmptyLoadBtn = document.getElementById("stage-empty-load");
+
+        function setOverlay(el, open) {
+          if (!el) return;
+          el.setAttribute("aria-hidden", open ? "false" : "true");
+        }
+        function toggleOverlay(el) {
+          if (!el) return;
+          const isOpen = el.getAttribute("aria-hidden") === "false";
+          setOverlay(el, !isOpen);
+        }
+
+        toggleSettingsBtn?.addEventListener("click", () => toggleOverlay(settingsSheet));
+        toggleLayoutBtn?.addEventListener("click", () => {
+          toggleOverlay(layoutOverlay);
+          toggleLayoutBtn.classList.toggle("is-active", layoutOverlay.getAttribute("aria-hidden") === "false");
+        });
+        toggleRenderBtn?.addEventListener("click", () => {
+          toggleOverlay(renderOverlay);
+          toggleRenderBtn.classList.toggle("is-active", renderOverlay.getAttribute("aria-hidden") === "false");
+        });
+
+        document.addEventListener("click", (event) => {
+          const target = event.target;
+          if (!(target instanceof Element)) return;
+          if (target.closest("[data-sheet-dismiss]")) {
+            setOverlay(settingsSheet, false);
+          }
+          if (target.closest("[data-overlay-dismiss]")) {
+            const overlay = target.closest(".overlay");
+            setOverlay(overlay, false);
+            if (overlay === layoutOverlay) toggleLayoutBtn?.classList.remove("is-active");
+            if (overlay === renderOverlay) toggleRenderBtn?.classList.remove("is-active");
+          }
+        });
+
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") {
+            setOverlay(settingsSheet, false);
+            setOverlay(layoutOverlay, false);
+            setOverlay(renderOverlay, false);
+            toggleLayoutBtn?.classList.remove("is-active");
+            toggleRenderBtn?.classList.remove("is-active");
+          } else if ((event.key === "l" || event.key === "L") && !isTypingTarget(event.target)) {
+            event.preventDefault();
+            toggleLayoutBtn?.click();
+          } else if ((event.key === "r" || event.key === "R") && !isTypingTarget(event.target)) {
+            event.preventDefault();
+            toggleRenderBtn?.click();
+          }
+        });
+
+        function isTypingTarget(node) {
+          if (!(node instanceof Element)) return false;
+          const tag = node.tagName;
+          return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || node.isContentEditable;
+        }
+
+        // Empty-state CTA → auto-select ARKitScenes fixture and load it.
+        stageEmptyLoadBtn?.addEventListener("click", () => {
+          const select = document.getElementById("fixture-select");
+          if (select) {
+            const option = Array.from(select.options).find((o) => o.value.includes("arkitscenes"));
+            if (option) select.value = option.value;
+          }
+          document.getElementById("fixture-button")?.click();
+        });
+
+        // View-mode pill: active-state feedback + per-mode visibility on the scan scene.
+        if (viewmodePill) {
+          viewmodePill.addEventListener("click", (event) => {
+            const btn = event.target?.closest?.(".viewmode-pill__btn");
+            if (!btn) return;
+            viewmodePill.querySelectorAll(".viewmode-pill__btn").forEach((b) => {
+              b.classList.remove("is-active");
+              b.setAttribute("aria-selected", "false");
+            });
+            btn.classList.add("is-active");
+            btn.setAttribute("aria-selected", "true");
+            applyViewmode(btn.dataset.viewmode);
+          });
+        }
+
+        function applyViewmode(mode) {
+          const scan = window.__roomviewDebug?.scan;
+          if (!scan) return;
+          let splatGroup = null;
+          let meshesRoot = null;
+          let shellRoot = null;
+          scan.scene.traverse((obj) => {
+            if (obj.constructor?.name === "DropInViewer") splatGroup = obj;
+            if (obj.userData?.scan_mesh) meshesRoot = meshesRoot || obj.parent;
+          });
+          for (const child of scan.scene.children) {
+            if (child.type === "Group" && child.children.length === 1 && child.children[0]?.type === "Group") {
+              shellRoot = child; // room shell group (walls/floor) — one-child wrapper
+            }
+          }
+          const showSplat = mode === "splat" || mode === "combined";
+          const showMeshes = mode === "meshes" || mode === "combined";
+          const showShell = true; // room shell always visible for spatial context
+          if (splatGroup) splatGroup.visible = showSplat;
+          if (meshesRoot) meshesRoot.visible = showMeshes;
+          if (shellRoot) shellRoot.visible = showShell;
+          // Wireframe mode: hide both splat and meshes; shell stays.
+          if (mode === "wireframe") {
+            if (splatGroup) splatGroup.visible = false;
+            if (meshesRoot) meshesRoot.visible = false;
+          }
+        }
+
+        // Renderers below mirror canonical scene state into shell chrome.
+        // Wrap the existing renderScene / renderEmptyState so every update
+        // path refreshes the shell too.
+
+        const originalRenderScene = window.renderScene || null;
+        const originalRenderEmpty = window.renderEmptyState || null;
+        // Because renderScene / renderEmptyState are lexically scoped inside
+        // the earlier IIFE they are not on window; instead we observe state
+        // changes via a MutationObserver on the panes' innerHTML, which is
+        // already how pane skeletons get rebuilt on every renderScene.
+        const panes = [
+          document.getElementById("scan-pane"),
+          document.getElementById("layout-pane"),
+          document.getElementById("render-pane"),
+        ].filter(Boolean);
+
+        const observer = new MutationObserver(() => syncShellChrome());
+        for (const pane of panes) {
+          observer.observe(pane, { childList: true, subtree: true });
+        }
+
+        function syncShellChrome() {
+          const sceneInfoMount = document.getElementById("scan-info-mount");
+          const layoutInfoMount = document.getElementById("layout-info-mount");
+
+          // Topbar scene label — walk the <dl> inside scan-info-mount looking for
+          // the "Scene" term and pull its <dd>. The scene_id is the most stable
+          // identifier to surface here.
+          let sceneIdText = "";
+          const dl = sceneInfoMount?.querySelector("dl");
+          if (dl) {
+            for (const row of dl.querySelectorAll("div")) {
+              const dt = row.querySelector("dt");
+              const dd = row.querySelector("dd");
+              if (dt && dd && dt.textContent?.trim() === "Scene") {
+                sceneIdText = dd.textContent?.trim() || "";
+                break;
+              }
+            }
+          }
+          if (sceneLabelEl) {
+            sceneLabelEl.textContent = sceneIdText || "No scene loaded";
+          }
+          if (statusSceneIdEl) {
+            statusSceneIdEl.textContent = sceneIdText || "—";
+          }
+
+          // Mirror "Captured views" into the left drawer. The real structure is
+          // a .captured-views-toolbar + .viewpoint-grid emitted by
+          // renderCapturedViewsStrip — clone both.
+          if (drawerViewsEl) {
+            const toolbar = sceneInfoMount?.querySelector(".captured-views-toolbar");
+            const grid = sceneInfoMount?.querySelector(".viewpoint-grid");
+            if (grid) {
+              drawerViewsEl.innerHTML = "";
+              if (toolbar) drawerViewsEl.appendChild(toolbar.cloneNode(true));
+              drawerViewsEl.appendChild(grid.cloneNode(true));
+            } else {
+              drawerViewsEl.innerHTML = '<p class="drawer__empty">No captured frames on this scene.</p>';
+            }
+          }
+
+          // Mirror the Objects list. renderLayoutPaneInfo emits a section
+          // headed by a badge reading "Objects" followed by a .list of
+          // buttons (each a selectable object).
+          if (drawerObjectsEl) {
+            let objectsSection = null;
+            for (const section of layoutInfoMount?.querySelectorAll("section") ?? []) {
+              const badge = section.querySelector(".badge");
+              if (badge && badge.textContent?.trim() === "Objects") {
+                objectsSection = section.querySelector(".list");
+                break;
+              }
+            }
+            if (objectsSection) {
+              drawerObjectsEl.innerHTML = "";
+              drawerObjectsEl.appendChild(objectsSection.cloneNode(true));
+            } else if (layoutInfoMount && layoutInfoMount.textContent.trim().length > 0) {
+              drawerObjectsEl.innerHTML = '<p class="drawer__empty">Open the 2D layout overlay for the full object list.</p>';
+            } else {
+              drawerObjectsEl.innerHTML = '<p class="drawer__empty">No scene loaded yet.</p>';
+            }
+          }
+
+          // Status bar counts — read gaussian count from the debug hook if
+          // a splat is live, plus mesh vertex counts.
+          const scan = window.__roomviewDebug?.scan;
+          if (statusCountsEl && scan) {
+            let meshCount = 0;
+            let splatGaussians = 0;
+            scan.scene.traverse((obj) => {
+              if (obj.userData?.scan_mesh) meshCount += 1;
+            });
+            const meta = typeof scan.api?.getSplatMeta === "function" ? scan.api.getSplatMeta() : null;
+            if (meta?.gaussian_count) splatGaussians = meta.gaussian_count;
+            const parts = [];
+            if (splatGaussians) parts.push((splatGaussians / 1000).toFixed(0) + "k gaussians");
+            if (meshCount) parts.push(meshCount + " meshes");
+            statusCountsEl.textContent = parts.join(" · ") || "—";
+          }
+
+          // Scene version — from scan info mount.
+          const versionField = sceneInfoMount?.textContent?.match(/v\d+/);
+          if (statusVersionEl) {
+            statusVersionEl.textContent = versionField ? versionField[0] : "—";
+          }
+
+          // Empty state: hide once the scan viewer has mounted. This stays
+          // hidden across pane re-renders because ensureScanPaneSkeleton
+          // keeps #scan-viewer-mount around for the lifetime of the scene.
+          if (stageEmptyEl) {
+            const hasScene = !!document.getElementById("scan-viewer-mount");
+            stageEmptyEl.classList.toggle("is-hidden", hasScene);
+          }
+        }
+
+        // Initial sync so the empty state is visible on first paint.
+        syncShellChrome();
+      })();
     </script>
   </body>
 </html>`;
