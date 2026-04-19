@@ -466,34 +466,33 @@ function positionObjectNearWall(
   const maxX = Math.max(...vertices.map((vertex) => vertex.x));
   const minY = Math.min(...vertices.map((vertex) => vertex.y));
   const maxY = Math.max(...vertices.map((vertex) => vertex.y));
-  const halfWidth = object.obb.size_x / 2;
-  const halfDepth = object.obb.size_y / 2;
+  const { halfExtentX, halfExtentY } = objectAxisAlignedHalfExtents(object);
   const margin = 0.15;
   const aligned = preferredCoordinate ?? (wallRef?.name === "north wall" || wallRef?.name === "south wall" ? object.pose.position.x : object.pose.position.y);
 
   switch (wallRef?.name) {
     case "north wall":
       return {
-        x: clamp(aligned, minX + halfWidth + margin, maxX - halfWidth - margin),
-        y: roundNumber(maxY - halfDepth - margin),
+        x: clamp(aligned, minX + halfExtentX + margin, maxX - halfExtentX - margin),
+        y: roundNumber(maxY - halfExtentY - margin),
         z: object.pose.position.z,
       };
     case "south wall":
       return {
-        x: clamp(aligned, minX + halfWidth + margin, maxX - halfWidth - margin),
-        y: roundNumber(minY + halfDepth + margin),
+        x: clamp(aligned, minX + halfExtentX + margin, maxX - halfExtentX - margin),
+        y: roundNumber(minY + halfExtentY + margin),
         z: object.pose.position.z,
       };
     case "east wall":
       return {
-        x: roundNumber(maxX - halfWidth - margin),
-        y: clamp(aligned, minY + halfDepth + margin, maxY - halfDepth - margin),
+        x: roundNumber(maxX - halfExtentX - margin),
+        y: clamp(aligned, minY + halfExtentY + margin, maxY - halfExtentY - margin),
         z: object.pose.position.z,
       };
     case "west wall":
       return {
-        x: roundNumber(minX + halfWidth + margin),
-        y: clamp(aligned, minY + halfDepth + margin, maxY - halfDepth - margin),
+        x: roundNumber(minX + halfExtentX + margin),
+        y: clamp(aligned, minY + halfExtentY + margin, maxY - halfExtentY - margin),
         z: object.pose.position.z,
       };
     default:
@@ -503,6 +502,18 @@ function positionObjectNearWall(
         z: object.pose.position.z,
       };
   }
+}
+
+function objectAxisAlignedHalfExtents(object: SceneObject): { halfExtentX: number; halfExtentY: number } {
+  const radians = (object.obb.yaw_degrees * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(radians));
+  const sin = Math.abs(Math.sin(radians));
+  const halfSizeX = object.obb.size_x / 2;
+  const halfSizeY = object.obb.size_y / 2;
+  return {
+    halfExtentX: roundNumber(cos * halfSizeX + sin * halfSizeY),
+    halfExtentY: roundNumber(sin * halfSizeX + cos * halfSizeY),
+  };
 }
 
 function openingCenterCoordinate(opening: Scene["snapshot"]["state"]["room"]["shell"]["openings"][number]): number {

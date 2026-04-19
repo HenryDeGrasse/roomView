@@ -1541,5 +1541,6 @@
     "asset_id": null,
     "uri": null,
     "updated_at": "2026-04-16T18:11:00Z"
-  }
+  },
+  "captured_frames": []
 }
