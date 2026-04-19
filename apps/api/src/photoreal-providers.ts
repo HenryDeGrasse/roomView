@@ -41,6 +41,28 @@ export interface PhotorealProviderInput {
     depth_byte_length: number;
     edge_byte_length: number;
   };
+  /**
+   * Showcase-phase Track A inputs. Populated when the edit targets a captured
+   * viewpoint (RepaintSurfaceOperation/SwapFlooringOperation carries a
+   * `captured_viewpoint_id`). Consumed by the flux_inpaint_stack provider as
+   * the reference RGB, ControlNet-Depth source, and inpaint mask. Absent for
+   * legacy synthetic-conditioning renders.
+   */
+  captured_frame?: {
+    frame_id: string;
+    rgb_uri: string;
+    depth_uri: string;
+    intrinsics: { fx: number; fy: number; cx: number; cy: number; width: number; height: number };
+  } | null;
+  surface_mask?: {
+    mask_id: string;
+    surface_id: string;
+    mask_uri: string;
+    mask_bytes_sha256: string;
+    mask_width: number;
+    mask_height: number;
+  } | null;
+  render_group_id?: string | null;
 }
 
 export interface PhotorealProviderResult {
@@ -53,7 +75,12 @@ export interface PhotorealProviderResult {
   extra?: Record<string, unknown>;
 }
 
-export type PhotorealProviderKind = "deterministic_stub" | "openrouter" | "replicate" | "local_sdxl";
+export type PhotorealProviderKind =
+  | "deterministic_stub"
+  | "openrouter"
+  | "replicate"
+  | "local_sdxl"
+  | "flux_inpaint_stack";
 
 interface OpenRouterChatCompletionResponse {
   choices?: Array<{
@@ -79,6 +106,7 @@ export function resolveProviderKind(env: NodeJS.ProcessEnv = process.env): Photo
   if (kind === "openrouter") return "openrouter";
   if (kind === "replicate") return "replicate";
   if (kind === "local_sdxl" || kind === "sdxl") return "local_sdxl";
+  if (kind === "flux_inpaint_stack" || kind === "flux") return "flux_inpaint_stack";
   return "deterministic_stub";
 }
 
@@ -338,4 +366,136 @@ export function summarizeClientConditioning(
     depth_byte_length: byteLength(conditioning.depth),
     edge_byte_length: byteLength(conditioning.edge),
   };
+}
+
+/**
+ * Showcase-phase Track A provider: Flux.1-dev + IP-Adapter + ControlNet-Depth
+ * + (optional) IC-Light, gated by an inpaint mask produced by the mask
+ * service (Route C: geometric prior + SAM2 refinement).
+ *
+ * The heavy model stack runs on a backing service (Modal / Replicate / a
+ * self-hosted ComfyUI). This function only decides *which* backend to call
+ * and packages the request. When `ROOMVIEW_FLUX_BACKEND_URL` is not set we
+ * run in **fixture mode**: the function returns a deterministic
+ * asset://flux-inpaint/... URI keyed off the entry id. That keeps
+ * `npm run check` green without a GPU and without a network hop, which the
+ * rest of the photoreal verifiers also rely on.
+ *
+ * The real backend is expected to accept a JSON body shaped like
+ * `FluxInpaintBackendRequest` below and return PNG bytes (or a JSON error).
+ * Wiring the live backend is Showcase Week 2.
+ */
+export async function generateFluxInpaintStackPhotoreal(
+  input: PhotorealProviderInput,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<PhotorealProviderResult> {
+  const backendUrl = env.ROOMVIEW_FLUX_BACKEND_URL?.trim();
+  if (!backendUrl) {
+    return fluxInpaintStackFixture(input, "no_backend_url");
+  }
+  if (!input.captured_frame || !input.surface_mask) {
+    return fluxInpaintStackFixture(input, "missing_captured_inputs");
+  }
+  const token = env.ROOMVIEW_FLUX_BACKEND_TOKEN?.trim() ?? "";
+  const timeoutMs = resolvePositiveInteger(env.ROOMVIEW_FLUX_TIMEOUT_MS, 180_000);
+  const icLightEnabled = (env.ROOMVIEW_ICLIGHT_ENABLED || "").toLowerCase().trim() === "true";
+
+  const body: FluxInpaintBackendRequest = {
+    scene_id: input.scene_id,
+    scene_snapshot_id: input.scene_snapshot_id,
+    entry_id: input.entry_id,
+    captured_frame: input.captured_frame,
+    surface_mask: input.surface_mask,
+    render_group_id: input.render_group_id ?? null,
+    prompt: buildFluxPrompt(input),
+    negative_prompt: "lowres, watermark, text, distorted geometry, warped walls, extra furniture",
+    seed: typeof input.seed === "number" && Number.isFinite(input.seed) ? Math.trunc(input.seed) : null,
+    controlnet: { kind: "depth", conditioning_scale: 0.85 },
+    ip_adapter: { reference: "captured_rgb", weight: 0.7 },
+    iclight: icLightEnabled ? { enabled: true } : { enabled: false },
+  };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(backendUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => response.statusText);
+      throw new Error(`flux_inpaint_stack backend error ${response.status}: ${errorText.slice(0, 200)}`);
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    const contentType = response.headers.get("content-type") ?? "image/png";
+    return {
+      provider: "flux_inpaint_stack",
+      uri: `asset://flux-inpaint/${encodeURIComponent(input.scene_id)}/${encodeURIComponent(input.entry_id)}.png`,
+      image: { bytes, content_type: contentType },
+      extra: {
+        backend_url_host: safeHost(backendUrl),
+        render_group_id: input.render_group_id ?? null,
+        captured_frame_id: input.captured_frame.frame_id,
+        surface_mask_id: input.surface_mask.mask_id,
+        iclight_enabled: icLightEnabled,
+        seed_requested: body.seed,
+      },
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export interface FluxInpaintBackendRequest {
+  scene_id: string;
+  scene_snapshot_id: SnapshotId;
+  entry_id: string;
+  captured_frame: NonNullable<PhotorealProviderInput["captured_frame"]>;
+  surface_mask: NonNullable<PhotorealProviderInput["surface_mask"]>;
+  render_group_id: string | null;
+  prompt: string;
+  negative_prompt: string;
+  seed: number | null;
+  controlnet: { kind: "depth"; conditioning_scale: number };
+  ip_adapter: { reference: "captured_rgb"; weight: number };
+  iclight: { enabled: boolean };
+}
+
+function buildFluxPrompt(input: PhotorealProviderInput): string {
+  const base = input.scene_prompt?.trim() || "Photoreal interior render, natural lighting, matches reference photograph.";
+  const modifiers = input.prompt_modifiers?.length ? `, ${input.prompt_modifiers.join(", ")}` : "";
+  return `${base}${modifiers}`;
+}
+
+function fluxInpaintStackFixture(
+  input: PhotorealProviderInput,
+  reason: "no_backend_url" | "missing_captured_inputs",
+): PhotorealProviderResult {
+  const uri = `asset://flux-inpaint/${encodeURIComponent(input.scene_id)}/${encodeURIComponent(input.scene_snapshot_id)}/${encodeURIComponent(input.entry_id)}.png`;
+  return {
+    provider: "flux_inpaint_stack",
+    uri,
+    extra: {
+      fixture: true,
+      fixture_reason: reason,
+      render_group_id: input.render_group_id ?? null,
+      captured_frame_id: input.captured_frame?.frame_id ?? null,
+      surface_mask_id: input.surface_mask?.mask_id ?? null,
+      seed_requested:
+        typeof input.seed === "number" && Number.isFinite(input.seed) ? Math.trunc(input.seed) : null,
+    },
+  };
+}
+
+function safeHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "unknown";
+  }
 }

@@ -1,5 +1,6 @@
 import type {
   AssetId,
+  BookmarkId,
   EntityId,
   ISO8601Timestamp,
   JobId,
@@ -288,12 +289,24 @@ export interface RepaintSurfaceOperation {
   surface_id: EntityId;
   color: string;
   finish?: string | null;
+  /**
+   * Showcase-phase hook. When present, the downstream photoreal job uses the
+   * captured-frame render pipeline (flux_inpaint_stack): the referenced
+   * bookmark's captured RGB + depth condition the render, and the mask is
+   * generated for `surface_id` projected into that viewpoint. When absent,
+   * the legacy synthetic-conditioning path is used.
+   */
+  captured_viewpoint_id?: BookmarkId | null;
 }
 
 export interface SwapFlooringOperation {
   op: "swap_flooring";
   surface_id: EntityId;
   material_state: MaterialState;
+  /**
+   * Showcase-phase hook; see RepaintSurfaceOperation.captured_viewpoint_id.
+   */
+  captured_viewpoint_id?: BookmarkId | null;
 }
 
 export type SceneEditOperation =

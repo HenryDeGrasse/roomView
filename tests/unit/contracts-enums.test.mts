@@ -30,6 +30,7 @@ import {
   SCENE_SOURCE_VALUES,
   SPLAT_STATUS_VALUES,
   SUPPORT_KIND_VALUES,
+  SURFACE_MASK_GENERATOR_KIND_VALUES,
   SURFACE_TYPE_VALUES,
   UNITS_VALUES,
   VIDEO_UPLOAD_TOKEN_STATUS_VALUES,
@@ -114,6 +115,13 @@ describe("Contract enum constants", () => {
 
   test("SPLAT_STATUS_VALUES matches the job lifecycle", () => {
     assert.deepEqual([...SPLAT_STATUS_VALUES].sort(), ["failed", "processing", "queued", "ready"]);
+  });
+
+  test("SURFACE_MASK_GENERATOR_KIND_VALUES covers the Showcase mask routes", () => {
+    assert.deepEqual(
+      [...SURFACE_MASK_GENERATOR_KIND_VALUES].sort(),
+      ["click_sam2", "deterministic_stub", "geometric_projection", "sam2_refined"],
+    );
   });
 
   test("EDITABLE_OBJECT_CLASS_VALUES has exactly the 12 MVP classes (add-on via stretch)", () => {

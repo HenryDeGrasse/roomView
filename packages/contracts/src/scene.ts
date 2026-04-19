@@ -74,6 +74,14 @@ export type AssetKind = (typeof ASSET_KIND_VALUES)[number];
 export const SPLAT_STATUS_VALUES = ["queued", "processing", "ready", "failed"] as const;
 export type SplatStatus = (typeof SPLAT_STATUS_VALUES)[number];
 
+export const SURFACE_MASK_GENERATOR_KIND_VALUES = [
+  "deterministic_stub",
+  "geometric_projection",
+  "sam2_refined",
+  "click_sam2",
+] as const;
+export type SurfaceMaskGeneratorKind = (typeof SURFACE_MASK_GENERATOR_KIND_VALUES)[number];
+
 export const EDITABLE_OBJECT_CLASS_VALUES = [
   "bed",
   "nightstand",
@@ -310,6 +318,34 @@ export interface PhotorealEntry {
   prompt_modifiers: string[];
   provider_metadata?: Record<string, unknown>;
   created_at: ISO8601Timestamp;
+  /**
+   * Optional Showcase-phase fields. Group renders that share an edit so the
+   * gallery can display multi-view consistency (same edit from three captured
+   * viewpoints). Reference the captured frame when the render used that frame
+   * as its reference RGB / depth source.
+   */
+  render_group_id?: string | null;
+  captured_frame_id?: string | null;
+  surface_mask_uri?: string | null;
+}
+
+/**
+ * Showcase-phase artifact binding a 2D edit mask to a scene surface, from a
+ * specific captured viewpoint. Produced by the mask service (Route C hybrid:
+ * geometric-prior + SAM2 refinement). Consumed by the flux_inpaint_stack
+ * provider as the inpaint region, and by the gallery so subsequent renders
+ * of the same edit from the same viewpoint can reuse an identical mask.
+ */
+export interface SurfaceMask {
+  mask_id: string;
+  surface_id: EntityId;
+  captured_frame_id: string;
+  generator_kind: SurfaceMaskGeneratorKind;
+  mask_uri: string;
+  mask_bytes_sha256: string;
+  mask_width: number;
+  mask_height: number;
+  generated_at: ISO8601Timestamp;
 }
 
 export interface DerivedState {

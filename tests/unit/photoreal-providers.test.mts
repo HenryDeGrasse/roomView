@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import {
+  generateFluxInpaintStackPhotoreal,
   resolveProviderKind,
   resolvePhotorealMetadata,
   summarizeClientConditioning,
@@ -75,6 +76,15 @@ describe("resolveProviderKind", () => {
     assert.equal(resolveProviderKind({ ROOMVIEW_PHOTOREAL_PROVIDER: "sdxl" }), "local_sdxl");
   });
 
+  test("flux_inpaint_stack and flux both map to flux_inpaint_stack", () => {
+    assert.equal(
+      resolveProviderKind({ ROOMVIEW_PHOTOREAL_PROVIDER: "flux_inpaint_stack" }),
+      "flux_inpaint_stack",
+    );
+    assert.equal(resolveProviderKind({ ROOMVIEW_PHOTOREAL_PROVIDER: "flux" }), "flux_inpaint_stack");
+    assert.equal(resolveProviderKind({ ROOMVIEW_PHOTOREAL_PROVIDER: "FLUX" }), "flux_inpaint_stack");
+  });
+
   test("unknown values fall back to the deterministic stub", () => {
     assert.equal(resolveProviderKind({ ROOMVIEW_PHOTOREAL_PROVIDER: "midjourney" }), "deterministic_stub");
   });
@@ -134,6 +144,52 @@ describe("resolvePhotorealMetadata (deterministic stub)", () => {
         process.env.ROOMVIEW_PHOTOREAL_PROVIDER = originalProvider;
       }
     }
+  });
+});
+
+describe("generateFluxInpaintStackPhotoreal (Showcase Track A)", () => {
+  const capturedFrame = {
+    frame_id: "frame-0",
+    rgb_uri: "asset://captured/scene/frame-0.rgb.jpg",
+    depth_uri: "asset://captured/scene/frame-0.depth.npy",
+    intrinsics: { fx: 900, fy: 900, cx: 512, cy: 384, width: 1024, height: 768 },
+  };
+  const surfaceMask = {
+    mask_id: "mask:abc1234567890def",
+    surface_id: "surf:wall:north",
+    mask_uri: "asset://masks/scene/mask_abc1234567890def.png",
+    mask_bytes_sha256: "0".repeat(64),
+    mask_width: 1024,
+    mask_height: 768,
+  };
+
+  test("fixture mode when backend URL is unset: deterministic URI, fixture=true in extra", async () => {
+    const result = await generateFluxInpaintStackPhotoreal(
+      baseInput({ captured_frame: capturedFrame, surface_mask: surfaceMask, render_group_id: "grp:test" }),
+      {},
+    );
+    assert.equal(result.provider, "flux_inpaint_stack");
+    assert.ok(result.uri?.startsWith("asset://flux-inpaint/"));
+    assert.equal(result.extra?.fixture, true);
+    assert.equal(result.extra?.fixture_reason, "no_backend_url");
+    assert.equal(result.extra?.render_group_id, "grp:test");
+    assert.equal(result.extra?.captured_frame_id, "frame-0");
+    assert.equal(result.extra?.surface_mask_id, surfaceMask.mask_id);
+  });
+
+  test("fixture mode when captured inputs are missing even if backend URL is set", async () => {
+    const result = await generateFluxInpaintStackPhotoreal(baseInput(), {
+      ROOMVIEW_FLUX_BACKEND_URL: "https://example.test/flux",
+    });
+    assert.equal(result.extra?.fixture, true);
+    assert.equal(result.extra?.fixture_reason, "missing_captured_inputs");
+  });
+
+  test("two calls with identical input produce identical fixture URIs (determinism)", async () => {
+    const input = baseInput({ captured_frame: capturedFrame, surface_mask: surfaceMask });
+    const left = await generateFluxInpaintStackPhotoreal(input, {});
+    const right = await generateFluxInpaintStackPhotoreal(input, {});
+    assert.equal(left.uri, right.uri);
   });
 });
 

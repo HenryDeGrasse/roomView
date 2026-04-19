@@ -75,6 +75,14 @@ function mountThreeView(container, opts) {
   roomsRoot.userData = { kind: 'rooms' };
   scene.add(roomsRoot);
 
+  // Scan-native object proxies. The scan pane enables LAYER_SPLAT; dropping
+  // THREE.Points under this root at that layer makes the point clouds the
+  // primary visible content in the scan pane (shell stays too, at LAYER_SHELL).
+  const scanProxiesRoot = new THREE.Group();
+  scanProxiesRoot.userData = { kind: 'scan_proxies' };
+  scanProxiesRoot.layers.set(LAYER_SPLAT);
+  scene.add(scanProxiesRoot);
+
   const resize = () => {
     const width = container.clientWidth;
     const height = container.clientHeight;
@@ -173,6 +181,131 @@ function mountThreeView(container, opts) {
     assetUriResolver = typeof fn === 'function' ? fn : () => null;
   }
 
+  // Showcase Track B — Gaussian Splatting loader (scaffold).
+  //
+  // When a SplatAssetRecord transitions to `status: "ready"` and carries a
+  // resolvable URI, the scan pane calls `setSplat({ uri, gaussian_count })`.
+  // A real splat renderer gets dropped in below the `splatLoader` hook —
+  // candidates: @mkkellogg/gaussian-splats-3d, gsplat.js, or a vendored
+  // minimal renderer. Until the renderer is wired, we still surface the
+  // splat metadata for debugging and emit a console note so the scan pane
+  // UX can decorate itself ("Splat ready · 304k gaussians · renderer pending").
+  //
+  // setSplat is idempotent per URI — repeated calls with the same uri skip
+  // reload. Passing null disposes any active splat. Graceful fallback: the
+  // RoomPlan shell at LAYER_SHELL stays visible whether or not splats render,
+  // so this scaffold never degrades the editor.
+  let currentSplatUri = null;
+  const splatMeta = { uri: null, gaussian_count: null, status: 'absent' };
+  let splatLoader = null; // Week 4 follow-up: drop in gsplat.js or similar.
+
+  function setSplatLoader(fn) {
+    splatLoader = typeof fn === 'function' ? fn : null;
+  }
+
+  async function setSplat(descriptor) {
+    if (!descriptor || !descriptor.uri) {
+      splatMeta.uri = null;
+      splatMeta.gaussian_count = null;
+      splatMeta.status = 'absent';
+      currentSplatUri = null;
+      return { status: 'absent' };
+    }
+    if (currentSplatUri === descriptor.uri) {
+      return { status: splatMeta.status };
+    }
+    currentSplatUri = descriptor.uri;
+    splatMeta.uri = descriptor.uri;
+    splatMeta.gaussian_count = typeof descriptor.gaussian_count === 'number'
+      ? descriptor.gaussian_count
+      : null;
+    if (typeof splatLoader !== 'function') {
+      splatMeta.status = 'metadata_only';
+      return { status: 'metadata_only' };
+    }
+    try {
+      const result = await splatLoader({ uri: descriptor.uri, scene, camera, layer: LAYER_SPLAT, THREE });
+      splatMeta.status = result?.status ?? 'ready';
+      return { status: splatMeta.status };
+    } catch (err) {
+      console.error('splat loader failed', err);
+      splatMeta.status = 'failed';
+      return { status: 'failed', error: err };
+    }
+  }
+
+  function getSplatMeta() {
+    return { ...splatMeta };
+  }
+
+  // Scan proxies — scan-native per-object content, produced by
+  // apps/web/src/scan-proxies.js from captured_frames. Each map entry may be
+  //   { points: THREE.Points }       (Tier 1: raw / symmetry-filled splat cloud)
+  //   { mesh: THREE.Mesh }            (Tier 2: TSDF / Poisson reconstructed mesh)
+  //   { object3d: THREE.Object3D }    (generic escape hatch)
+  // Idempotent — calling with a new map disposes the previous attachments.
+  // Passing null clears. After adding children, re-frames the camera to the
+  // proxy bounds so the default scan-pane view lands on the actual scan
+  // content rather than an empty shell interior.
+  function setScanProxies(proxiesMap) {
+    disposeScanProxies();
+    if (!proxiesMap || typeof proxiesMap.forEach !== 'function') return;
+    let added = 0;
+    proxiesMap.forEach((entry) => {
+      const child = entry?.mesh || entry?.points || entry?.object3d;
+      if (!child) return;
+      child.traverse((node) => node.layers.set(LAYER_SPLAT));
+      scanProxiesRoot.add(child);
+      added += 1;
+    });
+    if (added > 0) {
+      fitCameraToScanProxies();
+    }
+  }
+
+  function fitCameraToScanProxies() {
+    if (scanProxiesRoot.children.length === 0) return;
+    const bbox = new THREE.Box3();
+    for (const child of scanProxiesRoot.children) {
+      if (typeof child.geometry?.computeBoundingBox === 'function') {
+        child.geometry.computeBoundingBox();
+      }
+      const childBox = new THREE.Box3().setFromObject(child);
+      if (Number.isFinite(childBox.min.x) && Number.isFinite(childBox.max.x)) {
+        bbox.union(childBox);
+      }
+    }
+    if (bbox.isEmpty()) return;
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    bbox.getCenter(center);
+    bbox.getSize(size);
+    const radius = Math.max(size.x, size.y, size.z) || 1;
+    // 45° FOV perspective: camera at ~2.4× radius frames with a bit of margin.
+    const distance = Math.max(2.5, radius * 2.4);
+    // Offset along +X,-Y,+Z so we get a 3/4 overhead angle that reads both
+    // footprint and height.
+    camera.position.set(
+      center.x - distance * 0.6,
+      center.y - distance * 0.9,
+      center.z + distance * 0.75,
+    );
+    controls.target.copy(center);
+    controls.update();
+  }
+
+  function disposeScanProxies() {
+    for (const child of [...scanProxiesRoot.children]) {
+      scanProxiesRoot.remove(child);
+      if (child.geometry && typeof child.geometry.dispose === 'function') {
+        child.geometry.dispose();
+      }
+      if (child.material && typeof child.material.dispose === 'function') {
+        child.material.dispose();
+      }
+    }
+  }
+
   function setRoom(room, options) {
     if (!room) return;
     setRoomVersion += 1;
@@ -214,6 +347,7 @@ function mountThreeView(container, opts) {
   }
 
   function dispose() {
+    disposeScanProxies();
     cancelAnimationFrame(rafHandle);
     resizeObserver.disconnect();
     window.removeEventListener('resize', resize);
@@ -274,7 +408,139 @@ function mountThreeView(container, opts) {
     };
   }
 
-  const api = { setRoom, setSelection, setOnSelect, setAssetUriResolver, captureConditioning, getCurrentCameraView, dispose };
+  // Showcase Track C — cinematic camera navigation.
+  //
+  // flyToPose animates the camera from its current position/orientation to a
+  // target Pose3D (the same shape stored on CameraBookmark and CapturedFrame).
+  // ease-in-out cubic over `duration_ms` so bookmark flights feel cinematic
+  // rather than teleport-snappy. Any in-flight flight is cancelled when a new
+  // one starts. Respects prefers-reduced-motion by clamping the duration to
+  // zero (instant snap).
+  //
+  // Pose3D yaw_degrees is measured as atan2(look_dir.y, look_dir.x), matching
+  // the projection used by getCurrentCameraView above. We translate the yaw
+  // back into a forward vector on the horizontal plane and synthesize a
+  // controls.target ~2.5m ahead so OrbitControls stays well-behaved after
+  // the flight finishes.
+  let currentFlightToken = 0;
+  const prefersReducedMotion = typeof window !== 'undefined'
+    && window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
+  function targetFromPose(pose) {
+    const yawRadians = ((pose?.yaw_degrees ?? 0) * Math.PI) / 180;
+    const forwardDistance = 2.5;
+    const px = pose?.position?.x ?? 0;
+    const py = pose?.position?.y ?? 0;
+    const pz = pose?.position?.z ?? 0;
+    return new THREE.Vector3(
+      px + Math.cos(yawRadians) * forwardDistance,
+      py + Math.sin(yawRadians) * forwardDistance,
+      pz,
+    );
+  }
+
+  function flyToPose(pose, options) {
+    const durationMs = prefersReducedMotion
+      ? 0
+      : Math.max(0, options?.duration_ms ?? 900);
+    const targetFov = typeof options?.fov === 'number' && Number.isFinite(options.fov) ? options.fov : null;
+    const endPosition = new THREE.Vector3(
+      pose?.position?.x ?? camera.position.x,
+      pose?.position?.y ?? camera.position.y,
+      pose?.position?.z ?? camera.position.z,
+    );
+    const endTarget = targetFromPose(pose);
+
+    const token = ++currentFlightToken;
+    if (durationMs === 0) {
+      camera.position.copy(endPosition);
+      controls.target.copy(endTarget);
+      if (targetFov !== null) {
+        camera.fov = targetFov;
+        camera.updateProjectionMatrix();
+      }
+      controls.update();
+      return Promise.resolve({ cancelled: false });
+    }
+
+    const startPosition = camera.position.clone();
+    const startTarget = controls.target.clone();
+    const startFov = camera.fov;
+    const startedAt = performance.now();
+
+    return new Promise((resolve) => {
+      const step = (now) => {
+        if (token !== currentFlightToken) {
+          resolve({ cancelled: true });
+          return;
+        }
+        const elapsed = now - startedAt;
+        const raw = Math.min(1, elapsed / durationMs);
+        const t = easeInOutCubic(raw);
+        camera.position.lerpVectors(startPosition, endPosition, t);
+        controls.target.lerpVectors(startTarget, endTarget, t);
+        if (targetFov !== null) {
+          camera.fov = startFov + (targetFov - startFov) * t;
+          camera.updateProjectionMatrix();
+        }
+        controls.update();
+        if (raw < 1) {
+          requestAnimationFrame(step);
+        } else {
+          resolve({ cancelled: false });
+        }
+      };
+      requestAnimationFrame(step);
+    });
+  }
+
+  // Chains flyToPose across a sequence of poses with a dwell between each.
+  // Resolves when the last pose completes, or early-resolves if another
+  // flight interrupts it.
+  async function flyThroughPoses(poses, options) {
+    if (!Array.isArray(poses) || poses.length === 0) {
+      return { cancelled: false, visited: 0 };
+    }
+    const dwellMs = Math.max(0, options?.dwell_ms ?? 500);
+    const durationMs = Math.max(0, options?.duration_ms ?? 900);
+    let visited = 0;
+    for (const pose of poses) {
+      const result = await flyToPose(pose, { duration_ms: durationMs });
+      if (result?.cancelled) {
+        return { cancelled: true, visited };
+      }
+      visited += 1;
+      if (dwellMs > 0) {
+        const waitToken = currentFlightToken;
+        await new Promise((resolve) => setTimeout(resolve, dwellMs));
+        if (waitToken !== currentFlightToken) {
+          return { cancelled: true, visited };
+        }
+      }
+    }
+    return { cancelled: false, visited };
+  }
+
+  const api = {
+    setRoom,
+    setSelection,
+    setOnSelect,
+    setAssetUriResolver,
+    setSplat,
+    setSplatLoader,
+    getSplatMeta,
+    setScanProxies,
+    captureConditioning,
+    getCurrentCameraView,
+    flyToPose,
+    flyThroughPoses,
+    dispose,
+  };
   // Dev/demo hook: lets the browser console (and later E2E harnesses) inspect
   // the scene graph, camera, and controls without re-plumbing through the UI.
   if (typeof window !== 'undefined') {
@@ -323,10 +589,17 @@ function buildFloor(room, parent, ctx) {
   if (shoelaceSignedArea(points) < 0) points.reverse();
   const shape = new THREE.Shape(points);
   const geom = new THREE.ShapeGeometry(shape);
-  const color = ctx?.appearanceMode === 'capture'
+  const isCapture = ctx?.appearanceMode === 'capture';
+  const color = isCapture
     ? CAPTURE_SHELL_COLORS.floor
     : materialColor(floorSurface?.material_state, 0x6b5a3e);
-    const mat = new THREE.MeshStandardMaterial({ color, side: THREE.DoubleSide, roughness: 0.92 });
+  const mat = new THREE.MeshStandardMaterial({
+    color,
+    side: THREE.DoubleSide,
+    roughness: 0.92,
+    transparent: isCapture,
+    opacity: isCapture ? 0.35 : 1.0,
+  });
   const mesh = new THREE.Mesh(geom, mat);
   mesh.userData = { canonical_id: floorSurface?.surface_id, kind: 'floor' };
   parent.add(mesh);
@@ -359,8 +632,21 @@ function buildWalls(room, parent, ctx) {
     const color = ctx?.appearanceMode === 'capture'
       ? CAPTURE_SHELL_COLORS.wall
       : materialColor(wall.material_state, 0xd8d2c0);
-    const mat = new THREE.MeshStandardMaterial({ color, side: THREE.FrontSide, roughness: 0.85 });
-    const mesh = new THREE.Mesh(geom, mat);
+    // In the scan pane the walls are spatial *context*, not a surface to
+    // render. Solid walls box in the camera and hide the scan-native
+    // proxies behind them. Draw just the wall outline (LineSegments from
+    // the shape edges) so the room footprint reads, but the meshes and
+    // point clouds stay unobstructed.
+    const isCapture = ctx?.appearanceMode === 'capture';
+    let mesh;
+    if (isCapture) {
+      const edges = new THREE.EdgesGeometry(geom);
+      const lineMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55 });
+      mesh = new THREE.LineSegments(edges, lineMat);
+    } else {
+      const mat = new THREE.MeshStandardMaterial({ color, side: THREE.FrontSide, roughness: 0.85 });
+      mesh = new THREE.Mesh(geom, mat);
+    }
 
     const { origin, u_axis, v_axis, normal } = wall.surface_frame;
     const basis = new THREE.Matrix4().makeBasis(
