@@ -17,7 +17,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, describe, test } from "node:test";
 
-import { startApiHarness, type ApiHarness } from "../helpers/http-harness.ts";
+import { startApiHarness, type ApiHarness } from "../helpers/http-harness.mts";
 import type { RoomPlanCaptureRequest } from "../../packages/contracts/src/index.ts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");

@@ -22,7 +22,7 @@ import {
   simulateScenePreview,
 } from "../../apps/api/src/mutation-engine.ts";
 import type { SceneEditOperation, ScenePreviewRequest } from "../../packages/contracts/src/index.ts";
-import { buildMinimalScene } from "../helpers/scene-builder.ts";
+import { buildMinimalScene } from "../helpers/scene-builder.mts";
 
 const NOW = "2026-04-17T01:00:00.000Z";
 

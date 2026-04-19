@@ -62,6 +62,6 @@ The killer feature lands when all three tracks mature enough: multi-room scannin
 A running list of things that need a decision but don't block current milestones.
 
 1. **Depth encoding on the wire.** Today the API accepts base64-encoded `.npy` bytes inside JSON. For larger captures (tens of frames, 10 MB+ depth each), this will balloon requests. Candidate fix: switch to multipart, or move to direct uploads to a blob store with signed URLs. Current approach is fine for Milestone 1 scale.
-2. **Pose convention documentation.** `camera_transform` is 4x4 column-major, ARKit's world frame. This is stated in the contract comments but not in a canonical spec doc. Before Milestone 3 ships surface projection, pin this down in a short reference.
+2. **Pose convention documentation.** Documented in [pose-conventions.md](pose-conventions.md) — world frame, camera frame, transform layout, intrinsics, depth encoding, consumer table. Living reference; update when any of these shift.
 3. **Captured-frame retention.** Scenes can accumulate captured frames across re-scans. No GC strategy yet. Not urgent.
 4. **Artifact-store namespacing.** `CapturedFrame` reuses the `_artifacts/photoreal/` path. Semantically fine today (it's a generic binary store), but when we want real lifecycle rules per asset kind (retention, access control, pre-signed URLs), we'll split.

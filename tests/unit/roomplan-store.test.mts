@@ -21,7 +21,7 @@ import {
   type PersistedInitialSceneRecords,
 } from "../../apps/api/src/roomplan-persistence.ts";
 import type { HandoffGrantRecord, Scene } from "../../packages/contracts/src/index.ts";
-import { buildMinimalScene } from "../helpers/scene-builder.ts";
+import { buildMinimalScene } from "../helpers/scene-builder.mts";
 
 function withTempDir<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), "roomview-store-test-"));

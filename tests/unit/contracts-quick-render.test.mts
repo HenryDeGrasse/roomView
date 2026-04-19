@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import { buildDeterministicQuickRender } from "../../packages/contracts/src/index.ts";
-import { buildMinimalScene } from "../helpers/scene-builder.ts";
+import { buildMinimalScene } from "../helpers/scene-builder.mts";
 
 describe("buildDeterministicQuickRender", () => {
   test("empty-object scene yields zero bindings and zero fallback misses", () => {

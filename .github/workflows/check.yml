@@ -1,0 +1,44 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  node-check:
+    name: TS verifiers (npm run check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The project's verify scripts invoke `npx --yes tsx`. Pre-install tsx
+      # globally so each verifier reuses it instead of refetching.
+      - name: Pre-install tsx
+        run: npm install -g tsx@4
+      - name: Run every verifier except phase0 (needs Python + SDXL)
+        run: |
+          npm run verify:fixtures
+          npm run verify:replays
+          npm run verify:quick-render
+          npm run verify:mutation-pipeline
+          npm run verify:planner
+          npm run verify:photoreal
+          npm run verify:splat
+          npm run verify:observability
+          npm run verify:demo
+          npm run verify:unit
+          npm run verify:capture-bundle
+          npm run verify:bundle-phase0-bridge
+
+  swift-build:
+    name: Swift Package build
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift build
+        working-directory: ios/RoomViewCapture
+        run: swift build

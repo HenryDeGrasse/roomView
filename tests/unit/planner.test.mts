@@ -8,11 +8,15 @@
  * that bit my review — we verify the intended behavior here.
  */
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, test } from "node:test";
 
+import { RoomPlanCaptureService } from "../../apps/api/src/index.ts";
 import { planDeterministicTurn } from "../../apps/api/src/planner.ts";
-import type { OperationPlanRequest } from "../../packages/contracts/src/index.ts";
-import { buildMinimalScene } from "../helpers/scene-builder.ts";
+import type { OperationPlanRequest, RoomPlanCaptureRequest } from "../../packages/contracts/src/index.ts";
+import { buildMinimalScene } from "../helpers/scene-builder.mts";
 
 function buildRequest(
   overrides: Partial<OperationPlanRequest> = {},
@@ -322,6 +326,39 @@ describe("planner — move_object", () => {
     });
     const result = planDeterministicTurn(scene, buildRequest({ user_prompt: "move the chair" }));
     assert.equal(result.response_kind, "clarification_request");
+  });
+
+  test("'move the desk under the window' survives preview validation for a rotated desk", () => {
+    const storageDirectory = mkdtempSync(join(tmpdir(), "roomview-planner-"));
+    try {
+      const service = new RoomPlanCaptureService({
+        storage_directory: storageDirectory,
+        token_secret: "planner-test-secret",
+        handoff_base_url: "https://roomview.local/h",
+      });
+      const captureRequest = JSON.parse(
+        readFileSync("./fixtures/roomplan/bedroom-primary/capture-request.json", "utf8")
+      ) as RoomPlanCaptureRequest;
+      const capture = service.postRoomPlanCapture(captureRequest);
+      const scene = service.getScene(capture.scene_id);
+      assert.ok(scene);
+
+      const result = service.planSceneOperation(capture.scene_id, {
+        request_id: "req-move-desk-under-window",
+        idempotency_key: "idem-move-desk-under-window",
+        scene_id: capture.scene_id,
+        expected_scene_version: scene.head.current_scene_version,
+        selection_context: { selected_entity_ids: [] },
+        user_prompt: "Move the desk under the window.",
+      });
+
+      assert.equal(result.response_kind, "operation_plan_preview");
+      if (result.response_kind === "operation_plan_preview") {
+        assert.equal(result.preview.ops[0]?.op, "move_object");
+      }
+    } finally {
+      rmSync(storageDirectory, { recursive: true, force: true });
+    }
   });
 });
 
