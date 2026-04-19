@@ -150,6 +150,7 @@ struct ResultScreen: View {
         while !Task.isCancelled {
             do {
                 let response = try await uploader.pollJob(jobId: jobId, sessionToken: result.handoffToken)
+                pipelineError = nil
                 pipelineStatus = response.job.status
                 pipelineStage = response.job.stage
                 pipelineMessage = response.job.progressMessage

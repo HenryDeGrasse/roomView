@@ -240,7 +240,7 @@ async function handleRequest(
       if (!knownJob) {
         throw new RoomPlanCaptureError("TARGET_NOT_FOUND", `Job ${jobId} was not found.`);
       }
-      requireAuthenticatedSceneSession(request, knownJob.scene_id, context);
+      requireJobReadAccess(request, knownJob.scene_id, context);
       const job = context.service.pollJob(jobId) ?? knownJob;
       const scene = context.service.getScene(knownJob.scene_id);
       const photorealEntry = scene?.photoreal_gallery.find((entry) => entry.asset_id === job.output_asset_id) ?? null;
@@ -341,6 +341,48 @@ function requireAuthenticatedSceneSession(
   return hydratedSession;
 }
 
+function requireJobReadAccess(
+  request: IncomingMessage,
+  scene_id: string,
+  context: RoomPlanApiRequestContext
+): void {
+  try {
+    requireAuthenticatedSceneSession(request, scene_id, context);
+    return;
+  } catch (error) {
+    if (!(error instanceof RoomPlanCaptureError)) {
+      throw error;
+    }
+    if (error.reason_code !== "AUTH_REQUIRED" && error.reason_code !== "SCENE_ACCESS_DENIED") {
+      throw error;
+    }
+
+    const token = readSessionId(request);
+    if (token && hasValidHandoffTokenForScene(token, scene_id, context)) {
+      return;
+    }
+    throw error;
+  }
+}
+
+function hasValidHandoffTokenForScene(
+  token: string,
+  scene_id: string,
+  context: RoomPlanApiRequestContext
+): boolean {
+  const persisted = context.service.getPersistedInitialSceneRecords(scene_id);
+  if (!persisted) {
+    return false;
+  }
+
+  const handoffToken = extractHandoffTokenFromQrPayload(persisted.handoff_grant.qr_payload);
+  if (!handoffToken || handoffToken !== token) {
+    return false;
+  }
+
+  return !isExpired(persisted.handoff_grant.expires_at, new Date().toISOString());
+}
+
 function extractCaptureVideoSceneId(pathname: string): string | null {
   const match = pathname.match(/^\/captures\/([^/]+)\/video$/);
   return match ? decodeURIComponent(match[1]) : null;
@@ -419,6 +461,17 @@ function readSessionId(request: IncomingMessage): string | null {
   }
 
   return null;
+}
+
+function extractHandoffTokenFromQrPayload(qrPayload: string): string | null {
+  try {
+    const parsed = JSON.parse(qrPayload) as { handoff_token?: string };
+    return typeof parsed.handoff_token === "string" && parsed.handoff_token.length > 0
+      ? parsed.handoff_token
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 async function readJsonBody<T>(request: IncomingMessage): Promise<T> {

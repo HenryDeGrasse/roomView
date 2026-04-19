@@ -103,7 +103,8 @@ public extension RoomPlanCaptureUploader {
 
     /// GET /jobs/{jobId} — returns current job state so the iOS UI can show
     /// "generating splat…" / "baking textures…" / "ready" progress.
-    /// Requires a scene session bearer token; pass the handoff token here.
+    /// Accepts either a redeemed scene session token or the raw handoff token
+    /// from the capture response (for the companion-app polling flow).
     func pollJob(jobId: String, sessionToken: String? = nil) async throws -> JobReadResponseEnvelope {
         let url = RoomViewCaptureCompanion.jobReadURL(jobId: jobId, baseURL: baseURL, configuration: configuration)
         var urlRequest = URLRequest(url: url)

@@ -50,6 +50,17 @@ for (const fixture of manifest.fixtures) {
   assert(typeof fixture.request_path === "string" && fixture.request_path.length > 0, `${fixture.fixture_id}: request_path is required`);
   assert(typeof fixture.scene_path === "string" && fixture.scene_path.length > 0, `${fixture.fixture_id}: scene_path is required`);
 
+  // iOS-sourced captures are dynamic user data (any room shape, any coverage).
+  // Skip the strict reference-fixture invariants — they'd reject a real-world
+  // scan of an office with only 1 wall detected. We still parse the scene.json
+  // to confirm it's valid JSON and keeps the top-level shape.
+  if (fixture.fixture_id.startsWith("capture-")) {
+    const scene = readJson(fixture.scene_path);
+    assert(typeof scene.head?.scene_id === "string", `${fixture.fixture_id}: scene.head.scene_id missing`);
+    assert(Array.isArray(scene.snapshot?.state?.room?.shell?.surfaces), `${fixture.fixture_id}: surfaces array missing`);
+    continue;
+  }
+
   const request = readJson(fixture.request_path);
   const scene = readJson(fixture.scene_path);
 

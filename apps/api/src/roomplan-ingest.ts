@@ -1768,10 +1768,12 @@ export class RoomPlanCaptureService {
         };
         this.jobsById.set(job_id, job);
 
-        const webBaseUrl = this.fixtureWebBaseUrl ?? "http://127.0.0.1:4173";
+        const webBaseUrl = this.fixtureWebBaseUrl ?? "http://127.0.0.1:4288";
         const result: FinalizeCaptureResult = {
           fixture_id: promotion.fixture_id,
-          fixture_url: `${webBaseUrl}/?fixture=${encodeURIComponent(promotion.fixture_id)}`,
+          // Editor reads `fixture_id` (not `fixture`) from URL params per
+          // apps/web/src/server.ts bootstrap code.
+          fixture_url: `${webBaseUrl}/?fixture_id=${encodeURIComponent(promotion.fixture_id)}`,
           scene_url: `${webBaseUrl}/?handoff_token=${encodeURIComponent(stored.handoff_token)}`,
         };
         stored.capture_pipeline_results.set(job_id, result);

@@ -21,5 +21,15 @@ ios/**/*.xcworkspace/xcuserdata/
 ios/**/*.xcodeproj/xcuserdata/
 ios/**/.swiftpm/
 
+# Real iOS-capture fixtures produced by POST /captures/:id/finalize.
+# These are ~50-200MB each (frames + splat + textures) — too large for
+# normal git. Commit a specific one with `git add -f` if you want to
+# share a reference scan.
+fixtures/roomplan/capture-*/
+
+# Dev-environment node lockfile — `npm install` regenerates it. Avoids
+# merge conflicts when teammates install on different Node versions.
+package-lock.json
+
 __pycache__/
 *.pyc

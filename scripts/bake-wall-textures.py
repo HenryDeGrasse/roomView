@@ -315,7 +315,13 @@ def blend_fill_defaults(
                       slice(max(0, -du), out.shape[1] + min(0, -du)))
             shifted[sl_dst] += out[sl_src]
             weights[sl_dst] += 1.0
-        blurred = shifted / weights[..., None]
+        blurred = np.zeros_like(shifted)
+        np.divide(
+            shifted,
+            weights[..., None],
+            out=blurred,
+            where=weights[..., None] > 0,
+        )
         # Only update the un-filled pixels — keep observed data pristine.
         out[~filled_mask] = blurred[~filled_mask]
     return out
@@ -348,7 +354,12 @@ def bake_texture(
     accum_color, accum_weight = tier1_sample_wall(surface, texel_world, frames)
     filled_mask = accum_weight >= MIN_JPG_WEIGHT_FOR_TIER1
     color = np.zeros_like(accum_color)
-    color[filled_mask] = (accum_color / accum_weight[..., None])[filled_mask]
+    np.divide(
+        accum_color,
+        accum_weight[..., None],
+        out=color,
+        where=filled_mask[..., None],
+    )
     tier1_count = int(filled_mask.sum())
 
     # Tier 2: splat IDW for unfilled texels.

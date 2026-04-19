@@ -168,7 +168,7 @@ describe("HTTP POST /captures/:scene_id/finalize", () => {
     assert.match(body.result.fixture_id, /^capture-living-room-/);
     assert.equal(
       body.result.fixture_url,
-      `http://127.0.0.1:4173/?fixture=${encodeURIComponent(body.result.fixture_id)}`
+      `http://127.0.0.1:4173/?fixture_id=${encodeURIComponent(body.result.fixture_id)}`
     );
 
     // Fixture dir written under the temp repo root
@@ -317,6 +317,39 @@ describe("HTTP POST /captures/:scene_id/finalize", () => {
     assert.equal(jobReadResponse!.job.stage, "complete");
     assert.ok(jobReadResponse!.capture_pipeline_result, "capture_pipeline_result should be populated");
     assert.equal(jobReadResponse!.capture_pipeline_result!.fixture_id, body.result.fixture_id);
+  });
+
+  test("job polling accepts the raw handoff token without consuming it", async () => {
+    const capture = await ingestCapture("handoff-job-read");
+    await uploadFrames(capture);
+
+    const finalize: FinalizeCaptureRequest = {
+      video_upload_token: capture.video_upload_token!,
+      idempotency_key: `finalize-handoff-job-${capture.scene_id}`,
+      room_label: "Office",
+    };
+    const response = await fetch(`${baseUrl}/captures/${capture.scene_id}/finalize`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(finalize),
+    });
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as FinalizeCaptureResponse;
+
+    const handoffToken = extractToken(capture.qr_payload);
+    const jobRead = await fetch(`${baseUrl}/jobs/${body.job.job_id}`, {
+      headers: { Authorization: `Bearer ${handoffToken}` },
+    });
+    assert.equal(jobRead.status, 200, "raw handoff token should authorize companion job polling");
+    const jobBody = (await jobRead.json()) as JobReadResponse;
+    assert.equal(jobBody.job.job_id, body.job.job_id);
+
+    const redeemResponse = await fetch(`${baseUrl}/handoffs/redeem`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ handoff_token: handoffToken }),
+    });
+    assert.equal(redeemResponse.status, 200, "job polling must not consume the one-shot handoff token");
   });
 });
 
