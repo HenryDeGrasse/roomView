@@ -16,7 +16,7 @@
       "fixture_id": "fixture-bedroom-arkitscenes",
       "request_path": "fixtures/roomplan/fixture-bedroom-arkitscenes/capture-request.json",
       "scene_path": "fixtures/roomplan/fixture-bedroom-arkitscenes/scene.json",
-      "notes": "ARKitScenes 47333463 bedroom with 48 captured frames (RGB + float32 depth) for scan-native object proxies."
+      "notes": "ARKitScenes 47333463 bedroom, 100 captured frames."
     }
   ]
 }
