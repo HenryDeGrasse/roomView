@@ -212,9 +212,28 @@ def load_frames_from_fixture(fixture_dir: Path) -> list[Frame]:
 
 # ---------------------------------------------------------- RGBD → gaussians --
 
+# Depth cap for RGBD-init. The original 8m default was kept for tests with
+# synthetic bundles, but real indoor scans rarely have valid depth past 5m
+# and the ARKit sensor returns plenty of outliers at longer ranges that show
+# up as floating-in-space Gaussians outside the room wireframe. 5m is a
+# comfortable ceiling for bedroom / living-room capture.
+DEPTH_CAP_M = 5.0
+
+# Scale multiplier applied on top of the per-pixel footprint at depth. With
+# the 0.5× starting value the Gaussians rendered as isolated dots; 1.5×
+# makes neighbouring splats overlap enough to read as surfaces while still
+# preserving visible detail on furniture edges.
+SCALE_MULTIPLIER = 1.5
+
+# Extra slack (metres) applied to the room's floor-polygon AABB + ceiling
+# before clipping the RGBD point cloud against it. 20cm accommodates
+# scanner noise near walls without letting adjacent-room leakage through.
+ROOM_CLIP_SLACK_M = 0.20
+
+
 def _unproject_frame(frame: Frame) -> tuple[np.ndarray, np.ndarray]:
     """Unproject every valid depth pixel to world XYZ + RGB (normalized [0, 1])."""
-    mask = np.isfinite(frame.depth_m) & (frame.depth_m > 0.05) & (frame.depth_m < 8.0)
+    mask = np.isfinite(frame.depth_m) & (frame.depth_m > 0.05) & (frame.depth_m < DEPTH_CAP_M)
     if not np.any(mask):
         return np.zeros((0, 3)), np.zeros((0, 3))
     uu, vv = np.meshgrid(np.arange(frame.width), np.arange(frame.height))
@@ -236,16 +255,61 @@ def _estimate_scales(positions: np.ndarray, depth_at_pixel: np.ndarray, fx: floa
     """
     Estimate per-gaussian scale from projected pixel footprint at each gaussian's
     depth: one pixel at distance z covers roughly z/fx horizontally and z/fy
-    vertically. We use half that so neighboring gaussians overlap slightly,
-    giving a surface-like appearance.
+    vertically. SCALE_MULTIPLIER inflates that so neighbouring Gaussians
+    overlap into visible surfaces rather than rendering as isolated dots.
     """
     pix_x = depth_at_pixel / fx
     pix_y = depth_at_pixel / fy
     pix = np.maximum(pix_x, pix_y)
-    scale = (pix * 0.5).reshape(-1, 1)
+    scale = (pix * SCALE_MULTIPLIER).reshape(-1, 1)
     # Isotropic scale per gaussian — matches the "point-cloud-of-blobs" look.
     # Real 3DGS training learns anisotropic scales; rgbd_init leaves them iso.
     return np.repeat(scale, 3, axis=1).astype(np.float32)
+
+
+def _load_room_clip_bounds(scene: dict) -> dict | None:
+    """
+    Extract an axis-aligned room clip box from the scene's shell. Returns
+    None when the scene lacks a floor polygon + ceiling height (non-fixture
+    bundles). The box is the AABB of the floor polygon in XY, union-ed with
+    [0, ceiling_height] in Z, inflated uniformly by ROOM_CLIP_SLACK_M.
+    """
+    try:
+        shell = scene["snapshot"]["state"]["room"]["shell"]
+        vertices = shell["floor_polygon"]["vertices"]
+        ceiling_z = float(shell["ceiling_height"])
+    except (KeyError, TypeError):
+        return None
+    if not vertices:
+        return None
+    xs = [float(v["x"]) for v in vertices]
+    ys = [float(v["y"]) for v in vertices]
+    slack = ROOM_CLIP_SLACK_M
+    return {
+        "min_x": min(xs) - slack,
+        "max_x": max(xs) + slack,
+        "min_y": min(ys) - slack,
+        "max_y": max(ys) + slack,
+        "min_z": -slack,
+        "max_z": ceiling_z + slack,
+    }
+
+
+def _apply_room_clip(
+    positions: np.ndarray, colors: np.ndarray, scales: np.ndarray, bounds: dict,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Keep only gaussians whose world position is inside the inflated room AABB.
+    Real indoor scans place the floor at z=0; depth sensor noise, reflective
+    surfaces, and outliers past the walls all produce points outside this box
+    which render as a haze surrounding the room if not filtered.
+    """
+    mask = (
+        (positions[:, 0] >= bounds["min_x"]) & (positions[:, 0] <= bounds["max_x"]) &
+        (positions[:, 1] >= bounds["min_y"]) & (positions[:, 1] <= bounds["max_y"]) &
+        (positions[:, 2] >= bounds["min_z"]) & (positions[:, 2] <= bounds["max_z"])
+    )
+    return positions[mask], colors[mask], scales[mask]
 
 
 def _subsample(positions: np.ndarray, colors: np.ndarray, scales: np.ndarray, max_count: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -256,11 +320,21 @@ def _subsample(positions: np.ndarray, colors: np.ndarray, scales: np.ndarray, ma
     return positions[idx], colors[idx], scales[idx]
 
 
-def build_rgbd_init_gaussians(frames: list[Frame], max_gaussians: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def build_rgbd_init_gaussians(
+    frames: list[Frame],
+    max_gaussians: int,
+    clip_bounds: dict | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Return (positions (N,3), colors (N,3) in [0,1], scales (N,3)) for N
     gaussians, aggregated from every frame with per-pixel unprojection and
     scale estimation, capped to `max_gaussians` via uniform random subsample.
+
+    When `clip_bounds` is provided (from _load_room_clip_bounds), points
+    outside the inflated room AABB are dropped before subsampling. That
+    removes the haze of depth-sensor outliers that otherwise float outside
+    the room wireframe — the single biggest visible artifact of the
+    untrained init.
     """
     pos_list: list[np.ndarray] = []
     col_list: list[np.ndarray] = []
@@ -269,10 +343,10 @@ def build_rgbd_init_gaussians(frames: list[Frame], max_gaussians: int) -> tuple[
         world_pts, colors = _unproject_frame(frame)
         if world_pts.shape[0] == 0:
             continue
-        # Recompute per-pixel depth for scale estimation; we could return it
-        # from _unproject_frame but the recomputation is cheap and keeps the
-        # signature tight.
-        mask = np.isfinite(frame.depth_m) & (frame.depth_m > 0.05) & (frame.depth_m < 8.0)
+        # Recompute per-pixel depth for scale estimation; the mask has to
+        # match the one inside _unproject_frame exactly so every returned
+        # world point lines up with its corresponding depth value.
+        mask = np.isfinite(frame.depth_m) & (frame.depth_m > 0.05) & (frame.depth_m < DEPTH_CAP_M)
         d = frame.depth_m[mask]
         scales = _estimate_scales(world_pts, d, frame.fx, frame.fy)
         pos_list.append(world_pts)
@@ -283,6 +357,17 @@ def build_rgbd_init_gaussians(frames: list[Frame], max_gaussians: int) -> tuple[
     positions = np.concatenate(pos_list, axis=0)
     colors = np.concatenate(col_list, axis=0)
     scales = np.concatenate(scale_list, axis=0)
+    if clip_bounds is not None:
+        pre_clip = positions.shape[0]
+        positions, colors, scales = _apply_room_clip(positions, colors, scales, clip_bounds)
+        kept = positions.shape[0]
+        print(
+            f"[splat-generate] room-clip kept {kept}/{pre_clip} points ({kept/max(pre_clip,1)*100:.1f}%) "
+            f"within x=[{clip_bounds['min_x']:.2f},{clip_bounds['max_x']:.2f}] "
+            f"y=[{clip_bounds['min_y']:.2f},{clip_bounds['max_y']:.2f}] "
+            f"z=[{clip_bounds['min_z']:.2f},{clip_bounds['max_z']:.2f}]",
+            file=sys.stderr,
+        )
     positions, colors, scales = _subsample(positions, colors, scales, max_gaussians)
     return positions, colors, scales
 
@@ -382,12 +467,16 @@ def render_rgbd_init(request: SplatRequest) -> tuple[dict, bytes, str]:
     can carry a browser-loadable URI out of the box. Override via --ply-uri (the
     template supports the literal `__FILENAME__` token).
     """
+    clip_bounds: dict | None = None
     if request.bundle_dir is not None:
         frames = load_frames_from_bundle(request.bundle_dir)
+        # Bundles don't carry a shell polygon yet — skip room clipping.
     else:
         assert request.fixture_dir is not None
         frames = load_frames_from_fixture(request.fixture_dir)
-    positions, colors, scales = build_rgbd_init_gaussians(frames, request.max_gaussians)
+        scene = json.loads((request.fixture_dir / "scene.json").read_text())
+        clip_bounds = _load_room_clip_bounds(scene)
+    positions, colors, scales = build_rgbd_init_gaussians(frames, request.max_gaussians, clip_bounds)
     splat_bytes = pack_splat_bytes(positions, colors, scales)
     sha = hashlib.sha256(splat_bytes).hexdigest()
     # Deterministic splat_id from the content hash keeps re-runs stable.
