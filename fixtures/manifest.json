@@ -11,6 +11,12 @@
       "request_path": "fixtures/roomplan/bedroom-obstacle/capture-request.json",
       "scene_path": "fixtures/roomplan/bedroom-obstacle/scene.json",
       "notes": "Bedroom ingest that preserves an unsupported supplementary detection as a generic_obstacle."
+    },
+    {
+      "fixture_id": "fixture-bedroom-arkitscenes",
+      "request_path": "fixtures/roomplan/fixture-bedroom-arkitscenes/capture-request.json",
+      "scene_path": "fixtures/roomplan/fixture-bedroom-arkitscenes/scene.json",
+      "notes": "ARKitScenes 47333463 bedroom with 48 captured frames (RGB + float32 depth) for scan-native object proxies."
     }
   ]
 }

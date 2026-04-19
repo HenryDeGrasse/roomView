@@ -1,0 +1,4581 @@
+{
+  "head": {
+    "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+    "source": "scanned",
+    "units": "m",
+    "current_snapshot_id": "snapshot-scene-fixture-fixture-bedroom-arkitscene-6693adcf",
+    "current_scene_version": 1,
+    "undo_base_snapshot_id": null,
+    "updated_at": "2026-04-19T04:36:26.629Z"
+  },
+  "snapshot": {
+    "snapshot_id": "snapshot-scene-fixture-fixture-bedroom-arkitscene-6693adcf",
+    "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+    "scene_version": 1,
+    "based_on_snapshot_id": null,
+    "mutation_kind": "initial_ingest",
+    "state": {
+      "style_tags": [
+        "modern",
+        "storage",
+        "light_wood"
+      ],
+      "room": {
+        "room_id": "room-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+        "room_type": "bedroom",
+        "coordinate_frame": {
+          "origin": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "x_axis": {
+            "x": 1,
+            "y": 0,
+            "z": 0
+          },
+          "y_axis": {
+            "x": 0,
+            "y": 1,
+            "z": 0
+          },
+          "z_axis": {
+            "x": 0,
+            "y": 0,
+            "z": 1
+          },
+          "north_source": "scan_forward"
+        },
+        "shell": {
+          "floor_polygon": {
+            "vertices": [
+              {
+                "x": 0,
+                "y": 0
+              },
+              {
+                "x": 4.516655071091298,
+                "y": 0
+              },
+              {
+                "x": 4.516655071091298,
+                "y": 4.650379326701735
+              },
+              {
+                "x": 0,
+                "y": 4.650379326701735
+              }
+            ]
+          },
+          "ceiling_height": 2.4,
+          "surfaces": [
+            {
+              "surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-f69c7829",
+              "type": "floor",
+              "geometry_ref": "floor",
+              "boundary": {
+                "vertices": [
+                  {
+                    "x": 0,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.516655071091298,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.516655071091298,
+                    "y": 4.650379326701735
+                  },
+                  {
+                    "x": 0,
+                    "y": 4.650379326701735
+                  }
+                ]
+              },
+              "surface_frame": null,
+              "named_wall_ref_id": null,
+              "material_state": {
+                "category": "flooring",
+                "color": "oak",
+                "finish": "matte",
+                "pattern": "plank",
+                "reference_asset_id": "asset-floor-oak-01"
+              },
+              "user_locked": false,
+              "provenance": {
+                "source_kind": "measured",
+                "confidence": 0.99,
+                "source_ref": "roomplan:floor",
+                "updated_at": "2026-04-19T04:36:26.629Z"
+              }
+            },
+            {
+              "surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-4241292c",
+              "type": "ceiling",
+              "geometry_ref": "ceiling",
+              "boundary": {
+                "vertices": [
+                  {
+                    "x": 0,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.516655071091298,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.516655071091298,
+                    "y": 4.650379326701735
+                  },
+                  {
+                    "x": 0,
+                    "y": 4.650379326701735
+                  }
+                ]
+              },
+              "surface_frame": {
+                "origin": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 2.4
+                },
+                "u_axis": {
+                  "x": 1,
+                  "y": 0,
+                  "z": 0
+                },
+                "v_axis": {
+                  "x": 0,
+                  "y": 1,
+                  "z": 0
+                },
+                "normal": {
+                  "x": 0,
+                  "y": 0,
+                  "z": -1
+                }
+              },
+              "named_wall_ref_id": null,
+              "material_state": {
+                "category": "paint",
+                "color": "soft_white",
+                "finish": "flat",
+                "pattern": null,
+                "reference_asset_id": null
+              },
+              "user_locked": false,
+              "provenance": {
+                "source_kind": "measured",
+                "confidence": 0.98,
+                "source_ref": "roomplan:ceiling",
+                "updated_at": "2026-04-19T04:36:26.629Z"
+              }
+            },
+            {
+              "surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-bcded795",
+              "type": "wall",
+              "geometry_ref": "north_wall",
+              "boundary": {
+                "vertices": [
+                  {
+                    "x": 0,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.516655071091298,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.516655071091298,
+                    "y": 2.4
+                  },
+                  {
+                    "x": 0,
+                    "y": 2.4
+                  }
+                ]
+              },
+              "surface_frame": {
+                "origin": {
+                  "x": 0,
+                  "y": 4.650379326701735,
+                  "z": 0
+                },
+                "u_axis": {
+                  "x": 1,
+                  "y": 0,
+                  "z": 0
+                },
+                "v_axis": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 1
+                },
+                "normal": {
+                  "x": 0,
+                  "y": -1,
+                  "z": 0
+                }
+              },
+              "named_wall_ref_id": "wall-ref-scene-fixture-fixture-bedroom-arkitscene-c17ebb1b",
+              "material_state": {
+                "category": "paint",
+                "color": "warm_white",
+                "finish": "eggshell",
+                "pattern": null,
+                "reference_asset_id": null
+              },
+              "user_locked": false,
+              "provenance": {
+                "source_kind": "measured",
+                "confidence": 0.98,
+                "source_ref": "roomplan:north_wall",
+                "updated_at": "2026-04-19T04:36:26.629Z"
+              }
+            },
+            {
+              "surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-4a606097",
+              "type": "wall",
+              "geometry_ref": "south_wall",
+              "boundary": {
+                "vertices": [
+                  {
+                    "x": 0,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.516655071091298,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.516655071091298,
+                    "y": 2.4
+                  },
+                  {
+                    "x": 0,
+                    "y": 2.4
+                  }
+                ]
+              },
+              "surface_frame": {
+                "origin": {
+                  "x": 4.516655071091298,
+                  "y": 0,
+                  "z": 0
+                },
+                "u_axis": {
+                  "x": -1,
+                  "y": 0,
+                  "z": 0
+                },
+                "v_axis": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 1
+                },
+                "normal": {
+                  "x": 0,
+                  "y": 1,
+                  "z": 0
+                }
+              },
+              "named_wall_ref_id": "wall-ref-scene-fixture-fixture-bedroom-arkitscene-3966622d",
+              "material_state": {
+                "category": "paint",
+                "color": "warm_white",
+                "finish": "eggshell",
+                "pattern": null,
+                "reference_asset_id": null
+              },
+              "user_locked": false,
+              "provenance": {
+                "source_kind": "measured",
+                "confidence": 0.98,
+                "source_ref": "roomplan:south_wall",
+                "updated_at": "2026-04-19T04:36:26.629Z"
+              }
+            },
+            {
+              "surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-869b2b5d",
+              "type": "wall",
+              "geometry_ref": "east_wall",
+              "boundary": {
+                "vertices": [
+                  {
+                    "x": 0,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.650379326701735,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.650379326701735,
+                    "y": 2.4
+                  },
+                  {
+                    "x": 0,
+                    "y": 2.4
+                  }
+                ]
+              },
+              "surface_frame": {
+                "origin": {
+                  "x": 4.516655071091298,
+                  "y": 4.650379326701735,
+                  "z": 0
+                },
+                "u_axis": {
+                  "x": 0,
+                  "y": -1,
+                  "z": 0
+                },
+                "v_axis": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 1
+                },
+                "normal": {
+                  "x": -1,
+                  "y": 0,
+                  "z": 0
+                }
+              },
+              "named_wall_ref_id": "wall-ref-scene-fixture-fixture-bedroom-arkitscene-456642e1",
+              "material_state": {
+                "category": "paint",
+                "color": "warm_white",
+                "finish": "eggshell",
+                "pattern": null,
+                "reference_asset_id": null
+              },
+              "user_locked": false,
+              "provenance": {
+                "source_kind": "measured",
+                "confidence": 0.98,
+                "source_ref": "roomplan:east_wall",
+                "updated_at": "2026-04-19T04:36:26.629Z"
+              }
+            },
+            {
+              "surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-860f783b",
+              "type": "wall",
+              "geometry_ref": "west_wall",
+              "boundary": {
+                "vertices": [
+                  {
+                    "x": 0,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.650379326701735,
+                    "y": 0
+                  },
+                  {
+                    "x": 4.650379326701735,
+                    "y": 2.4
+                  },
+                  {
+                    "x": 0,
+                    "y": 2.4
+                  }
+                ]
+              },
+              "surface_frame": {
+                "origin": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                },
+                "u_axis": {
+                  "x": 0,
+                  "y": 1,
+                  "z": 0
+                },
+                "v_axis": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 1
+                },
+                "normal": {
+                  "x": 1,
+                  "y": 0,
+                  "z": 0
+                }
+              },
+              "named_wall_ref_id": "wall-ref-scene-fixture-fixture-bedroom-arkitscene-857a7787",
+              "material_state": {
+                "category": "paint",
+                "color": "warm_white",
+                "finish": "eggshell",
+                "pattern": null,
+                "reference_asset_id": null
+              },
+              "user_locked": false,
+              "provenance": {
+                "source_kind": "measured",
+                "confidence": 0.98,
+                "source_ref": "roomplan:west_wall",
+                "updated_at": "2026-04-19T04:36:26.629Z"
+              }
+            }
+          ],
+          "named_wall_refs": [
+            {
+              "wall_ref_id": "wall-ref-scene-fixture-fixture-bedroom-arkitscene-c17ebb1b",
+              "name": "north wall",
+              "surface_ids": [
+                "surface-scene-fixture-fixture-bedroom-arkitscene-bcded795"
+              ],
+              "azimuth_degrees": 0,
+              "inward_normal_xy": {
+                "x": 0,
+                "y": -1
+              }
+            },
+            {
+              "wall_ref_id": "wall-ref-scene-fixture-fixture-bedroom-arkitscene-3966622d",
+              "name": "south wall",
+              "surface_ids": [
+                "surface-scene-fixture-fixture-bedroom-arkitscene-4a606097"
+              ],
+              "azimuth_degrees": 180,
+              "inward_normal_xy": {
+                "x": 0,
+                "y": 1
+              }
+            },
+            {
+              "wall_ref_id": "wall-ref-scene-fixture-fixture-bedroom-arkitscene-456642e1",
+              "name": "east wall",
+              "surface_ids": [
+                "surface-scene-fixture-fixture-bedroom-arkitscene-869b2b5d"
+              ],
+              "azimuth_degrees": 90,
+              "inward_normal_xy": {
+                "x": -1,
+                "y": 0
+              }
+            },
+            {
+              "wall_ref_id": "wall-ref-scene-fixture-fixture-bedroom-arkitscene-857a7787",
+              "name": "west wall",
+              "surface_ids": [
+                "surface-scene-fixture-fixture-bedroom-arkitscene-860f783b"
+              ],
+              "azimuth_degrees": 270,
+              "inward_normal_xy": {
+                "x": 1,
+                "y": 0
+              }
+            }
+          ],
+          "openings": [],
+          "fixed_elements": []
+        },
+        "objects": [
+          {
+            "object_id": "object-scene-fixture-fixture-bedroom-arkitscene-01a4d62d",
+            "class": "bed",
+            "attributes": [],
+            "parent_id": null,
+            "child_movement_policy": "independent",
+            "pose": {
+              "position": {
+                "x": 3.008518132840299,
+                "y": 1.103322354375457,
+                "z": 0.2508030708909901
+              },
+              "yaw_degrees": 176.72159259813407
+            },
+            "obb": {
+              "center": {
+                "x": 3.008518132840299,
+                "y": 1.103322354375457,
+                "z": 0.2508030708909901
+              },
+              "size_x": 2.2162738765019987,
+              "size_y": 0.8600906476080569,
+              "size_z": 0.5009140728395991,
+              "yaw_degrees": 176.72159259813407
+            },
+            "mobility": "movable",
+            "host": {
+              "relation_type": "flush_to_wall",
+              "host_surface_id": "surface-scene-fixture-fixture-bedroom-arkitscene-4a606097",
+              "anchor_rect": null
+            },
+            "support": {
+              "support_kind": "floor",
+              "support_entity_id": "surface-scene-fixture-fixture-bedroom-arkitscene-f69c7829",
+              "contact_patch": {
+                "vertices": [
+                  {
+                    "x": 4.139,
+                    "y": 1.469
+                  },
+                  {
+                    "x": 1.927,
+                    "y": 1.596
+                  },
+                  {
+                    "x": 1.878,
+                    "y": 0.737
+                  },
+                  {
+                    "x": 4.09,
+                    "y": 0.611
+                  }
+                ]
+              }
+            },
+            "asset_ref": "asset-bed-queen-ash-01",
+            "style_tags": [
+              "modern",
+              "light_wood"
+            ],
+            "material_state": {
+              "category": "fabric",
+              "color": "oatmeal",
+              "finish": "woven",
+              "pattern": null,
+              "reference_asset_id": null
+            },
+            "user_locked": false,
+            "provenance": {
+              "source_kind": "measured",
+              "confidence": 0.9,
+              "source_ref": "roomplan:j1OgyTFm4emkxCA8",
+              "updated_at": "2026-04-19T04:36:26.629Z"
+            }
+          },
+          {
+            "object_id": "object-scene-fixture-fixture-bedroom-arkitscene-e099c0d6",
+            "class": "storage",
+            "attributes": [],
+            "parent_id": null,
+            "child_movement_policy": "independent",
+            "pose": {
+              "position": {
+                "x": 1.0900298506362631,
+                "y": 0.7282881330953173,
+                "z": 0.9128079768227002
+              },
+              "yaw_degrees": -93.19298873162867
+            },
+            "obb": {
+              "center": {
+                "x": 1.0900298506362631,
+                "y": 0.7282881330953173,
+                "z": 0.9128079768227002
+              },
+              "size_x": 0.36334561436506135,
+              "size_y": 0.6565762661906349,
+              "size_z": 1.8249238847030205,
+              "yaw_degrees": -93.19298873162867
+            },
+            "mobility": "movable",
+            "host": null,
+            "support": {
+              "support_kind": "floor",
+              "support_entity_id": "surface-scene-fixture-fixture-bedroom-arkitscene-f69c7829",
+              "contact_patch": {
+                "vertices": [
+                  {
+                    "x": 0.772,
+                    "y": 0.928
+                  },
+                  {
+                    "x": 0.752,
+                    "y": 0.565
+                  },
+                  {
+                    "x": 1.408,
+                    "y": 0.529
+                  },
+                  {
+                    "x": 1.428,
+                    "y": 0.891
+                  }
+                ]
+              }
+            },
+            "asset_ref": "asset-storage-cabinet-01",
+            "style_tags": [
+              "storage",
+              "modern"
+            ],
+            "material_state": {
+              "category": "wood",
+              "color": "oak",
+              "finish": "matte",
+              "pattern": null,
+              "reference_asset_id": null
+            },
+            "user_locked": false,
+            "provenance": {
+              "source_kind": "measured",
+              "confidence": 0.9,
+              "source_ref": "roomplan:zL4EquTdosBhgZ61",
+              "updated_at": "2026-04-19T04:36:26.629Z"
+            }
+          },
+          {
+            "object_id": "object-scene-fixture-fixture-bedroom-arkitscene-d5bf6c2c",
+            "class": "chair",
+            "attributes": [],
+            "parent_id": null,
+            "child_movement_policy": "independent",
+            "pose": {
+              "position": {
+                "x": 3.4975434388682776,
+                "y": 2.8777869063419788,
+                "z": 0.5739962090446288
+              },
+              "yaw_degrees": 153.0456923359007
+            },
+            "obb": {
+              "center": {
+                "x": 3.4975434388682776,
+                "y": 2.8777869063419788,
+                "z": 0.5739962090446288
+              },
+              "size_x": 0.708102595016815,
+              "size_y": 0.6315500662915714,
+              "size_z": 1.1284031050107048,
+              "yaw_degrees": 153.0456923359007
+            },
+            "mobility": "movable",
+            "host": null,
+            "support": {
+              "support_kind": "floor",
+              "support_entity_id": "surface-scene-fixture-fixture-bedroom-arkitscene-f69c7829",
+              "contact_patch": {
+                "vertices": [
+                  {
+                    "x": 3.956,
+                    "y": 2.999
+                  },
+                  {
+                    "x": 3.325,
+                    "y": 3.32
+                  },
+                  {
+                    "x": 3.039,
+                    "y": 2.757
+                  },
+                  {
+                    "x": 3.67,
+                    "y": 2.436
+                  }
+                ]
+              }
+            },
+            "asset_ref": "asset-chair-upholstered-01",
+            "style_tags": [
+              "modern",
+              "workspace"
+            ],
+            "material_state": {
+              "category": "fabric",
+              "color": "charcoal",
+              "finish": "woven",
+              "pattern": null,
+              "reference_asset_id": null
+            },
+            "user_locked": false,
+            "provenance": {
+              "source_kind": "measured",
+              "confidence": 0.9,
+              "source_ref": "roomplan:6kwcESj7V4RB3trh",
+              "updated_at": "2026-04-19T04:36:26.629Z"
+            }
+          },
+          {
+            "object_id": "object-scene-fixture-fixture-bedroom-arkitscene-eaa69bda",
+            "class": "table",
+            "attributes": [],
+            "parent_id": null,
+            "child_movement_policy": "independent",
+            "pose": {
+              "position": {
+                "x": 3.305767456890571,
+                "y": 3.4730897768713462,
+                "z": 0.3567325195048007
+              },
+              "yaw_degrees": 85.6234035819424
+            },
+            "obb": {
+              "center": {
+                "x": 3.305767456890571,
+                "y": 3.4730897768713462,
+                "z": 0.3567325195048007
+              },
+              "size_x": 0.6960038666058382,
+              "size_y": 1.1449798185695028,
+              "size_z": 0.7134650390096006,
+              "yaw_degrees": 85.6234035819424
+            },
+            "mobility": "movable",
+            "host": null,
+            "support": {
+              "support_kind": "floor",
+              "support_entity_id": "surface-scene-fixture-fixture-bedroom-arkitscene-f69c7829",
+              "contact_patch": {
+                "vertices": [
+                  {
+                    "x": 3.85,
+                    "y": 3.082
+                  },
+                  {
+                    "x": 3.903,
+                    "y": 3.776
+                  },
+                  {
+                    "x": 2.762,
+                    "y": 3.864
+                  },
+                  {
+                    "x": 2.708,
+                    "y": 3.17
+                  }
+                ]
+              }
+            },
+            "asset_ref": "asset-table-round-01",
+            "style_tags": [
+              "modern",
+              "light_wood"
+            ],
+            "material_state": {
+              "category": "wood",
+              "color": "oak",
+              "finish": "matte",
+              "pattern": null,
+              "reference_asset_id": null
+            },
+            "user_locked": false,
+            "provenance": {
+              "source_kind": "measured",
+              "confidence": 0.9,
+              "source_ref": "roomplan:ZGKk44pB6Fek1NPQ",
+              "updated_at": "2026-04-19T04:36:26.629Z"
+            }
+          },
+          {
+            "object_id": "object-scene-fixture-fixture-bedroom-arkitscene-60652152",
+            "class": "television",
+            "attributes": [],
+            "parent_id": "object-scene-fixture-fixture-bedroom-arkitscene-eaa69bda",
+            "child_movement_policy": "move_with_parent",
+            "pose": {
+              "position": {
+                "x": 3.376883689426974,
+                "y": 3.6969955477760523,
+                "z": 0.9286398058050205
+              },
+              "yaw_degrees": 85.19937688582189
+            },
+            "obb": {
+              "center": {
+                "x": 3.376883689426974,
+                "y": 3.6969955477760523,
+                "z": 0.9286398058050205
+              },
+              "size_x": 0.05185759111682127,
+              "size_y": 0.5039953042928145,
+              "size_z": 0.42624293030333377,
+              "yaw_degrees": 85.19937688582189
+            },
+            "mobility": "movable",
+            "host": null,
+            "support": {
+              "support_kind": "object",
+              "support_entity_id": "object-scene-fixture-fixture-bedroom-arkitscene-eaa69bda",
+              "contact_patch": {
+                "vertices": [
+                  {
+                    "x": 3.626,
+                    "y": 3.65
+                  },
+                  {
+                    "x": 3.63,
+                    "y": 3.702
+                  },
+                  {
+                    "x": 3.128,
+                    "y": 3.744
+                  },
+                  {
+                    "x": 3.124,
+                    "y": 3.692
+                  }
+                ]
+              }
+            },
+            "asset_ref": "asset-television-wall-01",
+            "style_tags": [
+              "media",
+              "modern"
+            ],
+            "material_state": {
+              "category": "metal_glass",
+              "color": "black",
+              "finish": "satin",
+              "pattern": null,
+              "reference_asset_id": null
+            },
+            "user_locked": false,
+            "provenance": {
+              "source_kind": "measured",
+              "confidence": 0.9,
+              "source_ref": "roomplan:NsFN2urYQUQkcM2l",
+              "updated_at": "2026-04-19T04:36:26.629Z"
+            }
+          },
+          {
+            "object_id": "object-scene-fixture-fixture-bedroom-arkitscene-49861c03",
+            "class": "storage",
+            "attributes": [],
+            "parent_id": null,
+            "child_movement_policy": "independent",
+            "pose": {
+              "position": {
+                "x": 1.9671020362644889,
+                "y": 3.507074242983369,
+                "z": 0.4059056597974853
+              },
+              "yaw_degrees": 85.6234035819424
+            },
+            "obb": {
+              "center": {
+                "x": 1.9671020362644889,
+                "y": 3.507074242983369,
+                "z": 0.4059056597974853
+              },
+              "size_x": 0.423921313361908,
+              "size_y": 1.486610167436733,
+              "size_z": 0.8118113195949694,
+              "yaw_degrees": 85.6234035819424
+            },
+            "mobility": "movable",
+            "host": null,
+            "support": {
+              "support_kind": "floor",
+              "support_entity_id": "surface-scene-fixture-fixture-bedroom-arkitscene-f69c7829",
+              "contact_patch": {
+                "vertices": [
+                  {
+                    "x": 2.692,
+                    "y": 3.239
+                  },
+                  {
+                    "x": 2.724,
+                    "y": 3.662
+                  },
+                  {
+                    "x": 1.242,
+                    "y": 3.775
+                  },
+                  {
+                    "x": 1.21,
+                    "y": 3.352
+                  }
+                ]
+              }
+            },
+            "asset_ref": "asset-storage-cabinet-01",
+            "style_tags": [
+              "storage",
+              "modern"
+            ],
+            "material_state": {
+              "category": "wood",
+              "color": "oak",
+              "finish": "matte",
+              "pattern": null,
+              "reference_asset_id": null
+            },
+            "user_locked": false,
+            "provenance": {
+              "source_kind": "measured",
+              "confidence": 0.9,
+              "source_ref": "roomplan:5lnnZ73fOW7yzGEk",
+              "updated_at": "2026-04-19T04:36:26.629Z"
+            }
+          },
+          {
+            "object_id": "object-scene-fixture-fixture-bedroom-arkitscene-d3192ea9",
+            "class": "television",
+            "attributes": [],
+            "parent_id": "object-scene-fixture-fixture-bedroom-arkitscene-49861c03",
+            "child_movement_policy": "move_with_parent",
+            "pose": {
+              "position": {
+                "x": 1.9378699255023801,
+                "y": 3.490353748740985,
+                "z": 1.0954202126316006
+              },
+              "yaw_degrees": 84.50676683753642
+            },
+            "obb": {
+              "center": {
+                "x": 1.9378699255023801,
+                "y": 3.490353748740985,
+                "z": 1.0954202126316006
+              },
+              "size_x": 0.06401838197482733,
+              "size_y": 0.8928733835872076,
+              "size_z": 0.5661707496921774,
+              "yaw_degrees": 84.50676683753642
+            },
+            "mobility": "movable",
+            "host": null,
+            "support": {
+              "support_kind": "object",
+              "support_entity_id": "object-scene-fixture-fixture-bedroom-arkitscene-49861c03",
+              "contact_patch": {
+                "vertices": [
+                  {
+                    "x": 2.379,
+                    "y": 3.416
+                  },
+                  {
+                    "x": 2.385,
+                    "y": 3.479
+                  },
+                  {
+                    "x": 1.497,
+                    "y": 3.565
+                  },
+                  {
+                    "x": 1.49,
+                    "y": 3.501
+                  }
+                ]
+              }
+            },
+            "asset_ref": "asset-television-wall-01",
+            "style_tags": [
+              "media",
+              "modern"
+            ],
+            "material_state": {
+              "category": "metal_glass",
+              "color": "black",
+              "finish": "satin",
+              "pattern": null,
+              "reference_asset_id": null
+            },
+            "user_locked": false,
+            "provenance": {
+              "source_kind": "measured",
+              "confidence": 0.9,
+              "source_ref": "roomplan:pzNTxt1HKLb9nvy2",
+              "updated_at": "2026-04-19T04:36:26.629Z"
+            }
+          },
+          {
+            "object_id": "object-scene-fixture-fixture-bedroom-arkitscene-28ca61f1",
+            "class": "storage",
+            "attributes": [],
+            "parent_id": null,
+            "child_movement_policy": "independent",
+            "pose": {
+              "position": {
+                "x": 0.7800818932599815,
+                "y": 3.364308646061481,
+                "z": 0.9756498758361636
+              },
+              "yaw_degrees": 85.62340358194243
+            },
+            "obb": {
+              "center": {
+                "x": 0.7800818932599815,
+                "y": 3.364308646061481,
+                "z": 0.9756498758361636
+              },
+              "size_x": 0.5274527169534544,
+              "size_y": 0.9019116988663783,
+              "size_z": 1.9512997516723272,
+              "yaw_degrees": 85.62340358194243
+            },
+            "mobility": "movable",
+            "host": null,
+            "support": {
+              "support_kind": "floor",
+              "support_entity_id": "surface-scene-fixture-fixture-bedroom-arkitscene-f69c7829",
+              "contact_patch": {
+                "vertices": [
+                  {
+                    "x": 1.21,
+                    "y": 3.067
+                  },
+                  {
+                    "x": 1.25,
+                    "y": 3.593
+                  },
+                  {
+                    "x": 0.351,
+                    "y": 3.662
+                  },
+                  {
+                    "x": 0.31,
+                    "y": 3.136
+                  }
+                ]
+              }
+            },
+            "asset_ref": "asset-storage-cabinet-01",
+            "style_tags": [
+              "storage",
+              "modern"
+            ],
+            "material_state": {
+              "category": "wood",
+              "color": "oak",
+              "finish": "matte",
+              "pattern": null,
+              "reference_asset_id": null
+            },
+            "user_locked": false,
+            "provenance": {
+              "source_kind": "measured",
+              "confidence": 0.9,
+              "source_ref": "roomplan:kQMdF7GAvtGOWXrQ",
+              "updated_at": "2026-04-19T04:36:26.629Z"
+            }
+          },
+          {
+            "object_id": "object-scene-fixture-fixture-bedroom-arkitscene-0e81ca07",
+            "class": "chair",
+            "attributes": [],
+            "parent_id": null,
+            "child_movement_policy": "independent",
+            "pose": {
+              "position": {
+                "x": 0.8612813231832582,
+                "y": 2.643447986723686,
+                "z": 0.29315439988974973
+              },
+              "yaw_degrees": 85.54611977012662
+            },
+            "obb": {
+              "center": {
+                "x": 0.8612813231832582,
+                "y": 2.643447986723686,
+                "z": 0.29315439988974973
+              },
+              "size_x": 0.9225626463665164,
+              "size_y": 0.9581211740937555,
+              "size_z": 0.5863087997794986,
+              "yaw_degrees": 85.54611977012662
+            },
+            "mobility": "movable",
+            "host": null,
+            "support": {
+              "support_kind": "floor",
+              "support_entity_id": "surface-scene-fixture-fixture-bedroom-arkitscene-f69c7829",
+              "contact_patch": {
+                "vertices": [
+                  {
+                    "x": 1.303,
+                    "y": 2.146
+                  },
+                  {
+                    "x": 1.375,
+                    "y": 3.066
+                  },
+                  {
+                    "x": 0.419,
+                    "y": 3.141
+                  },
+                  {
+                    "x": 0.348,
+                    "y": 2.221
+                  }
+                ]
+              }
+            },
+            "asset_ref": "asset-chair-upholstered-01",
+            "style_tags": [
+              "modern",
+              "workspace"
+            ],
+            "material_state": {
+              "category": "fabric",
+              "color": "charcoal",
+              "finish": "woven",
+              "pattern": null,
+              "reference_asset_id": null
+            },
+            "user_locked": false,
+            "provenance": {
+              "source_kind": "measured",
+              "confidence": 0.9,
+              "source_ref": "roomplan:3K8JOxh8FtAdC36J",
+              "updated_at": "2026-04-19T04:36:26.629Z"
+            }
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "constraint-scene-fixture-fixture-bedroom-arkitscene-65e38ce9",
+            "kind": "no_overlap_in_bounds",
+            "severity": "hard",
+            "target_entity_ids": [
+              "object-scene-fixture-fixture-bedroom-arkitscene-01a4d62d",
+              "object-scene-fixture-fixture-bedroom-arkitscene-e099c0d6",
+              "object-scene-fixture-fixture-bedroom-arkitscene-d5bf6c2c",
+              "object-scene-fixture-fixture-bedroom-arkitscene-eaa69bda",
+              "object-scene-fixture-fixture-bedroom-arkitscene-60652152",
+              "object-scene-fixture-fixture-bedroom-arkitscene-49861c03",
+              "object-scene-fixture-fixture-bedroom-arkitscene-d3192ea9",
+              "object-scene-fixture-fixture-bedroom-arkitscene-28ca61f1",
+              "object-scene-fixture-fixture-bedroom-arkitscene-0e81ca07"
+            ],
+            "params": {
+              "tolerance_m": 0.02
+            },
+            "reason_code_on_fail": "OBJECT_OVERLAP"
+          },
+          {
+            "constraint_id": "constraint-scene-fixture-fixture-bedroom-arkitscene-b23dd141",
+            "kind": "anchor_integrity",
+            "severity": "hard",
+            "target_entity_ids": [
+              "object-scene-fixture-fixture-bedroom-arkitscene-01a4d62d"
+            ],
+            "params": {},
+            "reason_code_on_fail": "ANCHOR_VIOLATION"
+          },
+          {
+            "constraint_id": "constraint-scene-fixture-fixture-bedroom-arkitscene-b4f35a1a",
+            "kind": "class_specific_clearance",
+            "severity": "hard",
+            "target_entity_ids": [
+              "object-scene-fixture-fixture-bedroom-arkitscene-01a4d62d"
+            ],
+            "params": {
+              "minimum_access_side_m": 0.6
+            },
+            "reason_code_on_fail": "CLEARANCE_VIOLATION"
+          },
+          {
+            "constraint_id": "constraint-scene-fixture-fixture-bedroom-arkitscene-c6a94844",
+            "kind": "class_specific_clearance",
+            "severity": "hard",
+            "target_entity_ids": [
+              "object-scene-fixture-fixture-bedroom-arkitscene-e099c0d6"
+            ],
+            "params": {
+              "minimum_front_clearance_m": 0.6
+            },
+            "reason_code_on_fail": "CLEARANCE_VIOLATION"
+          },
+          {
+            "constraint_id": "constraint-scene-fixture-fixture-bedroom-arkitscene-29164f12",
+            "kind": "class_specific_clearance",
+            "severity": "hard",
+            "target_entity_ids": [
+              "object-scene-fixture-fixture-bedroom-arkitscene-49861c03"
+            ],
+            "params": {
+              "minimum_front_clearance_m": 0.6
+            },
+            "reason_code_on_fail": "CLEARANCE_VIOLATION"
+          },
+          {
+            "constraint_id": "constraint-scene-fixture-fixture-bedroom-arkitscene-1ed74534",
+            "kind": "class_specific_clearance",
+            "severity": "hard",
+            "target_entity_ids": [
+              "object-scene-fixture-fixture-bedroom-arkitscene-28ca61f1"
+            ],
+            "params": {
+              "minimum_front_clearance_m": 0.6
+            },
+            "reason_code_on_fail": "CLEARANCE_VIOLATION"
+          }
+        ],
+        "focal_elements": [
+          {
+            "entity_id": "object-scene-fixture-fixture-bedroom-arkitscene-60652152",
+            "entity_type": "object",
+            "role": "primary",
+            "reason": "captured media focal object"
+          }
+        ],
+        "section_hints": [
+          "sleep_zone",
+          "work_zone",
+          "storage_zone"
+        ]
+      }
+    },
+    "editing_asset_refs": [
+      {
+        "asset_id": "asset-bed-queen-ash-01",
+        "kind": "gltf",
+        "uri": "asset://furniture/bed/queen-ash-01.glb",
+        "bound_to": "object-scene-fixture-fixture-bedroom-arkitscene-01a4d62d"
+      },
+      {
+        "asset_id": "asset-storage-cabinet-01",
+        "kind": "gltf",
+        "uri": "asset://furniture/storage/cabinet-01.glb",
+        "bound_to": "object-scene-fixture-fixture-bedroom-arkitscene-e099c0d6"
+      },
+      {
+        "asset_id": "asset-chair-upholstered-01",
+        "kind": "gltf",
+        "uri": "asset://furniture/chair/upholstered-01.glb",
+        "bound_to": "object-scene-fixture-fixture-bedroom-arkitscene-d5bf6c2c"
+      },
+      {
+        "asset_id": "asset-table-round-01",
+        "kind": "gltf",
+        "uri": "asset://furniture/table/round-01.glb",
+        "bound_to": "object-scene-fixture-fixture-bedroom-arkitscene-eaa69bda"
+      },
+      {
+        "asset_id": "asset-television-wall-01",
+        "kind": "gltf",
+        "uri": "asset://electronics/television/wall-01.glb",
+        "bound_to": "object-scene-fixture-fixture-bedroom-arkitscene-60652152"
+      },
+      {
+        "asset_id": "asset-storage-cabinet-01",
+        "kind": "gltf",
+        "uri": "asset://furniture/storage/cabinet-01.glb",
+        "bound_to": "object-scene-fixture-fixture-bedroom-arkitscene-49861c03"
+      },
+      {
+        "asset_id": "asset-television-wall-01",
+        "kind": "gltf",
+        "uri": "asset://electronics/television/wall-01.glb",
+        "bound_to": "object-scene-fixture-fixture-bedroom-arkitscene-d3192ea9"
+      },
+      {
+        "asset_id": "asset-storage-cabinet-01",
+        "kind": "gltf",
+        "uri": "asset://furniture/storage/cabinet-01.glb",
+        "bound_to": "object-scene-fixture-fixture-bedroom-arkitscene-28ca61f1"
+      },
+      {
+        "asset_id": "asset-chair-upholstered-01",
+        "kind": "gltf",
+        "uri": "asset://furniture/chair/upholstered-01.glb",
+        "bound_to": "object-scene-fixture-fixture-bedroom-arkitscene-0e81ca07"
+      }
+    ],
+    "created_at": "2026-04-19T04:36:26.629Z"
+  },
+  "derived_state_cache": {
+    "zones": [
+      {
+        "zone_id": "zone-object-scene-fixture-fixture-bedroom-ark-f4042bfb",
+        "kind": "bed_access",
+        "entity_id": "object-scene-fixture-fixture-bedroom-arkitscene-01a4d62d",
+        "polygon": {
+          "vertices": [
+            {
+              "x": 1.827,
+              "y": -0.287
+            },
+            {
+              "x": 4.088,
+              "y": -0.287
+            },
+            {
+              "x": 4.088,
+              "y": 0.698
+            },
+            {
+              "x": 1.827,
+              "y": 0.698
+            }
+          ]
+        }
+      },
+      {
+        "zone_id": "zone-object-scene-fixture-fixture-bedroom-ark-df5b7519",
+        "kind": "storage_access",
+        "entity_id": "object-scene-fixture-fixture-bedroom-arkitscene-e099c0d6",
+        "polygon": {
+          "vertices": [
+            {
+              "x": 0.738,
+              "y": 0.329
+            },
+            {
+              "x": 0.718,
+              "y": -0.034
+            },
+            {
+              "x": 1.374,
+              "y": -0.07
+            },
+            {
+              "x": 1.394,
+              "y": 0.292
+            }
+          ]
+        }
+      },
+      {
+        "zone_id": "zone-object-scene-fixture-fixture-bedroom-ark-121f53b7",
+        "kind": "storage_access",
+        "entity_id": "object-scene-fixture-fixture-bedroom-arkitscene-49861c03",
+        "polygon": {
+          "vertices": [
+            {
+              "x": 2.738,
+              "y": 3.837
+            },
+            {
+              "x": 2.77,
+              "y": 4.26
+            },
+            {
+              "x": 1.288,
+              "y": 4.373
+            },
+            {
+              "x": 1.256,
+              "y": 3.95
+            }
+          ]
+        }
+      },
+      {
+        "zone_id": "zone-object-scene-fixture-fixture-bedroom-ark-d5805dbd",
+        "kind": "storage_access",
+        "entity_id": "object-scene-fixture-fixture-bedroom-arkitscene-28ca61f1",
+        "polygon": {
+          "vertices": [
+            {
+              "x": 1.256,
+              "y": 3.665
+            },
+            {
+              "x": 1.296,
+              "y": 4.191
+            },
+            {
+              "x": 0.397,
+              "y": 4.26
+            },
+            {
+              "x": 0.356,
+              "y": 3.734
+            }
+          ]
+        }
+      }
+    ],
+    "clearance_paths": [],
+    "soft_scores": {},
+    "hard_violations": [],
+    "selection_context_summary": "Bed captured as primary sleep anchor."
+  },
+  "bookmarks": [
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-a62e2c50",
+      "name": "Entry view",
+      "camera_pose": {
+        "position": {
+          "x": 2.258,
+          "y": 1.05,
+          "z": 1.65
+        },
+        "yaw_degrees": 4.037
+      },
+      "fov": 60,
+      "created_at": "2026-04-19T04:36:26.629Z",
+      "updated_at": "2026-04-19T04:36:26.629Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-7ab3a09a",
+      "name": "Captured frame_000001",
+      "camera_pose": {
+        "position": {
+          "x": -0.13422744207193626,
+          "y": 1.6877892315766239,
+          "z": 0.5642965963154948
+        },
+        "yaw_degrees": -89.77589046628198
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-79b39f07",
+      "name": "Captured frame_000002",
+      "camera_pose": {
+        "position": {
+          "x": -0.13955990107453908,
+          "y": 1.6874301168440113,
+          "z": 0.5728909068681347
+        },
+        "yaw_degrees": -89.81431570914961
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-78b39d74",
+      "name": "Captured frame_000003",
+      "camera_pose": {
+        "position": {
+          "x": -0.13662103217800364,
+          "y": 1.6886723023913317,
+          "z": 0.5779267471953238
+        },
+        "yaw_degrees": -90.24333904526394
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-77b39be1",
+      "name": "Captured frame_000004",
+      "camera_pose": {
+        "position": {
+          "x": -0.13714738113781763,
+          "y": 1.687478708226619,
+          "z": 0.5816907872706963
+        },
+        "yaw_degrees": -90.13528776999561
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-76b39a4e",
+      "name": "Captured frame_000005",
+      "camera_pose": {
+        "position": {
+          "x": -0.1361597187570094,
+          "y": 1.6890977999528605,
+          "z": 0.5854072174384384
+        },
+        "yaw_degrees": -89.99625746182166
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-75b398bb",
+      "name": "Captured frame_000006",
+      "camera_pose": {
+        "position": {
+          "x": -0.136366967112253,
+          "y": 1.6903357519242659,
+          "z": 0.5878160576510852
+        },
+        "yaw_degrees": -90.39425784691555
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-74b39728",
+      "name": "Captured frame_000007",
+      "camera_pose": {
+        "position": {
+          "x": -0.1336522193312359,
+          "y": 1.6890785518528275,
+          "z": 0.6308047845672804
+        },
+        "yaw_degrees": -90.5710069736007
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-73b39595",
+      "name": "Captured frame_000008",
+      "camera_pose": {
+        "position": {
+          "x": -0.09954713632535266,
+          "y": 1.6724952318252315,
+          "z": 0.9130523897565053
+        },
+        "yaw_degrees": -94.62222487961094
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-72b39402",
+      "name": "Captured frame_000009",
+      "camera_pose": {
+        "position": {
+          "x": 0.13876303927041977,
+          "y": 1.7296923984437522,
+          "z": 1.2877938698568767
+        },
+        "yaw_degrees": -120.15154451625965
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-f5b090a4",
+      "name": "Captured frame_000010",
+      "camera_pose": {
+        "position": {
+          "x": 0.3060835790227465,
+          "y": 1.6687078232126988,
+          "z": 1.4619152975673104
+        },
+        "yaw_degrees": -134.02490721046877
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-f6b09237",
+      "name": "Captured frame_000011",
+      "camera_pose": {
+        "position": {
+          "x": 0.563938679093753,
+          "y": 1.6218208220814807,
+          "z": 1.6286760263841131
+        },
+        "yaw_degrees": -137.06936881819095
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-f7b093ca",
+      "name": "Captured frame_000012",
+      "camera_pose": {
+        "position": {
+          "x": 0.8768711641724153,
+          "y": 1.7306118394696823,
+          "z": 1.6495593755400453
+        },
+        "yaw_degrees": -148.69219165914527
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-f8b0955d",
+      "name": "Captured frame_000013",
+      "camera_pose": {
+        "position": {
+          "x": 1.1390141070396131,
+          "y": 1.7464792379939413,
+          "z": 1.591916792850085
+        },
+        "yaw_degrees": -156.80991443657706
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-f1b08a58",
+      "name": "Captured frame_000014",
+      "camera_pose": {
+        "position": {
+          "x": 1.434991326986479,
+          "y": 1.6574906368134825,
+          "z": 1.5313376044377873
+        },
+        "yaw_degrees": -168.36279449832338
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-f2b08beb",
+      "name": "Captured frame_000015",
+      "camera_pose": {
+        "position": {
+          "x": 1.631370553153673,
+          "y": 1.7448913969867426,
+          "z": 1.4363459821181612
+        },
+        "yaw_degrees": -176.42580459712568
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-f3b08d7e",
+      "name": "Captured frame_000016",
+      "camera_pose": {
+        "position": {
+          "x": 1.7366512665481193,
+          "y": 1.8167289381479161,
+          "z": 1.2681943313865207
+        },
+        "yaw_degrees": -170.1442891553794
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-f4b08f11",
+      "name": "Captured frame_000017",
+      "camera_pose": {
+        "position": {
+          "x": 1.7714762353276003,
+          "y": 1.8756308644721118,
+          "z": 1.151065729732173
+        },
+        "yaw_degrees": -157.31050513253297
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-edb0840c",
+      "name": "Captured frame_000018",
+      "camera_pose": {
+        "position": {
+          "x": 1.8633095924683305,
+          "y": 1.9725188496781771,
+          "z": 1.1196910685130128
+        },
+        "yaw_degrees": -143.89242918842356
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-eeb0859f",
+      "name": "Captured frame_000019",
+      "camera_pose": {
+        "position": {
+          "x": 1.9430109151802255,
+          "y": 1.9796036115537314,
+          "z": 1.3179797298841325
+        },
+        "yaw_degrees": -144.11709614538194
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-67b7ffdf",
+      "name": "Captured frame_000020",
+      "camera_pose": {
+        "position": {
+          "x": 2.0755472651319886,
+          "y": 1.9587067823306763,
+          "z": 1.5156701519796396
+        },
+        "yaw_degrees": -142.41866569625847
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-66b7fe4c",
+      "name": "Captured frame_000021",
+      "camera_pose": {
+        "position": {
+          "x": 2.097986897983867,
+          "y": 2.0297026911917695,
+          "z": 1.6135996614471186
+        },
+        "yaw_degrees": -138.9483674884419
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-69b80305",
+      "name": "Captured frame_000022",
+      "camera_pose": {
+        "position": {
+          "x": 2.126024540173843,
+          "y": 2.1371227503823307,
+          "z": 1.6525787810166255
+        },
+        "yaw_degrees": -119.04203096735152
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-68b80172",
+      "name": "Captured frame_000023",
+      "camera_pose": {
+        "position": {
+          "x": 2.1975566984191617,
+          "y": 2.2173780293732936,
+          "z": 1.5893713822606237
+        },
+        "yaw_degrees": -102.46603622667834
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-63b7f993",
+      "name": "Captured frame_000024",
+      "camera_pose": {
+        "position": {
+          "x": 2.2916776343028737,
+          "y": 2.2235193966801186,
+          "z": 1.4205962094963938
+        },
+        "yaw_degrees": -103.77783203956713
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-62b7f800",
+      "name": "Captured frame_000025",
+      "camera_pose": {
+        "position": {
+          "x": 2.344018908245428,
+          "y": 2.246098862987406,
+          "z": 1.2766636321802767
+        },
+        "yaw_degrees": -101.96088326759278
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-65b7fcb9",
+      "name": "Captured frame_000026",
+      "camera_pose": {
+        "position": {
+          "x": 2.377586746155853,
+          "y": 2.343301290570655,
+          "z": 1.1365069453549794
+        },
+        "yaw_degrees": -85.32457495709367
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-64b7fb26",
+      "name": "Captured frame_000027",
+      "camera_pose": {
+        "position": {
+          "x": 2.4186456089215027,
+          "y": 2.3529689217446057,
+          "z": 1.0944978084656407
+        },
+        "yaw_degrees": -57.0241193253822
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-6fb80c77",
+      "name": "Captured frame_000028",
+      "camera_pose": {
+        "position": {
+          "x": 2.476695221112696,
+          "y": 2.268693572039764,
+          "z": 1.245706941734043
+        },
+        "yaw_degrees": -49.325123185386055
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-6eb80ae4",
+      "name": "Captured frame_000029",
+      "camera_pose": {
+        "position": {
+          "x": 2.542705068097391,
+          "y": 2.318162447214444,
+          "z": 1.3704744287206236
+        },
+        "yaw_degrees": -49.25326674978602
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-61b5b7d6",
+      "name": "Captured frame_000030",
+      "camera_pose": {
+        "position": {
+          "x": 2.6153313167461407,
+          "y": 2.391358112577821,
+          "z": 1.5349511015127426
+        },
+        "yaw_degrees": -43.81735004378249
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-62b5b969",
+      "name": "Captured frame_000031",
+      "camera_pose": {
+        "position": {
+          "x": 2.6964358580495187,
+          "y": 2.288153227915945,
+          "z": 1.622580777885408
+        },
+        "yaw_degrees": -27.52616266356624
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-5fb5b4b0",
+      "name": "Captured frame_000032",
+      "camera_pose": {
+        "position": {
+          "x": 2.688163973786563,
+          "y": 2.247610443322393,
+          "z": 1.6328162987346913
+        },
+        "yaw_degrees": -10.453795806860613
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-60b5b643",
+      "name": "Captured frame_000033",
+      "camera_pose": {
+        "position": {
+          "x": 2.5968223579108853,
+          "y": 2.2576596646426053,
+          "z": 1.5653705024408449
+        },
+        "yaw_degrees": -4.622628197945611
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-65b5be22",
+      "name": "Captured frame_000034",
+      "camera_pose": {
+        "position": {
+          "x": 2.501273730374843,
+          "y": 2.2405955859339053,
+          "z": 1.4284060805702525
+        },
+        "yaw_degrees": -6.415197334157336
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-66b5bfb5",
+      "name": "Captured frame_000035",
+      "camera_pose": {
+        "position": {
+          "x": 2.42725486306309,
+          "y": 2.2219791083699487,
+          "z": 1.2917528627979649
+        },
+        "yaw_degrees": -1.6926321309096881
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-63b5bafc",
+      "name": "Captured frame_000036",
+      "camera_pose": {
+        "position": {
+          "x": 2.302570033213661,
+          "y": 2.229213092885611,
+          "z": 1.1816165869341577
+        },
+        "yaw_degrees": 7.602084920148839
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-64b5bc8f",
+      "name": "Captured frame_000037",
+      "camera_pose": {
+        "position": {
+          "x": 1.9645317576512005,
+          "y": 2.233351023533932,
+          "z": 1.1849463786514904
+        },
+        "yaw_degrees": 19.250422385454947
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-69b5c46e",
+      "name": "Captured frame_000038",
+      "camera_pose": {
+        "position": {
+          "x": 1.8583852744221425,
+          "y": 2.184824790511687,
+          "z": 1.3439101301069982
+        },
+        "yaw_degrees": 22.895989143938756
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-6ab5c601",
+      "name": "Captured frame_000039",
+      "camera_pose": {
+        "position": {
+          "x": 1.7695475047975546,
+          "y": 2.110976212274707,
+          "z": 1.4481781746191904
+        },
+        "yaw_degrees": 23.737176365778282
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-e3a9b889",
+      "name": "Captured frame_000040",
+      "camera_pose": {
+        "position": {
+          "x": 1.693913996028431,
+          "y": 2.020491486244499,
+          "z": 1.5295272198823497
+        },
+        "yaw_degrees": 28.1408485629706
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-e2a9b6f6",
+      "name": "Captured frame_000041",
+      "camera_pose": {
+        "position": {
+          "x": 1.6168233287528144,
+          "y": 1.922240367493847,
+          "z": 1.5540610928586656
+        },
+        "yaw_degrees": 41.502552937359376
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-e1a9b563",
+      "name": "Captured frame_000042",
+      "camera_pose": {
+        "position": {
+          "x": 1.5366690605885411,
+          "y": 1.8703880321308393,
+          "z": 1.5076406310079005
+        },
+        "yaw_degrees": 51.711931962859936
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-e0a9b3d0",
+      "name": "Captured frame_000043",
+      "camera_pose": {
+        "position": {
+          "x": 1.466478663433532,
+          "y": 1.8761516963542169,
+          "z": 1.4195330297312536
+        },
+        "yaw_degrees": 53.657928324234845
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-e7a9bed5",
+      "name": "Captured frame_000044",
+      "camera_pose": {
+        "position": {
+          "x": 1.3141938678750402,
+          "y": 1.8784189053590383,
+          "z": 1.2243661862724324
+        },
+        "yaw_degrees": 58.36369301507979
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-e6a9bd42",
+      "name": "Captured frame_000045",
+      "camera_pose": {
+        "position": {
+          "x": 1.0710747325661236,
+          "y": 1.7949901920751636,
+          "z": 1.1076795099443721
+        },
+        "yaw_degrees": 65.27047979215456
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-e5a9bbaf",
+      "name": "Captured frame_000046",
+      "camera_pose": {
+        "position": {
+          "x": 0.7078014965435039,
+          "y": 1.594250461973592,
+          "z": 1.0339702316188824
+        },
+        "yaw_degrees": 80.61845095544098
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-e4a9ba1c",
+      "name": "Captured frame_000047",
+      "camera_pose": {
+        "position": {
+          "x": 0.25440224610166173,
+          "y": 1.4962933981570907,
+          "z": 0.9133554856182927
+        },
+        "yaw_degrees": 85.25672360273201
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    },
+    {
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-eba9c521",
+      "name": "Captured frame_000048",
+      "camera_pose": {
+        "position": {
+          "x": 0.04528052228633622,
+          "y": 1.5000959301604324,
+          "z": 0.7444207844537019
+        },
+        "yaw_degrees": 89.06231163545303
+      },
+      "fov": 48.735,
+      "created_at": "2026-04-19T04:36:26.637Z",
+      "updated_at": "2026-04-19T04:36:26.637Z"
+    }
+  ],
+  "photoreal_gallery": [],
+  "splat": {
+    "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+    "source_scene_version": 1,
+    "status": "ready",
+    "asset_id": "splat:a8b557d707fe0ece",
+    "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/splats/splat_a8b557d707fe0ece.splat",
+    "job_id": null,
+    "updated_at": "2026-04-19T05:01:45.719720Z",
+    "gaussian_count": 200000
+  },
+  "captured_frames": [
+    {
+      "frame_id": "frame_000001",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:01.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-7ab3a09a",
+      "camera_pose": {
+        "position": {
+          "x": -0.13422744207193626,
+          "y": 1.6877892315766239,
+          "z": 0.5642965963154948
+        },
+        "yaw_degrees": -89.77589046628198
+      },
+      "camera_transform": [
+        0.003911426865661705,
+        -0.9999891778250866,
+        0.00251892290104711,
+        0,
+        -0.9999508128475935,
+        -0.003888293116068642,
+        0.009124311594861158,
+        0,
+        -0.009114418539389067,
+        -0.0025544880799052883,
+        -0.9999551999791483,
+        0,
+        -0.13422744207193626,
+        1.6877892315766239,
+        0.5642965963154948,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-85e933af",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000001.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-85e933af",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000001.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000002",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:02.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-79b39f07",
+      "camera_pose": {
+        "position": {
+          "x": -0.13955990107453908,
+          "y": 1.6874301168440113,
+          "z": 0.5728909068681347
+        },
+        "yaw_degrees": -89.81431570914961
+      },
+      "camera_transform": [
+        0.0032405652983791278,
+        -0.9999233858834127,
+        -0.011946593656718622,
+        0,
+        -0.9999883059950094,
+        -0.0031974269184504855,
+        -0.0036282687790161385,
+        0,
+        0.0035897924422671097,
+        0.01195821159509125,
+        -0.9999220542450639,
+        0,
+        -0.13955990107453908,
+        1.6874301168440113,
+        0.5728909068681347,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-86e93542",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000002.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-86e93542",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000002.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000003",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:03.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-78b39d74",
+      "camera_pose": {
+        "position": {
+          "x": -0.13662103217800364,
+          "y": 1.6886723023913317,
+          "z": 0.5779267471953238
+        },
+        "yaw_degrees": -90.24333904526394
+      },
+      "camera_transform": [
+        -0.004246162712362445,
+        -0.9997809414742059,
+        -0.020494857090759377,
+        0,
+        -0.9998973609247123,
+        0.0045253194553518394,
+        -0.013593715445851688,
+        0,
+        0.013683483402113525,
+        0.020435032389930788,
+        -0.9996975401256155,
+        0,
+        -0.13662103217800364,
+        1.6886723023913317,
+        0.5779267471953238,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-87e936d5",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000003.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-87e936d5",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000003.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000004",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:04.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-77b39be1",
+      "camera_pose": {
+        "position": {
+          "x": -0.13714738113781763,
+          "y": 1.687478708226619,
+          "z": 0.5816907872706963
+        },
+        "yaw_degrees": -90.13528776999561
+      },
+      "camera_transform": [
+        -0.0023604466827371606,
+        -0.9996718945654987,
+        -0.025505519153398243,
+        0,
+        -0.9998988368163174,
+        0.0027172033654225825,
+        -0.013961838677128455,
+        0,
+        0.014026561404463324,
+        0.02546998275808887,
+        -0.9995771783876768,
+        0,
+        -0.13714738113781763,
+        1.687478708226619,
+        0.5816907872706963,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-80e92bd0",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000004.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-80e92bd0",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000004.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000005",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:05.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-76b39a4e",
+      "camera_pose": {
+        "position": {
+          "x": -0.1361597187570094,
+          "y": 1.6890977999528605,
+          "z": 0.5854072174384384
+        },
+        "yaw_degrees": -89.99625746182166
+      },
+      "camera_transform": [
+        6.529226385876274e-05,
+        -0.999581292258671,
+        -0.028935029003013972,
+        0,
+        -0.9997122905443728,
+        0.0006287916770953972,
+        -0.023977922252563122,
+        0,
+        0.02398607661630861,
+        0.02892826969439747,
+        -0.9992936622139884,
+        0,
+        -0.1361597187570094,
+        1.6890977999528605,
+        0.5854072174384384,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-81e92d63",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000005.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-81e92d63",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000005.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000006",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:06.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-75b398bb",
+      "camera_pose": {
+        "position": {
+          "x": -0.136366967112253,
+          "y": 1.6903357519242659,
+          "z": 0.5878160576510852
+        },
+        "yaw_degrees": -90.39425784691555
+      },
+      "camera_transform": [
+        -0.006878318606876155,
+        -0.9995803742629457,
+        -0.028138303457953394,
+        0,
+        -0.9996837235981741,
+        0.007554272225158698,
+        -0.023987199587226084,
+        0,
+        0.02418969834519493,
+        0.02796441237533456,
+        -0.9993161912700458,
+        0,
+        -0.136366967112253,
+        1.6903357519242659,
+        0.5878160576510852,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-82e92ef6",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000006.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-82e92ef6",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000006.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000007",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:07.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-74b39728",
+      "camera_pose": {
+        "position": {
+          "x": -0.1336522193312359,
+          "y": 1.6890785518528275,
+          "z": 0.6308047845672804
+        },
+        "yaw_degrees": -90.5710069736007
+      },
+      "camera_transform": [
+        -0.009960351028804881,
+        -0.9994049269574155,
+        -0.03302398190143495,
+        0,
+        -0.9974456044967994,
+        0.01226607526843515,
+        -0.07036909454813073,
+        0,
+        0.07073229444460048,
+        0.0322387247072896,
+        -0.9969742259215381,
+        0,
+        -0.1336522193312359,
+        1.6890785518528275,
+        0.6308047845672804,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-83e93089",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000007.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-83e93089",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000007.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000008",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:08.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-73b39595",
+      "camera_pose": {
+        "position": {
+          "x": -0.09954713632535266,
+          "y": 1.6724952318252315,
+          "z": 0.9130523897565053
+        },
+        "yaw_degrees": -94.62222487961094
+      },
+      "camera_transform": [
+        -0.08048172856598768,
+        -0.995463347039715,
+        0.05074855729495539,
+        0,
+        -0.9442319009450961,
+        0.05983249152865455,
+        -0.3237996142602463,
+        0,
+        0.31929423515723143,
+        -0.07397835938950162,
+        -0.9447636708391133,
+        0,
+        -0.09954713632535266,
+        1.6724952318252315,
+        0.9130523897565053,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-8ce93eb4",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000008.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-8ce93eb4",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000008.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000009",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:09.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-72b39402",
+      "camera_pose": {
+        "position": {
+          "x": 0.13876303927041977,
+          "y": 1.7296923984437522,
+          "z": 1.2877938698568767
+        },
+        "yaw_degrees": -120.15154451625965
+      },
+      "camera_transform": [
+        -0.5019823962601921,
+        -0.8641723468194689,
+        0.03492604812180955,
+        0,
+        -0.539267966537925,
+        0.2811688955144308,
+        -0.7938098717333051,
+        0,
+        0.6761684214091389,
+        -0.41731308053753424,
+        -0.6071623001318072,
+        0,
+        0.13876303927041977,
+        1.7296923984437522,
+        1.2877938698568767,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-8de94047",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000009.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-8de94047",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000009.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000010",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:10.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-f5b090a4",
+      "camera_pose": {
+        "position": {
+          "x": 0.3060835790227465,
+          "y": 1.6687078232126988,
+          "z": 1.4619152975673104
+        },
+        "yaw_degrees": -134.02490721046877
+      },
+      "camera_transform": [
+        -0.6943061948388662,
+        -0.7183499167708967,
+        0.04372990834223345,
+        0,
+        -0.18845101532754244,
+        0.12282807665877493,
+        -0.9743713247044602,
+        0,
+        0.6945682994712563,
+        -0.6847529924429333,
+        -0.22065406570026158,
+        0,
+        0.3060835790227465,
+        1.6687078232126988,
+        1.4619152975673104,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-8aeb7a25",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000010.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-8aeb7a25",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000010.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000011",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:11.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-f6b09237",
+      "camera_pose": {
+        "position": {
+          "x": 0.563938679093753,
+          "y": 1.6218208220814807,
+          "z": 1.6286760263841131
+        },
+        "yaw_degrees": -137.06936881819095
+      },
+      "camera_transform": [
+        -0.7302851143708549,
+        -0.6793507256070088,
+        0.07187658412569414,
+        0,
+        0.1298207710837203,
+        -0.24130656019023833,
+        -0.9617264223282956,
+        0,
+        0.6706938341177557,
+        -0.6930034167494309,
+        0.26441642394155274,
+        0,
+        0.563938679093753,
+        1.6218208220814807,
+        1.6286760263841131,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-89eb7892",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000011.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-89eb7892",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000011.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000012",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:12.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-f7b093ca",
+      "camera_pose": {
+        "position": {
+          "x": 0.8768711641724153,
+          "y": 1.7306118394696823,
+          "z": 1.6495593755400453
+        },
+        "yaw_degrees": -148.69219165914527
+      },
+      "camera_transform": [
+        -0.8537327843407014,
+        -0.5192370410351399,
+        0.03915645743610646,
+        0,
+        0.17757112310439976,
+        -0.36100300981224465,
+        -0.9155027706926627,
+        0,
+        0.48949854870195003,
+        -0.7746416733713547,
+        0.40040160925639623,
+        0,
+        0.8768711641724153,
+        1.7306118394696823,
+        1.6495593755400453,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-88eb76ff",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000012.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-88eb76ff",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000012.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000013",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:13.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-f8b0955d",
+      "camera_pose": {
+        "position": {
+          "x": 1.1390141070396131,
+          "y": 1.7464792379939413,
+          "z": 1.591916792850085
+        },
+        "yaw_degrees": -156.80991443657706
+      },
+      "camera_transform": [
+        -0.9154131633774418,
+        -0.3921590958566471,
+        0.09071925844164538,
+        0,
+        0.023787578392604286,
+        -0.27769338990721426,
+        -0.960375203926078,
+        0,
+        0.40181201006132294,
+        -0.8769821119833272,
+        0.26353269973903126,
+        0,
+        1.1390141070396131,
+        1.7464792379939413,
+        1.591916792850085,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-87eb756c",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000013.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-87eb756c",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000013.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000014",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:14.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-f1b08a58",
+      "camera_pose": {
+        "position": {
+          "x": 1.434991326986479,
+          "y": 1.6574906368134825,
+          "z": 1.5313376044377873
+        },
+        "yaw_degrees": -168.36279449832338
+      },
+      "camera_transform": [
+        -0.972985647513745,
+        -0.20038379668397358,
+        0.11465279655889063,
+        0,
+        -0.11000011442351623,
+        -0.0342386407320161,
+        -0.9933416785314292,
+        0,
+        0.20297513285885974,
+        -0.979119017028747,
+        0.011271465458775332,
+        0,
+        1.434991326986479,
+        1.6574906368134825,
+        1.5313376044377873,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-86eb73d9",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000014.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-86eb73d9",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000014.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000015",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:15.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-f2b08beb",
+      "camera_pose": {
+        "position": {
+          "x": 1.631370553153673,
+          "y": 1.7448913969867426,
+          "z": 1.4363459821181612
+        },
+        "yaw_degrees": -176.42580459712568
+      },
+      "camera_transform": [
+        -0.996409009386085,
+        -0.06223821982196143,
+        0.05740635859932161,
+        0,
+        -0.07347281738695716,
+        0.2985966986622851,
+        -0.9515470333374001,
+        0,
+        0.04208124427180765,
+        -0.952347843774205,
+        -0.30209725807951116,
+        0,
+        1.631370553153673,
+        1.7448913969867426,
+        1.4363459821181612,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-85eb7246",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000015.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-85eb7246",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000015.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000016",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:16.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-f3b08d7e",
+      "camera_pose": {
+        "position": {
+          "x": 1.7366512665481193,
+          "y": 1.8167289381479161,
+          "z": 1.2681943313865207
+        },
+        "yaw_degrees": -170.1442891553794
+      },
+      "camera_transform": [
+        -0.9817795548380863,
+        -0.1705660438343015,
+        0.08376234471792356,
+        0,
+        -0.17113099224533238,
+        0.6020221399400658,
+        -0.7799253339359554,
+        0,
+        0.08260199268212058,
+        -0.7800490803229619,
+        -0.620242164877755,
+        0,
+        1.7366512665481193,
+        1.8167289381479161,
+        1.2681943313865207,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-84eb70b3",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000016.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-84eb70b3",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000016.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000017",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:17.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-f4b08f11",
+      "camera_pose": {
+        "position": {
+          "x": 1.7714762353276003,
+          "y": 1.8756308644721118,
+          "z": 1.151065729732173
+        },
+        "yaw_degrees": -157.31050513253297
+      },
+      "camera_transform": [
+        -0.9223821377141266,
+        -0.3856421108702427,
+        0.02216651414772909,
+        0,
+        -0.31957309932348477,
+        0.7296052157680242,
+        -0.6046067013463186,
+        0,
+        0.2169890002159099,
+        -0.5647622432914914,
+        -0.7962156632079415,
+        0,
+        1.7714762353276003,
+        1.8756308644721118,
+        1.151065729732173,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-83eb6f20",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000017.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-83eb6f20",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000017.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000018",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:18.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-edb0840c",
+      "camera_pose": {
+        "position": {
+          "x": 1.8633095924683305,
+          "y": 1.9725188496781771,
+          "z": 1.1196910685130128
+        },
+        "yaw_degrees": -143.89242918842356
+      },
+      "camera_transform": [
+        -0.8071769402711441,
+        -0.5887669360621125,
+        0.042648353948849194,
+        0,
+        -0.4330923164195503,
+        0.5415612081151175,
+        -0.7205154428069135,
+        0,
+        0.40111897555820275,
+        -0.6000541249461809,
+        -0.6921261551062863,
+        0,
+        1.8633095924683305,
+        1.9725188496781771,
+        1.1196910685130128,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-92eb86bd",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000018.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-92eb86bd",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000018.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000019",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:19.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-eeb0859f",
+      "camera_pose": {
+        "position": {
+          "x": 1.9430109151802255,
+          "y": 1.9796036115537314,
+          "z": 1.3179797298841325
+        },
+        "yaw_degrees": -144.11709614538194
+      },
+      "camera_transform": [
+        -0.807503587658381,
+        -0.5841679899488208,
+        0.08176622431051722,
+        0,
+        -0.25044010269503963,
+        0.2140299780042456,
+        -0.9441773792448115,
+        0,
+        0.5340577785979168,
+        -0.7829041627393848,
+        -0.3191290664988099,
+        0,
+        1.9430109151802255,
+        1.9796036115537314,
+        1.3179797298841325,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-91eb852a",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000019.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-91eb852a",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000019.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000020",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:20.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-67b7ffdf",
+      "camera_pose": {
+        "position": {
+          "x": 2.0755472651319886,
+          "y": 1.9587067823306763,
+          "z": 1.5156701519796396
+        },
+        "yaw_degrees": -142.41866569625847
+      },
+      "camera_transform": [
+        -0.7922637342900681,
+        -0.6097141424941784,
+        -0.023808397076348353,
+        0,
+        0.05983938158645297,
+        -0.03880639028345112,
+        -0.997453413691346,
+        0,
+        0.6072375348577419,
+        -0.7916708460690953,
+        0.06722981291165109,
+        0,
+        2.0755472651319886,
+        1.9587067823306763,
+        1.5156701519796396,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-90edc22e",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000020.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-90edc22e",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000020.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000021",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:21.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-66b7fe4c",
+      "camera_pose": {
+        "position": {
+          "x": 2.097986897983867,
+          "y": 2.0297026911917695,
+          "z": 1.6135996614471186
+        },
+        "yaw_degrees": -138.9483674884419
+      },
+      "camera_transform": [
+        -0.7534427480451821,
+        -0.6561507643178233,
+        -0.04231075399068773,
+        0,
+        0.24379901454856107,
+        -0.21902693887990643,
+        -0.9447694113115898,
+        0,
+        0.6106439764079186,
+        -0.7221449816553694,
+        0.324993168461571,
+        0,
+        2.097986897983867,
+        2.0297026911917695,
+        1.6135996614471186,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-91edc3c1",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000021.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-91edc3c1",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000021.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000022",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:22.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-69b80305",
+      "camera_pose": {
+        "position": {
+          "x": 2.126024540173843,
+          "y": 2.1371227503823307,
+          "z": 1.6525787810166255
+        },
+        "yaw_degrees": -119.04203096735152
+      },
+      "camera_transform": [
+        -0.4845119059572306,
+        -0.8725724163789725,
+        -0.06217387843984412,
+        0,
+        0.4257121509044716,
+        -0.17310088395046436,
+        -0.8881470872259032,
+        0,
+        0.7642102966840868,
+        -0.4567860135228843,
+        0.4553341194023254,
+        0,
+        2.126024540173843,
+        2.1371227503823307,
+        1.6525787810166255,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-8eedbf08",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000022.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-8eedbf08",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000022.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000023",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:23.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-68b80172",
+      "camera_pose": {
+        "position": {
+          "x": 2.1975566984191617,
+          "y": 2.2173780293732936,
+          "z": 1.5893713822606237
+        },
+        "yaw_degrees": -102.46603622667834
+      },
+      "camera_transform": [
+        -0.2157307880317808,
+        -0.9758358259960103,
+        -0.03470832461918888,
+        0,
+        0.2656818209717175,
+        -0.024456555488589993,
+        -0.9637505107125939,
+        0,
+        0.9396134296083358,
+        -0.2171320280297626,
+        0.26453787120815647,
+        0,
+        2.1975566984191617,
+        2.2173780293732936,
+        1.5893713822606237,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-8fedc09b",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000023.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-8fedc09b",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000023.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000024",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:24.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-63b7f993",
+      "camera_pose": {
+        "position": {
+          "x": 2.2916776343028737,
+          "y": 2.2235193966801186,
+          "z": 1.4205962094963938
+        },
+        "yaw_degrees": -103.77783203956713
+      },
+      "camera_transform": [
+        -0.23807585636724865,
+        -0.9708927150471668,
+        0.02621492863507474,
+        0,
+        -0.12654660031359766,
+        0.004247380326082517,
+        -0.991951570243949,
+        0,
+        0.9629672084573138,
+        -0.23947712965689744,
+        -0.12387437106690702,
+        0,
+        2.2916776343028737,
+        2.2235193966801186,
+        1.4205962094963938,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-94edc87a",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000024.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-94edc87a",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000024.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000025",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:25.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-62b7f800",
+      "camera_pose": {
+        "position": {
+          "x": 2.344018908245428,
+          "y": 2.246098862987406,
+          "z": 1.2766636321802767
+        },
+        "yaw_degrees": -101.96088326759278
+      },
+      "camera_transform": [
+        -0.20723088835647596,
+        -0.9782281529207187,
+        0.011182117165567329,
+        0,
+        -0.45673620866546083,
+        0.08663571935059,
+        -0.8853735301139887,
+        0,
+        0.8651285422438022,
+        -0.18858402097188504,
+        -0.46474581485925104,
+        0,
+        2.344018908245428,
+        2.246098862987406,
+        1.2766636321802767,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-95edca0d",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000025.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-95edca0d",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000025.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000026",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:26.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-65b7fcb9",
+      "camera_pose": {
+        "position": {
+          "x": 2.377586746155853,
+          "y": 2.343301290570655,
+          "z": 1.1365069453549794
+        },
+        "yaw_degrees": -85.32457495709367
+      },
+      "camera_transform": [
+        0.08115125936364431,
+        -0.9922733670323365,
+        0.0938511490713076,
+        0,
+        -0.6178909643718451,
+        -0.12396927198492547,
+        -0.7764292470992826,
+        0,
+        0.7820647219069059,
+        0.0050184342017968175,
+        -0.6231770102200789,
+        0,
+        2.377586746155853,
+        2.343301290570655,
+        1.1365069453549794,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-92edc554",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000026.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-92edc554",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000026.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000027",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:27.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-64b7fb26",
+      "camera_pose": {
+        "position": {
+          "x": 2.4186456089215027,
+          "y": 2.3529689217446057,
+          "z": 1.0944978084656407
+        },
+        "yaw_degrees": -57.0241193253822
+      },
+      "camera_transform": [
+        0.5422462046417093,
+        -0.8357559543236672,
+        0.0864929960412808,
+        0,
+        -0.5222328934263158,
+        -0.41588086747708053,
+        -0.7445239479627832,
+        0,
+        0.6582111048707999,
+        0.3585457974639319,
+        -0.6619690721972695,
+        0,
+        2.4186456089215027,
+        2.3529689217446057,
+        1.0944978084656407,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-93edc6e7",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000027.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-93edc6e7",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000027.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000028",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:28.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-6fb80c77",
+      "camera_pose": {
+        "position": {
+          "x": 2.476695221112696,
+          "y": 2.268693572039764,
+          "z": 1.245706941734043
+        },
+        "yaw_degrees": -49.325123185386055
+      },
+      "camera_transform": [
+        0.6512716570456563,
+        -0.7578450618338167,
+        0.038937013022359024,
+        0,
+        -0.3108028312605934,
+        -0.31320214688106396,
+        -0.8973884416848099,
+        0,
+        0.692276555149316,
+        0.5723419235415057,
+        -0.4395200720642972,
+        0,
+        2.476695221112696,
+        2.268693572039764,
+        1.245706941734043,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-88edb596",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000028.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-88edb596",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000028.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000029",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:29.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-6eb80ae4",
+      "camera_pose": {
+        "position": {
+          "x": 2.542705068097391,
+          "y": 2.318162447214444,
+          "z": 1.3704744287206236
+        },
+        "yaw_degrees": -49.25326674978602
+      },
+      "camera_transform": [
+        0.6526808286088914,
+        -0.7575607293276511,
+        0.010463142308526463,
+        0,
+        -0.17516978317400256,
+        -0.1643258659497416,
+        -0.9707278490095153,
+        0,
+        0.7371046621947144,
+        0.6317426304757539,
+        -0.2399540910474148,
+        0,
+        2.542705068097391,
+        2.318162447214444,
+        1.3704744287206236,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-89edb729",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000029.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-89edb729",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000029.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000030",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:30.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-61b5b7d6",
+      "camera_pose": {
+        "position": {
+          "x": 2.6153313167461407,
+          "y": 2.391358112577821,
+          "z": 1.5349511015127426
+        },
+        "yaw_degrees": -43.81735004378249
+      },
+      "camera_transform": [
+        0.721195600999838,
+        -0.692021060751928,
+        -0.031364893978115815,
+        0,
+        0.037313289604348876,
+        0.08401804382370355,
+        -0.9957653773509803,
+        0,
+        0.6917258297312484,
+        0.7169712824010557,
+        0.08641502586241202,
+        0,
+        2.6153313167461407,
+        2.391358112577821,
+        1.5349511015127426,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-96f00a37",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000030.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-96f00a37",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000030.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000031",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:31.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-62b5b969",
+      "camera_pose": {
+        "position": {
+          "x": 2.6964358580495187,
+          "y": 2.288153227915945,
+          "z": 1.622580777885408
+        },
+        "yaw_degrees": -27.52616266356624
+      },
+      "camera_transform": [
+        0.8861031323903783,
+        -0.4617904799756727,
+        -0.03963321046543511,
+        0,
+        0.11593296624002339,
+        0.30362297138225514,
+        -0.9457127674869361,
+        0,
+        0.4487547059438477,
+        0.8334042499608747,
+        0.32257800613247434,
+        0,
+        2.6964358580495187,
+        2.288153227915945,
+        1.622580777885408,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-95f008a4",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000031.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-95f008a4",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000031.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000032",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:32.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-5fb5b4b0",
+      "camera_pose": {
+        "position": {
+          "x": 2.688163973786563,
+          "y": 2.247610443322393,
+          "z": 1.6328162987346913
+        },
+        "yaw_degrees": -10.453795806860613
+      },
+      "camera_transform": [
+        0.9805385905605084,
+        -0.1809143248968819,
+        -0.07625011127019608,
+        0,
+        -0.010533921062783808,
+        0.33934402061805435,
+        -0.9406033553936626,
+        0,
+        0.19604364036778865,
+        0.9231011010273356,
+        0.3308341704743725,
+        0,
+        2.688163973786563,
+        2.247610443322393,
+        1.6328162987346913,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-98f00d5d",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000032.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-98f00d5d",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000032.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000033",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:33.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-60b5b643",
+      "camera_pose": {
+        "position": {
+          "x": 2.5968223579108853,
+          "y": 2.2576596646426053,
+          "z": 1.5653705024408449
+        },
+        "yaw_degrees": -4.622628197945611
+      },
+      "camera_transform": [
+        0.9963679386476519,
+        -0.08056192296449227,
+        -0.027580924627209902,
+        0,
+        -0.01757728941136332,
+        0.12234067905420438,
+        -0.9923325033200844,
+        0,
+        0.0833184837354701,
+        0.9892130886805023,
+        0.12048026996650878,
+        0,
+        2.5968223579108853,
+        2.2576596646426053,
+        1.5653705024408449,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-97f00bca",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000033.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-97f00bca",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000033.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000034",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:34.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-65b5be22",
+      "camera_pose": {
+        "position": {
+          "x": 2.501273730374843,
+          "y": 2.2405955859339053,
+          "z": 1.4284060805702525
+        },
+        "yaw_degrees": -6.415197334157336
+      },
+      "camera_transform": [
+        0.9935989231719273,
+        -0.11171684573000917,
+        0.01674891792694406,
+        0,
+        -0.007161692364053354,
+        -0.21026286857767873,
+        -0.9776186558469353,
+        0,
+        0.11273814808692237,
+        0.9712408931246785,
+        -0.2097170414828228,
+        0,
+        2.501273730374843,
+        2.2405955859339053,
+        1.4284060805702525,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-92f003eb",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000034.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-92f003eb",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000034.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000035",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:35.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-66b5bfb5",
+      "camera_pose": {
+        "position": {
+          "x": 2.42725486306309,
+          "y": 2.2219791083699487,
+          "z": 1.2917528627979649
+        },
+        "yaw_degrees": -1.6926321309096881
+      },
+      "camera_transform": [
+        0.9985708400607605,
+        -0.029508368239926523,
+        0.04455932656766974,
+        0,
+        0.026915254401449394,
+        -0.4426389518558904,
+        -0.8962958927611038,
+        0,
+        0.04617192286284601,
+        0.8962142681879908,
+        -0.44121212476020166,
+        0,
+        2.42725486306309,
+        2.2219791083699487,
+        1.2917528627979649,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-91f00258",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000035.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-91f00258",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000035.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000036",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:36.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-63b5bafc",
+      "camera_pose": {
+        "position": {
+          "x": 2.302570033213661,
+          "y": 2.229213092885611,
+          "z": 1.1816165869341577
+        },
+        "yaw_degrees": 7.602084920148839
+      },
+      "camera_transform": [
+        0.9887899925153882,
+        0.13196937464475847,
+        0.06984579341155789,
+        0,
+        0.13818164779100237,
+        -0.6315561881567469,
+        -0.7629171733646342,
+        0,
+        -0.05657015922889041,
+        0.7640162729659566,
+        -0.6427121842069177,
+        0,
+        2.302570033213661,
+        2.229213092885611,
+        1.1816165869341577,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-94f00711",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000036.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-94f00711",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000036.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000037",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:37.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-64b5bc8f",
+      "camera_pose": {
+        "position": {
+          "x": 1.9645317576512005,
+          "y": 2.233351023533932,
+          "z": 1.1849463786514904
+        },
+        "yaw_degrees": 19.250422385454947
+      },
+      "camera_transform": [
+        0.943991955118332,
+        0.32966455637233233,
+        0.014158705580066322,
+        0,
+        0.2157103182966223,
+        -0.5840769382825014,
+        -0.7825108234055994,
+        0,
+        -0.24969631004930687,
+        0.7417381009752516,
+        -0.6224759772950181,
+        0,
+        1.9645317576512005,
+        2.233351023533932,
+        1.1849463786514904,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-93f0057e",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000037.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-93f0057e",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000037.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000038",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:38.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-69b5c46e",
+      "camera_pose": {
+        "position": {
+          "x": 1.8583852744221425,
+          "y": 2.184824790511687,
+          "z": 1.3439101301069982
+        },
+        "yaw_degrees": 22.895989143938756
+      },
+      "camera_transform": [
+        0.9210940603308295,
+        0.3890093822682381,
+        -0.01604470412785891,
+        0,
+        0.12642675385659244,
+        -0.33782094693223597,
+        -0.9326806976254478,
+        0,
+        -0.36824177917850565,
+        0.8570581709085394,
+        -0.3603460610945504,
+        0,
+        1.8583852744221425,
+        2.184824790511687,
+        1.3439101301069982,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-8eeffd9f",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000038.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-8eeffd9f",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000038.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000039",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:39.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-6ab5c601",
+      "camera_pose": {
+        "position": {
+          "x": 1.7695475047975546,
+          "y": 2.110976212274707,
+          "z": 1.4481781746191904
+        },
+        "yaw_degrees": 23.737176365778282
+      },
+      "camera_transform": [
+        0.915103930512367,
+        0.4024109228768905,
+        -0.025499911964284916,
+        0,
+        -0.0012457654367064863,
+        -0.06041908922474853,
+        -0.9981723206569738,
+        0,
+        -0.40321612620193364,
+        0.9134631808708117,
+        -0.054788436408471586,
+        0,
+        1.7695475047975546,
+        2.110976212274707,
+        1.4481781746191904,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-8deffc0c",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000039.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-8deffc0c",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000039.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000040",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:40.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-e3a9b889",
+      "camera_pose": {
+        "position": {
+          "x": 1.693913996028431,
+          "y": 2.020491486244499,
+          "z": 1.5295272198823497
+        },
+        "yaw_degrees": 28.1408485629706
+      },
+      "camera_transform": [
+        0.8810992036665789,
+        0.47127073455739754,
+        -0.039599091502851735,
+        0,
+        -0.12867821589534098,
+        0.1583210343477329,
+        -0.9789669896564726,
+        0,
+        -0.455089123196888,
+        0.8676625754478493,
+        0.20013881461398927,
+        0,
+        1.693913996028431,
+        2.020491486244499,
+        1.5295272198823497,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-8cdeb158",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000040.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-8cdeb158",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000040.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000041",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:41.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-e2a9b6f6",
+      "camera_pose": {
+        "position": {
+          "x": 1.6168233287528144,
+          "y": 1.922240367493847,
+          "z": 1.5540610928586656
+        },
+        "yaw_degrees": 41.502552937359376
+      },
+      "camera_transform": [
+        0.7477878911011504,
+        0.6616462417483555,
+        -0.05511370703165114,
+        0,
+        -0.21654491978306986,
+        0.16457999662443273,
+        -0.9623002246841915,
+        0,
+        -0.6276317133786644,
+        0.7315310488908712,
+        0.26634706093738636,
+        0,
+        1.6168233287528144,
+        1.922240367493847,
+        1.5540610928586656,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-8ddeb2eb",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000041.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-8ddeb2eb",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000041.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000042",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:42.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-e1a9b563",
+      "camera_pose": {
+        "position": {
+          "x": 1.5366690605885411,
+          "y": 1.8703880321308393,
+          "z": 1.5076406310079005
+        },
+        "yaw_degrees": 51.711931962859936
+      },
+      "camera_transform": [
+        0.619094106723205,
+        0.7842448323115239,
+        -0.041018654454615056,
+        0,
+        -0.1061420454303052,
+        0.031808752993296,
+        -0.993842074690382,
+        0,
+        -0.7781107589620312,
+        0.6196355753389904,
+        0.10293396214005548,
+        0,
+        1.5366690605885411,
+        1.8703880321308393,
+        1.5076406310079005,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-8edeb47e",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000042.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-8edeb47e",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000042.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000043",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:43.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-e0a9b3d0",
+      "camera_pose": {
+        "position": {
+          "x": 1.466478663433532,
+          "y": 1.8761516963542169,
+          "z": 1.4195330297312536
+        },
+        "yaw_degrees": 53.657928324234845
+      },
+      "camera_transform": [
+        0.5924198215165404,
+        0.8052419206322253,
+        -0.024984081548767634,
+        0,
+        0.12435091650711505,
+        -0.12203772745996636,
+        -0.9847048505213364,
+        0,
+        -0.7959746256245553,
+        0.5802518783536438,
+        -0.1724301395606843,
+        0,
+        1.466478663433532,
+        1.8761516963542169,
+        1.4195330297312536,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-8fdeb611",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000043.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-8fdeb611",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000043.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000044",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:44.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-e7a9bed5",
+      "camera_pose": {
+        "position": {
+          "x": 1.3141938678750402,
+          "y": 1.8784189053590383,
+          "z": 1.2243661862724324
+        },
+        "yaw_degrees": 58.36369301507979
+      },
+      "camera_transform": [
+        0.5245217157141558,
+        0.8513885506152812,
+        0.0038086251442645547,
+        0,
+        0.5463891395669174,
+        -0.3331808893779235,
+        -0.7684070556135334,
+        0,
+        -0.6529440082484887,
+        0.4051271785927808,
+        -0.639950069347485,
+        0,
+        1.3141938678750402,
+        1.8784189053590383,
+        1.2243661862724324,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-90deb7a4",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000044.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-90deb7a4",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000044.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000045",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:45.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-e6a9bd42",
+      "camera_pose": {
+        "position": {
+          "x": 1.0710747325661236,
+          "y": 1.7949901920751636,
+          "z": 1.1076795099443721
+        },
+        "yaw_degrees": 65.27047979215456
+      },
+      "camera_transform": [
+        0.4183099582771591,
+        0.908238164240638,
+        0.010964297650013333,
+        0,
+        0.7576912688062883,
+        -0.34226415744416727,
+        -0.5556610366975099,
+        0,
+        -0.5009198738130471,
+        0.24074609767518648,
+        -0.8313366324620193,
+        0,
+        1.0710747325661236,
+        1.7949901920751636,
+        1.1076795099443721,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-91deb937",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000045.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-91deb937",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000045.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000046",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:46.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-e5a9bbaf",
+      "camera_pose": {
+        "position": {
+          "x": 0.7078014965435039,
+          "y": 1.594250461973592,
+          "z": 1.0339702316188824
+        },
+        "yaw_degrees": 80.61845095544098
+      },
+      "camera_transform": [
+        0.1626070303171826,
+        0.9841962935973384,
+        0.07011853792463246,
+        0,
+        0.8926851138186226,
+        -0.11646994354016971,
+        -0.4353711517985342,
+        0,
+        -0.42032397178612046,
+        0.133388185087777,
+        -0.8975162120100837,
+        0,
+        0.7078014965435039,
+        1.594250461973592,
+        1.0339702316188824,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-92debaca",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000046.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-92debaca",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000046.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000047",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:47.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-e4a9ba1c",
+      "camera_pose": {
+        "position": {
+          "x": 0.25440224610166173,
+          "y": 1.4962933981570907,
+          "z": 0.9133554856182927
+        },
+        "yaw_degrees": 85.25672360273201
+      },
+      "camera_transform": [
+        0.08251877966648657,
+        0.994496509837457,
+        0.06455496048694243,
+        0,
+        0.9525811632653531,
+        -0.05967258384358021,
+        -0.2983761219157083,
+        0,
+        -0.29288185057183136,
+        0.0861154728173036,
+        -0.9522627510026168,
+        0,
+        0.25440224610166173,
+        1.4962933981570907,
+        0.9133554856182927,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-93debc5d",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000047.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-93debc5d",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000047.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    },
+    {
+      "frame_id": "frame_000048",
+      "scene_id": "scene-fixture-fixture-bedroom-arkitscenes-aa7d578a",
+      "captured_at": "2026-04-19T00:00:48.000Z",
+      "bookmark_id": "bookmark-scene-fixture-fixture-bedroom-arkitscene-eba9c521",
+      "camera_pose": {
+        "position": {
+          "x": 0.04528052228633622,
+          "y": 1.5000959301604324,
+          "z": 0.7444207844537019
+        },
+        "yaw_degrees": 89.06231163545303
+      },
+      "camera_transform": [
+        0.016364602236053516,
+        0.9998406349512006,
+        0.00713473854012496,
+        0,
+        0.9872642170195456,
+        -0.01502859751440444,
+        -0.15837773533402255,
+        0,
+        -0.15824527034461222,
+        0.009635660700243867,
+        -0.9873528186299112,
+        0,
+        0.04528052228633622,
+        1.5000959301604324,
+        0.7444207844537019,
+        1
+      ],
+      "intrinsics": {
+        "fx": 211.949,
+        "fy": 211.949,
+        "cx": 127.933,
+        "cy": 95.9333,
+        "width": 256,
+        "height": 192
+      },
+      "rgb": {
+        "asset_id": "asset-frame-rgb-scene-fixture-fixture-bedroom-arkitscene-84dea4c0",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000048.rgb.jpg",
+        "content_type": "image/jpeg"
+      },
+      "depth": {
+        "asset_id": "asset-frame-depth-scene-fixture-fixture-bedroom-arkitscene-84dea4c0",
+        "uri": "/dev/fixtures/fixture-bedroom-arkitscenes/frames/frame_000048.depth.npy",
+        "content_type": "application/x-numpy"
+      },
+      "confidence": null
+    }
+  ]
+}
