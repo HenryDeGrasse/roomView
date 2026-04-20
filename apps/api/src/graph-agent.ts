@@ -44,6 +44,7 @@ import {
   type ConstraintEngine,
   type ConstraintReport,
 } from "./constraint-engine";
+import { feedbackLog, type DerivedPreference } from "./feedback-log";
 
 const DEFAULT_MAX_STEPS = 12;
 const DEFAULT_TEMPERATURE = 0.2;
@@ -113,6 +114,13 @@ export interface GraphAgentOptions {
   temperature?: number;
   timeoutMs?: number;
   dryRun?: boolean;
+  /**
+   * Closure that returns the derived-preference list to prepend to the
+   * agent's system prompt. Defaults to reading the process-wide
+   * feedbackLog singleton. Injectable for tests + for callers that want
+   * to opt out of feedback entirely (pass `() => []`).
+   */
+  preferencesProvider?: () => readonly DerivedPreference[];
 }
 
 export class GraphAgent {
@@ -125,6 +133,7 @@ export class GraphAgent {
   private readonly temperature: number;
   private readonly timeoutMs: number;
   private readonly dryRun: boolean;
+  private readonly preferencesProvider: () => readonly DerivedPreference[];
 
   public constructor(options: GraphAgentOptions = {}) {
     this.apiKey = options.apiKey ?? process.env.OPENROUTER_API_KEY ?? null;
@@ -136,6 +145,19 @@ export class GraphAgent {
     this.temperature = options.temperature ?? Number(process.env.ROOMVIEW_AGENT_TEMPERATURE ?? DEFAULT_TEMPERATURE);
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.dryRun = options.dryRun ?? (process.env.ROOMVIEW_AGENT_DRY_RUN !== "false");
+    this.preferencesProvider = options.preferencesProvider ?? (() => feedbackLog.derivePreferences());
+  }
+
+  private readPreferences(): readonly DerivedPreference[] {
+    try {
+      return this.preferencesProvider();
+    } catch (err) {
+      // A corrupt feedback.jsonl should never break the agent — log and
+      // run without preferences.
+      // eslint-disable-next-line no-console
+      console.warn("[graph-agent] preferencesProvider failed", err);
+      return [];
+    }
   }
 
   public async run(scene: Scene, request: GraphAgentRequest): Promise<GraphAgentResponse> {
@@ -150,8 +172,16 @@ export class GraphAgent {
       return deterministicFallback(context, request);
     }
 
+    // Phase 4 feedback loop: pull local preference summaries derived
+    // from accumulated drag / propose_rejected / rating events and
+    // prepend them to the system prompt so the agent can bias its
+    // suggestions toward what the user historically accepts. Gated
+    // by MIN_EVENTS_FOR_PREFERENCE inside derivePreferences() — no
+    // preference appears until there's enough signal, so the empty
+    // case is harmless.
+    const preferences = this.readPreferences();
     const messages: ChatMessage[] = [
-      { role: "system", content: buildSystemPrompt() },
+      { role: "system", content: buildSystemPrompt(preferences) },
       { role: "user", content: buildUserPrompt(scene, graph, report, request) },
     ];
 
@@ -261,12 +291,25 @@ export class GraphAgent {
 // Prompts
 // ---------------------------------------------------------------------------
 
-function buildSystemPrompt(): string {
+export function buildSystemPrompt(preferences: readonly DerivedPreference[] = []): string {
+  // Preferences come from the local feedback log — short heuristic
+  // summaries derived from drag / propose_rejected / rating events.
+  // They're advisory: the agent may weigh them, but constraint
+  // violations still win over preference hints.
+  const preferenceBlock = preferences.length
+    ? [
+        "",
+        "User preferences (from recent session history — advisory, do not override hard constraints):",
+        ...preferences.map((p) => `- ${p.summary}`),
+        "",
+      ].join("\n")
+    : "";
   return [
     "You are the RoomView graph agent. You answer spatial questions about a captured room",
     "by querying a read-only scene graph and a constraint engine, and optionally proposing",
     "a dry-run move. You never commit changes; the user will approve any proposed move",
     "themselves.",
+    preferenceBlock,
     "",
     "Coordinate frame: XY on the floor plane (+x east, +y north, +z up). Units are metres.",
     "Yaw is degrees, normalised to (-180, 180].",
