@@ -23,6 +23,12 @@ import {
   createAssetManifestResponse,
   createQuickRenderResponse,
 } from "./quick-render";
+import { buildSceneGraph } from "./scene-graph";
+import { createDefaultConstraintEngine } from "./constraint-engine";
+import { GraphAgent, type GraphAgentRequest } from "./graph-agent";
+
+const constraintEngine = createDefaultConstraintEngine();
+const graphAgent = new GraphAgent();
 import { createConsoleObservabilitySink, ObservabilityRecorder } from "./observability";
 import {
   RoomPlanCaptureError,
@@ -226,6 +232,18 @@ async function handleRequest(
       return;
     }
 
+    if (request.method === "POST" && mutationSceneId && requestUrl.pathname.endsWith("/graph-agent")) {
+      requireAuthenticatedSceneSession(request, mutationSceneId, context);
+      const agentRequest = await readJsonBody<GraphAgentRequest>(request);
+      const scene = context.service.getScene(mutationSceneId);
+      if (!scene) {
+        throw new RoomPlanCaptureError("TARGET_NOT_FOUND", `Scene ${mutationSceneId} was not found.`);
+      }
+      const agentResponse = await graphAgent.run(scene, agentRequest);
+      sendJson(response, 200, { agent: agentResponse });
+      return;
+    }
+
     if (request.method === "POST" && mutationSceneId && requestUrl.pathname.endsWith("/photoreal")) {
       requireAuthenticatedSceneSession(request, mutationSceneId, context);
       const photorealRequest = await readJsonBody<GeneratePhotorealRequest>(request);
@@ -266,6 +284,18 @@ async function handleRequest(
       }
       if (requestUrl.pathname.endsWith("/quick-render")) {
         sendJson(response, 200, createQuickRenderResponse(scene));
+        return;
+      }
+      if (requestUrl.pathname.endsWith("/graph")) {
+        const graph = buildSceneGraph(scene);
+        const constraints = constraintEngine.evaluate(graph);
+        sendJson(response, 200, { graph, constraints });
+        return;
+      }
+      if (requestUrl.pathname.endsWith("/constraints")) {
+        const graph = buildSceneGraph(scene);
+        const constraints = constraintEngine.evaluate(graph);
+        sendJson(response, 200, { constraints });
         return;
       }
       const readResponse: SceneReadResponse = { scene };
@@ -402,6 +432,8 @@ function extractReadableSceneId(pathname: string): string | null {
   const patterns = [
     /^\/scenes\/([^/]+)$/,
     /^\/scenes\/([^/]+)\/quick-render$/,
+    /^\/scenes\/([^/]+)\/graph$/,
+    /^\/scenes\/([^/]+)\/constraints$/,
   ];
   for (const pattern of patterns) {
     const match = pathname.match(pattern);
@@ -420,6 +452,7 @@ function extractMutationSceneId(pathname: string): string | null {
     /^\/scenes\/([^/]+)\/apply$/,
     /^\/scenes\/([^/]+)\/undo$/,
     /^\/scenes\/([^/]+)\/photoreal$/,
+    /^\/scenes\/([^/]+)\/graph-agent$/,
   ];
   for (const pattern of patterns) {
     const match = pathname.match(pattern);
