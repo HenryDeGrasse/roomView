@@ -8,6 +8,19 @@ import {
   buildDeterministicQuickRender,
   CURATED_ASSET_MANIFEST,
 } from "../../../packages/contracts/src/index.ts";
+import { buildSceneGraph } from "../../api/src/scene-graph.ts";
+import { createDefaultConstraintEngine } from "../../api/src/constraint-engine.ts";
+import { GraphAgent } from "../../api/src/graph-agent.ts";
+
+const constraintEngine = createDefaultConstraintEngine();
+// Instantiated lazily so `loadDotEnv()` runs *before* the GraphAgent
+// reads `process.env.OPENROUTER_API_KEY`. Without this the agent cached
+// `apiKey: null` at module-eval time and never picked up .env values.
+let graphAgentSingleton: GraphAgent | null = null;
+function getGraphAgent(): GraphAgent {
+  if (!graphAgentSingleton) graphAgentSingleton = new GraphAgent();
+  return graphAgentSingleton;
+}
 
 const serverDir = dirname(fileURLToPath(import.meta.url));
 const webAppRoot = resolve(serverDir, "..");
@@ -74,6 +87,81 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
 
     if (request.method === "GET" && requestUrl.pathname === "/") {
       sendHtml(response, renderEditorShellHtml({ defaultApiBaseUrl, fixtureSources: getFixtureSources() }));
+      return;
+    }
+
+    // Dev-only: let fixture users hit the graph agent without the API
+    // server running. Mirrors /scenes/:id/graph-agent on the real API
+    // but loads the fixture scene from disk instead of the session store.
+    const graphAgentFixtureMatch = requestUrl.pathname.match(/^\/dev\/fixtures\/([^/]+)\/graph-agent$/);
+    if (request.method === "POST" && graphAgentFixtureMatch) {
+      (async () => {
+        try {
+          const fixtureId = decodeURIComponent(graphAgentFixtureMatch[1]!);
+          const fixture = getFixtures().find((f) => f.fixture_id === fixtureId);
+          if (!fixture) {
+            sendJson(response, 404, { message: `Fixture ${fixtureId} was not found.` });
+            return;
+          }
+          const body = await readJsonRequestBody(request);
+          const agentResponse = await getGraphAgent().run(fixture.scene_response.scene, body as any);
+          sendJson(response, 200, { agent: agentResponse });
+        } catch (err) {
+          sendJson(response, 500, { message: String((err as Error)?.message || err) });
+        }
+      })();
+      return;
+    }
+
+    // POST /dev/feedback — telemetry sink for Phase 4 feedback loop.
+    if (request.method === "POST" && requestUrl.pathname === "/dev/feedback") {
+      (async () => {
+        try {
+          const body = await readJsonRequestBody(request);
+          const { feedbackLog } = await import("../../api/src/feedback-log.ts");
+          const event = feedbackLog.append(body as Record<string, unknown>);
+          sendJson(response, 200, { event_id: event.event_id });
+        } catch (err) {
+          sendJson(response, 500, { message: String((err as Error)?.message || err) });
+        }
+      })();
+      return;
+    }
+
+    // Stateless graph+constraints compute for an arbitrary scene posted in
+    // the body. Used by the UI after a local edit (drag / applied agent
+    // plan) to get fresh relations + evaluations without persisting the
+    // change — the canonical fixture file stays untouched.
+    if (request.method === "POST" && requestUrl.pathname === "/dev/graph") {
+      (async () => {
+        try {
+          const body = await readJsonRequestBody(request) as { scene?: unknown };
+          if (!body?.scene) {
+            sendJson(response, 400, { message: "Missing scene in body." });
+            return;
+          }
+          const graph = buildSceneGraph(body.scene as Parameters<typeof buildSceneGraph>[0]);
+          const constraints = constraintEngine.evaluate(graph);
+          sendJson(response, 200, { graph, constraints });
+        } catch (err) {
+          sendJson(response, 500, { message: String((err as Error)?.message || err) });
+        }
+      })();
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/dev/feedback") {
+      (async () => {
+        try {
+          const { feedbackLog } = await import("../../api/src/feedback-log.ts");
+          sendJson(response, 200, {
+            events: feedbackLog.recent(50),
+            preferences: feedbackLog.derivePreferences(),
+          });
+        } catch (err) {
+          sendJson(response, 500, { message: String((err as Error)?.message || err) });
+        }
+      })();
       return;
     }
 
@@ -239,6 +327,18 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
         sendJson(response, 200, fixture.quick_render_response);
         return;
       }
+      if (requestUrl.pathname.endsWith("/graph")) {
+        const graph = buildSceneGraph(fixture.scene_response.scene);
+        const constraints = constraintEngine.evaluate(graph);
+        sendJson(response, 200, { graph, constraints });
+        return;
+      }
+      if (requestUrl.pathname.endsWith("/constraints")) {
+        const graph = buildSceneGraph(fixture.scene_response.scene);
+        const constraints = constraintEngine.evaluate(graph);
+        sendJson(response, 200, { constraints });
+        return;
+      }
       sendJson(response, 200, fixture.scene_response);
       return;
     }
@@ -253,7 +353,13 @@ function extractFixtureId(pathname: string): string | null {
     return decodeURIComponent(exactMatch[1]);
   }
   const quickRenderMatch = pathname.match(/^\/dev\/fixtures\/([^/]+)\/quick-render$/);
-  return quickRenderMatch ? decodeURIComponent(quickRenderMatch[1]) : null;
+  if (quickRenderMatch) {
+    return decodeURIComponent(quickRenderMatch[1]);
+  }
+  const graphMatch = pathname.match(/^\/dev\/fixtures\/([^/]+)\/graph$/);
+  if (graphMatch) return decodeURIComponent(graphMatch[1]);
+  const constraintsMatch = pathname.match(/^\/dev\/fixtures\/([^/]+)\/constraints$/);
+  return constraintsMatch ? decodeURIComponent(constraintsMatch[1]) : null;
 }
 
 function extractFixtureFrameRequest(pathname: string): { fixture_id: string; file: string } | null {
@@ -471,6 +577,7 @@ function renderEditorShellHtml(input: {
               <textarea id="chat-input" placeholder="Describe a change, e.g. 'repaint this wall warm white'"></textarea>
               <div class="composer__actions">
                 <button id="chat-send-button" type="button">Plan from chat</button>
+                <button id="graph-agent-button" type="button" class="secondary" title="Ask the graph agent (uses OpenRouter, graph + constraint tools)">Ask agent</button>
                 <button id="chat-clear-button" class="secondary" type="button">Clear thread</button>
               </div>
             </div>
@@ -530,7 +637,12 @@ function renderEditorShellHtml(input: {
         <header class="overlay__head">
           <h2 id="layout-overlay-title">2D layout</h2>
           <p class="overlay__sub">Server-authored surfaces, openings, and objects. Click any object to select it in the chat context.</p>
-          <button class="iconbtn iconbtn--ghost" type="button" data-overlay-dismiss aria-label="Close">✕</button>
+          <div class="overlay__head-actions">
+            <button id="graph-toggle" class="iconbtn iconbtn--ghost" type="button" title="Toggle spatial graph overlay (G)" aria-pressed="false">
+              <span aria-hidden="true">⇌</span><span class="iconbtn__label">Graph</span>
+            </button>
+            <button class="iconbtn iconbtn--ghost" type="button" data-overlay-dismiss aria-label="Close">✕</button>
+          </div>
         </header>
         <div id="layout-pane" class="overlay__body"></div>
       </div>
@@ -562,6 +674,10 @@ function renderEditorShellHtml(input: {
         apiBaseUrl: bootstrap.defaultApiBaseUrl,
         scene: null,
         quickRender: null,
+        graph: null,
+        constraints: null,
+        graphVisible: false,
+        graphKindFilter: new Set(['ADJACENT_TO', 'COLLIDES', 'FACES', 'HOSTED_ON', 'NEAR_OPENING', 'OBSTRUCTS', 'FLANKS', 'PARALLEL_TO']),
         sceneId: null,
         sessionId: null,
         selectionId: null,
@@ -599,10 +715,21 @@ function renderEditorShellHtml(input: {
       const chatSelection = document.getElementById("chat-selection");
       const chatInput = document.getElementById("chat-input");
       const chatSendButton = document.getElementById("chat-send-button");
+      const graphAgentButton = document.getElementById("graph-agent-button");
       const undoButton = document.getElementById("undo-button");
       const chatClearButton = document.getElementById("chat-clear-button");
       const chatOptions = document.getElementById("chat-options");
       const chatThread = document.getElementById("chat-thread");
+
+      // Clicks on Relations + Constraints entries jump to the target entity.
+      chatSelection?.parentElement?.addEventListener('click', (event) => {
+        const target = event.target instanceof Element
+          ? event.target.closest('.relations-card__entry, .constraints-card__entry')
+          : null;
+        if (!target) return;
+        const id = target.getAttribute('data-entity-id');
+        if (id) setSelection(id);
+      });
 
       apiBaseUrlInput.value = state.apiBaseUrl;
       for (const fixture of bootstrap.fixtureSources) {
@@ -653,6 +780,7 @@ function renderEditorShellHtml(input: {
           state.activeBookmarkId = state.scene.bookmarks[0]?.bookmark_id || null;
           state.loadedFrom = "fixture";
           state.quickRender = await loadFixtureQuickRender(fixtureSelect.value);
+          state.graph = await loadFixtureGraph(fixtureSelect.value);
           clearSplatPolling();
           resetChatState();
           renderScene();
@@ -884,6 +1012,10 @@ function renderEditorShellHtml(input: {
         void submitChatPrompt(chatInput.value);
       });
 
+      graphAgentButton?.addEventListener("click", () => {
+        void submitGraphAgent(chatInput.value);
+      });
+
       chatClearButton.addEventListener("click", () => {
         resetChatState();
         renderChatPanel();
@@ -900,6 +1032,19 @@ function renderEditorShellHtml(input: {
         }
         chatInput.value = button.getAttribute("data-chat-option") || "";
         void submitChatPrompt(chatInput.value);
+      });
+
+      // Delegated click handler for the Proposed Plan card's Apply button.
+      // We route through applyLocalObjectMove so the drag / graph / constraint
+      // refresh pipeline fires identically to a manual drag — the user
+      // sees the scene update, violations recompute, and the Relations
+      // card rebinds to the moved object.
+      chatThread.addEventListener("click", (event) => {
+        const btn = event.target instanceof HTMLElement ? event.target.closest('[data-plan-apply]') : null;
+        if (!btn) return;
+        const planId = btn.getAttribute('data-plan-apply');
+        if (!planId) return;
+        applyProposedPlan(planId);
       });
 
       const params = new URLSearchParams(window.location.search);
@@ -928,6 +1073,7 @@ function renderEditorShellHtml(input: {
           ? state.activeBookmarkId
           : state.scene.bookmarks[0]?.bookmark_id || null;
         state.quickRender = await loadLiveQuickRender();
+        state.graph = await loadLiveGraph();
         renderScene();
         setStatus("Loaded live scene " + state.scene.head.scene_id + " via authenticated read.");
       }
@@ -980,6 +1126,54 @@ function renderEditorShellHtml(input: {
           throw new Error(payload.message || "Fixture quick render failed.");
         }
         return payload.render_scene;
+      }
+
+      function setGraphVisibility(visible) {
+        state.graphVisible = Boolean(visible);
+        if (state.layoutView && typeof state.layoutView.setGraphVisible === 'function') {
+          try { state.layoutView.setGraphVisible(state.graphVisible); }
+          catch (err) { console.error('setGraphVisible failed', err); }
+        }
+        const btn = document.getElementById('graph-toggle');
+        if (btn) {
+          btn.classList.toggle('is-active', state.graphVisible);
+          btn.setAttribute('aria-pressed', state.graphVisible ? 'true' : 'false');
+        }
+        renderRelationsCard();
+      }
+
+      window.toggleGraphOverlay = function toggleGraphOverlay() {
+        setGraphVisibility(!state.graphVisible);
+      };
+
+      async function loadFixtureGraph(fixtureId) {
+        try {
+          const response = await fetch("/dev/fixtures/" + encodeURIComponent(fixtureId) + "/graph");
+          if (!response.ok) return null;
+          const payload = await response.json();
+          state.constraints = payload.constraints || null;
+          return payload.graph || null;
+        } catch (err) {
+          console.error("loadFixtureGraph failed", err);
+          return null;
+        }
+      }
+
+      async function loadLiveGraph() {
+        if (!state.sceneId || !state.sessionId) return null;
+        try {
+          const response = await fetch(
+            new URL("/scenes/" + encodeURIComponent(state.sceneId) + "/graph", state.apiBaseUrl).toString(),
+            { headers: { Authorization: "Bearer " + state.sessionId } },
+          );
+          if (!response.ok) return null;
+          const payload = await response.json();
+          state.constraints = payload.constraints || null;
+          return payload.graph || null;
+        } catch (err) {
+          console.error("loadLiveGraph failed", err);
+          return null;
+        }
       }
 
       async function postJson(url, body, headers = {}) {
@@ -1300,6 +1494,7 @@ function renderEditorShellHtml(input: {
         }
         state.viewer.setRoom(room, {
           editing_asset_refs: state.scene.snapshot.editing_asset_refs || [],
+          captured_floor_color: state.capturedFloorColor || null,
         });
         state.viewer.setSelection(state.selectionId);
       }
@@ -1934,6 +2129,86 @@ function renderEditorShellHtml(input: {
         }
       }
 
+      async function submitGraphAgent(rawPrompt) {
+        const prompt = rawPrompt.trim();
+        if (!prompt) {
+          setStatus("Type a question before asking the agent.", true);
+          return;
+        }
+        if (!state.scene) {
+          setStatus("Load a scene before using the graph agent.", true);
+          return;
+        }
+        appendChatMessage("user", "You", prompt);
+        chatInput.value = "";
+        renderChatPanel();
+        const history = state.chatMessages
+          .filter((m) => m.role === "user" || m.role === "assistant")
+          .slice(-6)
+          .map((m) => ({ role: m.role, content: m.body }));
+        const body = {
+          question: prompt,
+          conversation_history: history,
+          selection_entity_id: state.selectionId || null,
+          max_steps: 10,
+        };
+        try {
+          let url;
+          let headers = { 'Content-Type': 'application/json' };
+          if (state.sessionId && state.sceneId) {
+            url = new URL('/scenes/' + encodeURIComponent(state.sceneId) + '/graph-agent', state.apiBaseUrl).toString();
+            headers['Authorization'] = 'Bearer ' + state.sessionId;
+          } else {
+            url = '/dev/fixtures/' + encodeURIComponent(fixtureSelect.value) + '/graph-agent';
+          }
+          const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+          const payload = await res.json();
+          if (!res.ok) {
+            appendChatMessage("assistant", "Graph Agent", payload.message || payload.reason_code || 'Agent failed.', 'error');
+            renderChatPanel();
+            return;
+          }
+          const agent = payload.agent;
+          const citation = [];
+          if (agent.cited_edge_ids?.length) citation.push('edges: ' + agent.cited_edge_ids.join(', '));
+          if (agent.cited_evaluation_ids?.length) citation.push('evals: ' + agent.cited_evaluation_ids.join(', '));
+          const steps = (agent.steps || []).map((s, i) => '  [' + (i + 1) + '] ' + s.tool + ' — ' + s.summary).join('\\n');
+          const bodyText = agent.answer + (steps ? '\\n\\nSteps:\\n' + steps : '') + (citation.length ? '\\n\\n(' + citation.join(' · ') + ')' : '');
+          appendChatMessage("assistant", "Graph Agent", bodyText);
+          if (agent.proposed_plan) {
+            // Structured plan card (rendered via renderChatPlanEntry) so the
+            // user can one-click "Apply this plan" and watch it land.
+            state.chatMessages.push({
+              role: 'assistant',
+              kind: 'plan',
+              title: 'Proposed plan',
+              plan: agent.proposed_plan,
+              plan_id: 'plan-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+              applied: false,
+            });
+          }
+          renderChatPanel();
+        } catch (err) {
+          appendChatMessage("assistant", "Graph Agent", String(err?.message || err), 'error');
+          renderChatPanel();
+        }
+      }
+
+      function postFeedbackEvent(event) {
+        try {
+          const url = state.sessionId && state.sceneId
+            ? new URL('/dev/feedback', window.location.origin).toString()
+            : '/dev/feedback';
+          fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(event),
+          }).catch((err) => console.error('feedback post failed', err));
+        } catch (err) {
+          console.error('postFeedbackEvent failed', err);
+        }
+      }
+
       async function submitChatPrompt(rawPrompt) {
         const prompt = rawPrompt.trim();
         if (!prompt) {
@@ -2053,6 +2328,96 @@ function renderEditorShellHtml(input: {
 
       function appendChatMessage(role, title, body, tone = "") {
         state.chatMessages.push({ role, title, body, tone });
+      }
+
+      function renderChatPlanEntry(entry) {
+        const plan = entry.plan || {};
+        const from = plan.from || {};
+        const to = plan.to || {};
+        const delta = plan.delta || {};
+        const cd = plan.expected_constraint_delta || {};
+        const applied = !!entry.applied;
+        const objectName = humanNameForObjectId(plan.object_id);
+        const hardBefore = cd.hard_fail_before ?? '?';
+        const hardAfter = cd.hard_fail_after ?? '?';
+        const hardDelta = (typeof cd.hard_fail_after === 'number' && typeof cd.hard_fail_before === 'number')
+          ? (cd.hard_fail_after - cd.hard_fail_before)
+          : null;
+        const deltaTag = hardDelta === null
+          ? ''
+          : hardDelta < 0
+            ? '<span class="plan-card__gain">improves ' + (-hardDelta) + ' hard</span>'
+            : hardDelta === 0
+              ? '<span class="plan-card__neutral">no change</span>'
+              : '<span class="plan-card__regress">regresses ' + hardDelta + ' hard</span>';
+        const btnText = applied ? 'Applied ✓' : 'Apply this plan';
+        const btnAttr = applied ? ' disabled aria-disabled="true"' : '';
+        const planKind = plan.kind === 'rotate' ? 'Rotate' : 'Move';
+        return [
+          '<div class="chat-entry plan-card' + (applied ? ' plan-card--applied' : '') + '">',
+            '<strong>' + planKind + ' · ' + escapeHtml(objectName) + '</strong>',
+            '<div class="plan-card__meta">',
+              '<div>from (' + fmt(from.x) + ', ' + fmt(from.y) + ') → (' + fmt(to.x) + ', ' + fmt(to.y) + ')</div>',
+              (typeof to.yaw_degrees === 'number' && typeof from.yaw_degrees === 'number' && Math.abs((to.yaw_degrees - from.yaw_degrees) % 360) > 0.5
+                ? '<div>yaw ' + fmt(from.yaw_degrees) + '° → ' + fmt(to.yaw_degrees) + '°</div>'
+                : ''),
+              '<div>hard violations ' + hardBefore + ' → ' + hardAfter + ' ' + deltaTag + '</div>',
+            '</div>',
+            '<button class="plan-card__apply" type="button" data-plan-apply="' + escapeHtml(entry.plan_id) + '"' + btnAttr + '>' + btnText + '</button>',
+          '</div>',
+        ].join('');
+      }
+
+      function fmt(n) {
+        return typeof n === 'number' && Number.isFinite(n) ? n.toFixed(2) : String(n ?? '?');
+      }
+
+      function humanNameForObjectId(id) {
+        if (!id) return 'object';
+        const raw = typeof id === 'string' && id.startsWith('object:') ? id.slice('object:'.length) : id;
+        const room = state.scene?.snapshot?.state?.room;
+        const obj = room?.objects?.find((o) => o.object_id === raw);
+        return obj ? (obj.class + ' · ' + raw.slice(-8)) : raw;
+      }
+
+      function applyProposedPlan(planId) {
+        const entry = state.chatMessages.find((m) => m.kind === 'plan' && m.plan_id === planId);
+        if (!entry || entry.applied) return;
+        const plan = entry.plan;
+        const rawId = plan.object_id;
+        const objectId = typeof rawId === 'string' && rawId.startsWith('object:') ? rawId.slice('object:'.length) : rawId;
+        const delta = {
+          x: (plan.delta && typeof plan.delta.x === 'number') ? plan.delta.x
+             : (typeof plan.to?.x === 'number' && typeof plan.from?.x === 'number' ? plan.to.x - plan.from.x : 0),
+          y: (plan.delta && typeof plan.delta.y === 'number') ? plan.delta.y
+             : (typeof plan.to?.y === 'number' && typeof plan.from?.y === 'number' ? plan.to.y - plan.from.y : 0),
+          z: 0,
+          yaw_degrees: (plan.delta && typeof plan.delta.yaw_degrees === 'number') ? plan.delta.yaw_degrees
+             : (typeof plan.to?.yaw_degrees === 'number' && typeof plan.from?.yaw_degrees === 'number' ? plan.to.yaw_degrees - plan.from.yaw_degrees : 0),
+        };
+        if (!objectId) {
+          setStatus('Plan has no object id; cannot apply.', true);
+          return;
+        }
+        try {
+          applyLocalObjectMove(objectId, delta);
+          entry.applied = true;
+          const room = state.scene?.snapshot?.state?.room;
+          const violations = state.scene?.derived_state_cache?.hard_violations?.length ?? '?';
+          appendChatMessage('assistant', 'Plan applied', 'Moved ' + humanNameForObjectId(objectId) + ' locally. Hard violations now ' + violations + '.', 'success');
+          postFeedbackEvent({
+            kind: 'propose_accepted',
+            scene_id: state.sceneId,
+            object_id: objectId,
+            object_class: room?.objects?.find((o) => o.object_id === objectId)?.class,
+            details: { plan },
+          });
+          showToast({ message: 'Plan applied · ' + humanNameForObjectId(objectId) + ' moved locally.', level: 'success', duration_ms: 3200 });
+          renderChatPanel();
+        } catch (err) {
+          console.error('applyProposedPlan failed', err);
+          setStatus('Failed to apply plan: ' + (err?.message || err), true);
+        }
       }
 
       function buildConversationHistory() {
@@ -2329,6 +2694,14 @@ function renderEditorShellHtml(input: {
             if (state.scene !== scene) return;
             state.scanView.setScanProxies(combined);
             state.scanProxiesSnapshotId = snapshotId;
+            // Use the median floor-bleed color (sampled while culling
+            // mesh undersides) to tint the floor ShapeGeometry in both
+            // viewers. Makes "move a bed, see floor beneath" look like
+            // the captured floor rather than the default brown.
+            if (meshResult?.floorColor) {
+              state.capturedFloorColor = meshResult.floorColor;
+              try { syncViewerRoom(state.scene.snapshot.state.room); } catch (err) { console.error('floor color viewer sync failed', err); }
+            }
             const meshCount = meshMap.size;
             const pointCount = proxies.size - meshCount >= 0 ? Math.max(0, proxies.size - meshCount) : 0;
             const detail = meshCount > 0
@@ -2767,6 +3140,19 @@ function renderEditorShellHtml(input: {
             mount.innerHTML = renderLayoutPaneInfo(state.scene, state.selectionId, Boolean(state.sessionId));
           }
         } catch (err) { console.error(err); }
+        // Re-derive graph + constraints so the right drawer stays in sync.
+        try { refreshConstraintsAfterLocalChange(); } catch (err) { console.error(err); }
+        // Fire-and-forget feedback event: user nudged an object.
+        try {
+          const movedObject = state.scene?.snapshot?.state?.room?.objects?.find((o) => o.object_id === objectId);
+          postFeedbackEvent({
+            kind: 'drag',
+            scene_id: state.sceneId,
+            object_id: objectId,
+            object_class: movedObject?.class,
+            details: { delta },
+          });
+        } catch (err) { console.error('feedback emit failed', err); }
       }
 
       function syncLayoutView() {
@@ -2778,6 +3164,11 @@ function renderEditorShellHtml(input: {
             state.layoutView.setRoom(room, derived);
             state.layoutView.setSelection(state.selectionId);
             state.layoutView.setDragEnabled(Boolean(state.sessionId));
+            if (typeof state.layoutView.setGraph === 'function') {
+              state.layoutView.setGraph(state.graph);
+              state.layoutView.setGraphVisible(state.graphVisible);
+              state.layoutView.setGraphKindFilter(Array.from(state.graphKindFilter));
+            }
           } catch (err) {
             console.error('layoutView.setRoom failed', err);
           }
@@ -2810,6 +3201,11 @@ function renderEditorShellHtml(input: {
               view.setRoom(liveScene.snapshot.state.room, liveScene.derived_state_cache || null);
               view.setSelection(state.selectionId);
               view.setDragEnabled(Boolean(state.sessionId));
+              if (typeof view.setGraph === 'function') {
+                view.setGraph(state.graph);
+                view.setGraphVisible(state.graphVisible);
+                view.setGraphKindFilter(Array.from(state.graphKindFilter));
+              }
             }
             return view;
           } catch (err) {
@@ -2843,7 +3239,10 @@ function renderEditorShellHtml(input: {
         const editingAssetRefs = state.scene.snapshot.editing_asset_refs || [];
         if (state.viewer) {
           try {
-            state.viewer.setRoom(room, { editing_asset_refs: editingAssetRefs });
+            state.viewer.setRoom(room, {
+              editing_asset_refs: editingAssetRefs,
+              captured_floor_color: state.capturedFloorColor || null,
+            });
             state.viewer.setSelection(state.selectionId);
           } catch (err) {
             console.error('viewer.setRoom failed', err);
@@ -2877,6 +3276,7 @@ function renderEditorShellHtml(input: {
             if (state.scene && state.scene.snapshot) {
               api.setRoom(state.scene.snapshot.state.room, {
                 editing_asset_refs: state.scene.snapshot.editing_asset_refs || [],
+                captured_floor_color: state.capturedFloorColor || null,
               });
               api.setSelection(state.selectionId);
             }
@@ -2959,7 +3359,9 @@ function renderEditorShellHtml(input: {
       }
 
       function renderChatPanel() {
-        chatSelection.textContent = describeSelectionLabel(state.scene, state.selectionId);
+        chatSelection.innerHTML = renderChatSelectionHtml();
+        renderRelationsCard();
+        renderConstraintsCard();
         const isLive = Boolean(state.sessionId);
         chatSendButton.disabled = !state.scene || state.sceneActionInFlight;
         undoButton.disabled = !state.scene || !isLive || state.sceneActionInFlight;
@@ -2978,9 +3380,165 @@ function renderEditorShellHtml(input: {
         chatThread.innerHTML = state.chatMessages.length === 0
           ? '<p class="muted">Chat transcripts, auto-applied edits, clarifications, and reason-code messages appear here.</p>'
           : state.chatMessages.map((entry) => {
+              if (entry.kind === 'plan') return renderChatPlanEntry(entry);
               const tone = entry.tone ? ' ' + entry.tone : '';
               return '<div class="chat-entry' + tone + '"><strong>' + escapeHtml(entry.title) + '</strong><pre>' + escapeHtml(entry.body) + '</pre></div>';
             }).join('');
+      }
+
+      function renderChatSelectionHtml() {
+        const label = describeSelectionLabel(state.scene, state.selectionId);
+        const graphSummary = state.graph
+          ? '<div class="chat-selection__graph"><span class="chip chip--ghost">' +
+              (state.graph.nodes?.length || 0) + ' nodes · ' +
+              (state.graph.edges?.length || 0) + ' edges' +
+            '</span></div>'
+          : '';
+        return '<div class="chat-selection__label">' + escapeHtml(label) + '</div>' + graphSummary;
+      }
+
+      function renderRelationsCard() {
+        let panel = document.getElementById('relations-card');
+        if (!panel) {
+          // Mount below the chat-selection region, inside the same drawer section.
+          const parent = chatSelection?.parentElement;
+          if (!parent) return;
+          panel = document.createElement('div');
+          panel.id = 'relations-card';
+          panel.className = 'relations-card';
+          parent.appendChild(panel);
+        }
+        const graph = state.graph;
+        if (!graph || !graph.nodes) {
+          panel.innerHTML = '';
+          return;
+        }
+        const nodeId = state.selectionId ? findGraphNodeIdForEntity(graph, state.selectionId) : null;
+        if (!nodeId) {
+          panel.innerHTML = state.graphVisible
+            ? '<p class="relations-card__empty">Select an object to see its relations.</p>'
+            : '';
+          return;
+        }
+        const byKind = {};
+        const nodeById = new Map(graph.nodes.map((n) => [n.node_id, n]));
+        for (const edge of graph.edges) {
+          if (edge.from_node_id !== nodeId && edge.to_node_id !== nodeId) continue;
+          if (!byKind[edge.kind]) byKind[edge.kind] = [];
+          const otherId = edge.from_node_id === nodeId ? edge.to_node_id : edge.from_node_id;
+          const other = nodeById.get(otherId);
+          byKind[edge.kind].push({ otherId, otherLabel: other?.label || otherId, evidence: edge.evidence, directionOut: edge.from_node_id === nodeId, symmetric: edge.symmetric });
+        }
+        const kinds = Object.keys(byKind).sort();
+        if (kinds.length === 0) {
+          panel.innerHTML = '<p class="relations-card__empty">No relations detected for this node.</p>';
+          return;
+        }
+        let html = '<h4 class="relations-card__title">Relations</h4>';
+        for (const kind of kinds) {
+          html += '<div class="relations-card__group"><div class="relations-card__kind" data-graph-kind="' + kind + '"><span class="relations-card__chip relations-card__chip--' + kind.toLowerCase() + '">' + kind + '</span><span class="relations-card__count">' + byKind[kind].length + '</span></div><ul class="relations-card__list">';
+          for (const entry of byKind[kind]) {
+            const evidenceFragments = [];
+            if (entry.evidence && typeof entry.evidence === 'object') {
+              for (const [k, v] of Object.entries(entry.evidence)) {
+                evidenceFragments.push(escapeHtml(k) + ': ' + escapeHtml(String(v)));
+              }
+            }
+            const arrow = entry.symmetric ? '↔' : (entry.directionOut ? '→' : '←');
+            const other = nodeById.get(entry.otherId);
+            const selectableEntityId = other?.source_entity_id || '';
+            html += '<li><button type="button" class="relations-card__entry" data-entity-id="' + escapeHtml(selectableEntityId) + '"><span class="relations-card__arrow">' + arrow + '</span><span class="relations-card__other">' + escapeHtml(entry.otherLabel) + '</span>' + (evidenceFragments.length ? '<span class="relations-card__evidence">' + evidenceFragments.join(' · ') + '</span>' : '') + '</button></li>';
+          }
+          html += '</ul></div>';
+        }
+        panel.innerHTML = html;
+      }
+
+      function findGraphNodeIdForEntity(graph, entityId) {
+        if (!graph || !entityId) return null;
+        for (const node of graph.nodes) {
+          if (node.source_entity_id === entityId) return node.node_id;
+        }
+        return null;
+      }
+
+      function renderConstraintsCard() {
+        let panel = document.getElementById('constraints-card');
+        if (!panel) {
+          const parent = chatSelection?.parentElement;
+          if (!parent) return;
+          panel = document.createElement('div');
+          panel.id = 'constraints-card';
+          panel.className = 'relations-card constraints-card';
+          parent.appendChild(panel);
+        }
+        const report = state.constraints;
+        if (!report || !Array.isArray(report.evaluations)) {
+          panel.innerHTML = '';
+          return;
+        }
+        const summary = report.summary || { total: 0, hard_fail: 0, soft_warn: 0, ok: 0 };
+        const selectedNodeId = state.selectionId && state.graph
+          ? findGraphNodeIdForEntity(state.graph, state.selectionId)
+          : null;
+        // If a selection exists, scope to evaluations that reference it.
+        const allEvals = report.evaluations;
+        const scoped = selectedNodeId
+          ? allEvals.filter((ev) => (ev.node_ids || []).includes(selectedNodeId))
+          : allEvals;
+        if (scoped.length === 0) {
+          panel.innerHTML =
+            '<h4 class="relations-card__title">Constraints</h4>' +
+            '<p class="relations-card__empty">' +
+              (selectedNodeId
+                ? 'No constraint touches this node — layout-clean for the current rules.'
+                : 'All ' + summary.total + ' checks passed.') +
+            '</p>';
+          return;
+        }
+        let html = '<h4 class="relations-card__title">Constraints' + (selectedNodeId ? ' · selection' : '') +
+          '<span class="constraints-card__summary">' +
+            summary.hard_fail + ' hard · ' + summary.soft_warn + ' soft · ' + summary.ok + ' ok' +
+          '</span></h4>';
+        // Group by status severity: hard_fail > soft_warn > ok.
+        const order = { hard_fail: 0, soft_warn: 1, ok: 2 };
+        const sorted = scoped.slice().sort((a, b) => (order[a.status] || 9) - (order[b.status] || 9));
+        html += '<ul class="constraints-card__list">';
+        for (const ev of sorted) {
+          const chipCls = 'constraints-card__chip constraints-card__chip--' + ev.status;
+          const entity = (ev.node_ids && ev.node_ids[0]) || '';
+          const sourceEntity = state.graph?.nodes?.find((n) => n.node_id === entity)?.source_entity_id || '';
+          html += '<li><button type="button" class="constraints-card__entry" data-entity-id="' + escapeHtml(sourceEntity) + '">' +
+            '<span class="' + chipCls + '">' + ev.status.replace('_', ' ') + '</span>' +
+            '<span class="constraints-card__message">' + escapeHtml(ev.message || ev.kind) + '</span>' +
+            '<span class="constraints-card__kind">' + escapeHtml(ev.kind) + '</span>' +
+            '</button></li>';
+        }
+        html += '</ul>';
+        panel.innerHTML = html;
+      }
+
+      function refreshConstraintsAfterLocalChange() {
+        // Local edits (drag, agent apply) don't persist server-side, so
+        // we POST the current in-memory scene to /dev/graph to get a
+        // fresh graph + constraint report that reflects the mutation.
+        if (!state.scene) return;
+        fetch('/dev/graph', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scene: state.scene }),
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((body) => {
+            if (!body) return;
+            state.graph = body.graph;
+            state.constraints = body.constraints;
+            if (state.layoutView && typeof state.layoutView.setGraph === 'function') {
+              state.layoutView.setGraph(state.graph);
+            }
+            renderChatPanel();
+          })
+          .catch((err) => console.error('refreshConstraintsAfterLocalChange', err));
       }
 
       function describeSelectionLabel(scene, selectionId) {
@@ -3521,6 +4079,13 @@ function renderEditorShellHtml(input: {
           toggleRenderBtn.classList.toggle("is-active", renderOverlay.getAttribute("aria-hidden") === "false");
         });
 
+        const graphToggleBtn = document.getElementById("graph-toggle");
+        graphToggleBtn?.addEventListener("click", () => {
+          if (typeof window.toggleGraphOverlay === 'function') {
+            window.toggleGraphOverlay();
+          }
+        });
+
         document.addEventListener("click", (event) => {
           const target = event.target;
           if (!(target instanceof Element)) return;
@@ -3548,6 +4113,9 @@ function renderEditorShellHtml(input: {
           } else if ((event.key === "r" || event.key === "R") && !isTypingTarget(event.target)) {
             event.preventDefault();
             toggleRenderBtn?.click();
+          } else if ((event.key === "g" || event.key === "G") && !isTypingTarget(event.target)) {
+            event.preventDefault();
+            if (typeof window.toggleGraphOverlay === 'function') window.toggleGraphOverlay();
           }
         });
 
@@ -3793,6 +4361,16 @@ function sendJson(response: ServerResponse, statusCode: number, payload: unknown
   response.end(JSON.stringify(payload));
 }
 
+async function readJsonRequestBody(request: Parameters<Parameters<typeof createServer>[0]>[0]): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
+  }
+  const raw = Buffer.concat(chunks).toString("utf8");
+  if (!raw) return {};
+  try { return JSON.parse(raw); } catch { return {}; }
+}
+
 function sendHtml(response: ServerResponse, html: string): void {
   response.statusCode = 200;
   response.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -3820,7 +4398,36 @@ function isMainModule(): boolean {
   return process.argv[1] ? import.meta.url === pathToFileURL(process.argv[1]).href : false;
 }
 
+function loadDotEnv(): void {
+  // Lightweight .env loader so the GraphAgent can pick up
+  // OPENROUTER_API_KEY when the web server stands alone (no API server).
+  // Mirrors apps/api/src/server.ts's loader — same format, same precedence
+  // rules (existing env wins over file values).
+  const candidates = [
+    resolve(process.cwd(), ".env"),
+    resolve(repoRoot, ".env"),
+  ];
+  for (const path of candidates) {
+    try {
+      const raw = readFileSync(path, "utf8");
+      for (const line of raw.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const separatorIndex = trimmed.indexOf("=");
+        if (separatorIndex <= 0) continue;
+        const key = trimmed.slice(0, separatorIndex).trim();
+        const value = trimmed.slice(separatorIndex + 1).trim().replace(/^['"]|['"]$/g, "");
+        if (!(key in process.env)) process.env[key] = value;
+      }
+      return;
+    } catch {
+      // file missing — try next candidate
+    }
+  }
+}
+
 if (isMainModule()) {
+  loadDotEnv();
   const port = Number(process.env.PORT ?? DEFAULT_WEB_EDITOR_PORT);
   const server = createRoomViewEditorServer({
     default_api_base_url: process.env.ROOMVIEW_API_BASE_URL,
