@@ -17,30 +17,6 @@
       "request_path": "fixtures/roomplan/fixture-bedroom-arkitscenes/capture-request.json",
       "scene_path": "fixtures/roomplan/fixture-bedroom-arkitscenes/scene.json",
       "notes": "ARKitScenes 47333463 bedroom, 100 captured frames."
-    },
-    {
-      "fixture_id": "capture-office-test-20260419-231541",
-      "request_path": "fixtures/roomplan/capture-office-test-20260419-231541/capture-request.json",
-      "scene_path": "fixtures/roomplan/capture-office-test-20260419-231541/scene.json",
-      "notes": "iOS capture · Office test · 2026-04-19T23:15:41.929Z"
-    },
-    {
-      "fixture_id": "capture-bedroom110-20260420-000706",
-      "request_path": "fixtures/roomplan/capture-bedroom110-20260420-000706/capture-request.json",
-      "scene_path": "fixtures/roomplan/capture-bedroom110-20260420-000706/scene.json",
-      "notes": "iOS capture · Bedroom110 · 2026-04-20T00:07:06.343Z"
-    },
-    {
-      "fixture_id": "capture-bedroom110-20260420-002025",
-      "request_path": "fixtures/roomplan/capture-bedroom110-20260420-002025/capture-request.json",
-      "scene_path": "fixtures/roomplan/capture-bedroom110-20260420-002025/scene.json",
-      "notes": "iOS capture · Bedroom110 · 2026-04-20T00:20:25.451Z"
-    },
-    {
-      "fixture_id": "capture-bedroom110-3-20260420-003637",
-      "request_path": "fixtures/roomplan/capture-bedroom110-3-20260420-003637/capture-request.json",
-      "scene_path": "fixtures/roomplan/capture-bedroom110-3-20260420-003637/scene.json",
-      "notes": "iOS capture · Bedroom110-3 · 2026-04-20T00:36:37.608Z"
     }
   ]
 }
