@@ -125,15 +125,37 @@ public enum CaptureBundleWriter {
     }
 
     public static func poseRecord(for transform: simd_float4x4) -> PoseRecord {
+        // Convert ARKit's OpenGL-convention camera transform (camera-local
+        // +Y up, -Z forward) into the OpenCV convention that the server-side
+        // splat-generate.py + bake-wall-textures.py pipeline expects
+        // (camera-local +Y down, +Z forward). Without this flip, unprojected
+        // RGBD pixels land in rotated world positions → splat gaussians
+        // cluster in a few spots instead of covering the room.
+        //
+        // T_opencv = T_arkit × diag(1, -1, -1, 1)
+        // which negates columns 1 (Y) and 2 (Z) of the 4×4; column 3
+        // (translation) is unchanged so the camera origin stays put.
+        let arkitToOpenCV = simd_float4x4(
+            simd_float4(1, 0, 0, 0),
+            simd_float4(0, -1, 0, 0),
+            simd_float4(0, 0, -1, 0),
+            simd_float4(0, 0, 0, 1)
+        )
+        let opencvTransform = transform * arkitToOpenCV
+
         var columnMajor: [Double] = []
         columnMajor.reserveCapacity(16)
         for column in 0 ..< 4 {
-            let col = transform[column]
+            let col = opencvTransform[column]
             columnMajor.append(Double(col.x))
             columnMajor.append(Double(col.y))
             columnMajor.append(Double(col.z))
             columnMajor.append(Double(col.w))
         }
+        // cameraPose metadata (position + yaw) stays derived from the ORIGINAL
+        // ARKit transform so yaw_degrees keeps its human-intuitive meaning
+        // (camera looks along -Z in ARKit). Only camera_transform is converted
+        // because that's what the unprojection pipeline consumes.
         let origin = transform.columns.3
         let forward = -simd_float3(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z)
         let yawRadians = atan2(Double(forward.x), Double(forward.z))
