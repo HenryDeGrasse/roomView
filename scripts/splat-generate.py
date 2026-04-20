@@ -111,8 +111,13 @@ def parse_args(argv: list[str]) -> SplatRequest:
     parser.add_argument(
         "--max-gaussians",
         type=int,
-        default=400_000,
-        help="Cap on gaussian count in rgbd_init mode (subsampled from per-pixel unprojection). Default 400k.",
+        default=700_000,
+        help=(
+            "Cap on gaussian count in rgbd_init mode. Default 700k "
+            "(up from 400k) — fills wall coverage when the capture "
+            "trajectory only grazes some walls obliquely. 1M is still "
+            "fast to load (~32MB) on a LAN."
+        ),
     )
     parser.add_argument(
         "--ply-uri",
@@ -141,6 +146,10 @@ class Frame:
     fx: float; fy: float; cx: float; cy: float
     width: int; height: int
     world_from_camera: np.ndarray  # (4, 4) float64, OpenGL ARKit convention
+    # Optional ARKit LiDAR confidence (0=low, 1=medium, 2=high). Same (H, W)
+    # as depth when present; None for bundles/fixtures without a confidence
+    # sidecar.
+    confidence: np.ndarray | None = None
 
 
 def _column_major_to_4x4(flat16: list[float]) -> np.ndarray:
@@ -171,6 +180,15 @@ def _scaled_intrinsics(raw: dict[str, float], dw: int, dh: int) -> tuple[float, 
     )
 
 
+def _load_confidence_npy(path: Path) -> np.ndarray | None:
+    if not path.exists():
+        return None
+    arr = np.load(path)
+    if arr.ndim != 2:
+        return None
+    return arr
+
+
 def load_frames_from_bundle(bundle_dir: Path) -> list[Frame]:
     manifest = json.loads((bundle_dir / "manifest.json").read_text())
     frames: list[Frame] = []
@@ -180,10 +198,14 @@ def load_frames_from_bundle(bundle_dir: Path) -> list[Frame]:
         pose = json.loads((bundle_dir / entry["pose_path"]).read_text())
         intr = json.loads((bundle_dir / entry["intrinsics_path"]).read_text())
         fx, fy, cx, cy = _scaled_intrinsics(intr, dw, dh)
+        conf = None
+        if entry.get("confidence_path"):
+            conf = _load_confidence_npy(bundle_dir / entry["confidence_path"])
         frames.append(Frame(
             rgb=rgb, depth_m=depth,
             fx=fx, fy=fy, cx=cx, cy=cy, width=dw, height=dh,
             world_from_camera=_column_major_to_4x4(pose["camera_transform"]),
+            confidence=conf,
         ))
     return frames
 
@@ -202,10 +224,16 @@ def load_frames_from_fixture(fixture_dir: Path) -> list[Frame]:
         depth, dw, dh = _load_depth_npy(resolve(entry["depth"]["uri"]))
         rgb = _load_rgb_aligned(resolve(entry["rgb"]["uri"]), dw, dh)
         fx, fy, cx, cy = _scaled_intrinsics(entry["intrinsics"], dw, dh)
+        conf = None
+        conf_entry = entry.get("confidence") or {}
+        conf_uri = conf_entry.get("uri") if isinstance(conf_entry, dict) else None
+        if conf_uri:
+            conf = _load_confidence_npy(resolve(conf_uri))
         frames.append(Frame(
             rgb=rgb, depth_m=depth,
             fx=fx, fy=fy, cx=cx, cy=cy, width=dw, height=dh,
             world_from_camera=_column_major_to_4x4(entry["camera_transform"]),
+            confidence=conf,
         ))
     return frames
 
@@ -226,9 +254,26 @@ DEPTH_CAP_M = 5.0
 SCALE_MULTIPLIER = 1.5
 
 # Extra slack (metres) applied to the room's floor-polygon AABB + ceiling
-# before clipping the RGBD point cloud against it. 20cm accommodates
+# before clipping the RGBD point cloud against it. XY slack accommodates
 # scanner noise near walls without letting adjacent-room leakage through.
-ROOM_CLIP_SLACK_M = 0.20
+# Z slack is tight because the iOS capture's floor+ceiling are measured
+# precisely — anything past a couple cm above ceiling / below floor is
+# floating noise worth dropping.
+ROOM_CLIP_SLACK_XY_M = 0.20
+ROOM_CLIP_SLACK_Z_M = 0.05
+
+# ARKit LiDAR confidence threshold. Values: 0=low, 1=medium, 2=high. Low-
+# confidence pixels are disproportionately on glass, distant/dark surfaces,
+# and object edges — all primary sources of floating mid-air gaussians.
+# Keep medium+high only.
+MIN_CONFIDENCE = 1
+
+# Maximum allowed camera-space length for a depth-gradient cross product.
+# Tight values kill occlusion-edge pixels that would otherwise smear a
+# gaussian across the gap between two surfaces (e.g. a bed edge against
+# the wall behind it). 0.2 is aggressive enough to matter on indoor scans
+# without gutting flat-wall coverage.
+NORMAL_GRADIENT_MAX = 0.2
 
 
 def _unproject_frame(frame: Frame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -243,6 +288,8 @@ def _unproject_frame(frame: Frame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     depth_m = frame.depth_m
     valid = np.isfinite(depth_m) & (depth_m > 0.05) & (depth_m < DEPTH_CAP_M)
+    if frame.confidence is not None and frame.confidence.shape == depth_m.shape:
+        valid &= (frame.confidence >= MIN_CONFIDENCE)
     if not np.any(valid):
         return np.zeros((0, 3)), np.zeros((0, 3)), np.zeros((0, 3))
 
@@ -275,7 +322,7 @@ def _unproject_frame(frame: Frame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     norm_mag = np.linalg.norm(cam_normals, axis=-1)
     # Drop pixels whose normals are ill-conditioned (NaN, zero, or one of
     # the neighbours straddled an occlusion edge → giant gradient).
-    valid_normal = np.isfinite(norm_mag) & (norm_mag > 1e-6) & (norm_mag < 0.5)
+    valid_normal = np.isfinite(norm_mag) & (norm_mag > 1e-6) & (norm_mag < NORMAL_GRADIENT_MAX)
     # Combine with the depth-validity mask.
     mask = valid & valid_normal
     if not np.any(mask):
@@ -449,14 +496,13 @@ def _load_room_clip_bounds(scene: dict) -> dict | None:
         return None
     xs = [float(v["x"]) for v in vertices]
     ys = [float(v["y"]) for v in vertices]
-    slack = ROOM_CLIP_SLACK_M
     return {
-        "min_x": min(xs) - slack,
-        "max_x": max(xs) + slack,
-        "min_y": min(ys) - slack,
-        "max_y": max(ys) + slack,
-        "min_z": -slack,
-        "max_z": ceiling_z + slack,
+        "min_x": min(xs) - ROOM_CLIP_SLACK_XY_M,
+        "max_x": max(xs) + ROOM_CLIP_SLACK_XY_M,
+        "min_y": min(ys) - ROOM_CLIP_SLACK_XY_M,
+        "max_y": max(ys) + ROOM_CLIP_SLACK_XY_M,
+        "min_z": -ROOM_CLIP_SLACK_Z_M,
+        "max_z": ceiling_z + ROOM_CLIP_SLACK_Z_M,
     }
 
 
@@ -475,6 +521,92 @@ def _apply_room_clip(
         (positions[:, 2] >= bounds["min_z"]) & (positions[:, 2] <= bounds["max_z"])
     )
     return positions[mask], colors[mask], scales[mask]
+
+
+# Inset applied to each mesh OBB before subtracting gaussians from the splat.
+# A small shrink leaves a thin shell of splats hugging the mesh surface so the
+# two tiers blend visually; zero would produce a visible gap at object edges.
+MESH_OBB_SUBTRACT_INSET_M = 0.005
+
+
+def _load_mesh_covered_object_ids(fixture_dir: Path) -> set[str]:
+    """Return the object_ids for which a Tier 2 mesh already exists."""
+    manifest_path = fixture_dir / "meshes" / "manifest.json"
+    if not manifest_path.exists():
+        return set()
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return set()
+    meshes = manifest.get("meshes") or {}
+    return set(meshes.keys())
+
+
+def _load_object_obbs(scene: dict) -> list[dict]:
+    """Pull every object OBB out of scene.snapshot.state.room.objects."""
+    try:
+        objects = scene["snapshot"]["state"]["room"]["objects"] or []
+    except (KeyError, TypeError):
+        return []
+    out: list[dict] = []
+    for obj in objects:
+        obb = obj.get("obb") if isinstance(obj, dict) else None
+        object_id = obj.get("object_id") if isinstance(obj, dict) else None
+        if not obb or not object_id:
+            continue
+        center = obb.get("center") or {}
+        try:
+            out.append({
+                "object_id": object_id,
+                "cx": float(center.get("x", 0.0)),
+                "cy": float(center.get("y", 0.0)),
+                "cz": float(center.get("z", 0.0)),
+                "sx": float(obb.get("size_x", 0.0)),
+                "sy": float(obb.get("size_y", 0.0)),
+                "sz": float(obb.get("size_z", 0.0)),
+                "yaw_deg": float(obb.get("yaw_degrees", 0.0)),
+            })
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _mesh_covered_obb_keep_mask(
+    positions: np.ndarray,
+    obbs: list[dict],
+    covered_object_ids: set[str],
+) -> np.ndarray:
+    """
+    Return a boolean mask (same length as `positions`) that is False for
+    any gaussian lying inside a mesh-covered OBB (shrunk by
+    MESH_OBB_SUBTRACT_INSET_M), True elsewhere. Caller applies it to each
+    per-gaussian array (positions, colors, scales, quaternions) so all
+    stay aligned.
+    """
+    if positions.size == 0 or not obbs or not covered_object_ids:
+        return np.ones(positions.shape[0], dtype=bool)
+    keep = np.ones(positions.shape[0], dtype=bool)
+    inset = MESH_OBB_SUBTRACT_INSET_M
+    for obb in obbs:
+        if obb["object_id"] not in covered_object_ids:
+            continue
+        hx = max(0.0, 0.5 * obb["sx"] - inset)
+        hy = max(0.0, 0.5 * obb["sy"] - inset)
+        hz = max(0.0, 0.5 * obb["sz"] - inset)
+        if hx <= 0 or hy <= 0 or hz <= 0:
+            continue
+        yaw = np.deg2rad(obb["yaw_deg"])
+        cos_y = float(np.cos(yaw))
+        sin_y = float(np.sin(yaw))
+        dx = positions[:, 0] - obb["cx"]
+        dy = positions[:, 1] - obb["cy"]
+        dz = positions[:, 2] - obb["cz"]
+        # Rotate by -yaw around Z to enter OBB-local space.
+        local_x = cos_y * dx + sin_y * dy
+        local_y = -sin_y * dx + cos_y * dy
+        inside = (np.abs(local_x) < hx) & (np.abs(local_y) < hy) & (np.abs(dz) < hz)
+        keep &= ~inside
+    return keep
 
 
 def _subsample(positions: np.ndarray, colors: np.ndarray, scales: np.ndarray, max_count: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -1216,6 +1348,30 @@ def render_cohesive(request: SplatRequest) -> tuple[dict, bytes, str]:
     rgbd_positions, rgbd_colors, rgbd_scales, rgbd_quaternions = build_rgbd_init_gaussians(
         frames, rgbd_budget, clip_bounds,
     )
+    # Mesh OBB subtraction: where a Tier 2 mesh already exists for an
+    # object, drop the RGBD gaussians that occupy the same volume. The
+    # viewer renders mesh + splat concurrently, so overlapping coverage
+    # causes depth-sort "melting" on oblique views. Removing the inside-
+    # the-OBB gaussians hands those pixels entirely to the (crisper)
+    # mesh while keeping splats for clutter that spills beyond the OBB.
+    covered_object_ids = _load_mesh_covered_object_ids(request.fixture_dir)
+    if covered_object_ids:
+        object_obbs = _load_object_obbs(scene)
+        keep_mask = _mesh_covered_obb_keep_mask(
+            rgbd_positions, obbs=object_obbs, covered_object_ids=covered_object_ids,
+        )
+        removed = int((~keep_mask).sum())
+        if removed > 0:
+            rgbd_positions = rgbd_positions[keep_mask]
+            rgbd_colors = rgbd_colors[keep_mask]
+            rgbd_scales = rgbd_scales[keep_mask]
+            rgbd_quaternions = rgbd_quaternions[keep_mask]
+        print(
+            f"[splat-generate] OBB-subtract removed {removed} rgbd gaussians "
+            f"covered by {len(covered_object_ids)} meshes "
+            f"(kept {rgbd_positions.shape[0]})",
+            file=sys.stderr,
+        )
     # Convert quaternions back to normals. _voxel_downsample already
     # returned world normals in build_rgbd_init_gaussians — but the
     # public return is quaternions. Recompute normals from the xyzw quat

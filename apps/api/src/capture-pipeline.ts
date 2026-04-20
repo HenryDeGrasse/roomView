@@ -1,5 +1,5 @@
 import { spawnSync, spawn } from "node:child_process";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import type { CapturePipelineStage } from "@roomview/contracts";
@@ -265,6 +265,141 @@ export function patchSceneWithSplatDescriptor(
   });
   return true;
 }
+
+/**
+ * Fire-and-forget Tier 2 mesh generation. Runs `bundle-to-meshes.py --mode
+ * tsdf` on the finalized fixture in a detached subprocess so the main
+ * pipeline's "ready" signal isn't blocked by the 5-10 minute mesh build.
+ *
+ * The finalize flow calls this AFTER `runCapturePipeline` succeeds — the
+ * splat + textures are already committed, scene.json is patched, and the
+ * editor can render the room. When the mesh job finishes it drops
+ * `fixtures/roomplan/<id>/meshes/manifest.json`. The editor polls for that
+ * manifest and offers "load meshes" when it appears.
+ *
+ * No job record is created — progress isn't surfaced to the user. Success
+ * is inferred from the manifest existing.
+ */
+export function enqueueMeshJob(args: {
+  fixture_id: string;
+  repo_root: string;
+  command?: PipelineCommand;
+}): void {
+  const command = args.command ?? DEFAULT_COMMAND;
+  const scriptPath = resolve(args.repo_root, "scripts/bundle-to-meshes.py");
+  const fixtureDir = resolve(args.repo_root, "fixtures", "roomplan", args.fixture_id);
+  // Skip if the script is missing (CI/tests without the Python pipeline).
+  if (!existsSync(scriptPath)) {
+    // eslint-disable-next-line no-console
+    console.warn(`[capture-pipeline] skipping mesh job; ${scriptPath} not found`);
+    return;
+  }
+  // Skip if we've already meshed this fixture (idempotent re-finalize).
+  if (existsSync(resolve(fixtureDir, "meshes", "manifest.json"))) {
+    // eslint-disable-next-line no-console
+    console.log(`[capture-pipeline] mesh manifest already present for ${args.fixture_id}; skipping`);
+    return;
+  }
+  const child = spawn(
+    command.bin,
+    [...command.prefix_args, scriptPath, "--fixture-id", args.fixture_id, "--mode", "tsdf"],
+    {
+      cwd: args.repo_root,
+      // Fully detach so the parent API process doesn't hold onto the child
+      // FDs — if the API restarts, the mesh job keeps running.
+      detached: true,
+      stdio: "ignore",
+      env: process.env,
+    },
+  );
+  child.on("error", (err) => {
+    // eslint-disable-next-line no-console
+    console.warn(`[capture-pipeline] mesh job spawn error for ${args.fixture_id}: ${err.message}`);
+  });
+  child.unref();
+  // eslint-disable-next-line no-console
+  console.log(`[capture-pipeline] enqueued mesh job for ${args.fixture_id} (pid=${child.pid ?? "?"})`);
+}
+
+/**
+ * Fire-and-forget high-quality splat training via Brush (Rust + WebGPU).
+ * Called by the finalize flow after the fast RGBD-init splat + meshes are
+ * already on disk. Training takes 15-30 minutes on Apple Silicon; the room
+ * is viewable the whole time via the fast splat + meshes.
+ *
+ * When training finishes, `scripts/brush-train.py` writes:
+ *   fixtures/roomplan/<id>/splats/brush-train/splat_brush_<iter>.ply
+ *   fixtures/roomplan/<id>/splats/brush-train/splat_brush_<iter>.json
+ * and patches scene.splat to point at the trained PLY. The editor polls
+ * for the descriptor and offers an "upgrade to HQ splat" action that
+ * re-fetches the scene.
+ *
+ * Skipped silently if:
+ *   - `tools/brush/.../brush_app` binary is missing (not installed)
+ *   - A descriptor already exists for this fixture (idempotent re-finalize)
+ *
+ * Failure mode is graceful: if the Python wrapper or Brush itself errors,
+ * scene.splat keeps pointing at the fast RGBD splat (nothing is modified
+ * on the failure path). No regression.
+ */
+export function enqueueBrushTrainJob(args: {
+  fixture_id: string;
+  repo_root: string;
+  command?: PipelineCommand;
+  total_steps?: number;
+  max_resolution?: number;
+}): void {
+  const command = args.command ?? DEFAULT_COMMAND;
+  const scriptPath = resolve(args.repo_root, "scripts/brush-train.py");
+  const fixtureDir = resolve(args.repo_root, "fixtures", "roomplan", args.fixture_id);
+  const brushBinary = resolve(args.repo_root, "tools/brush/brush-app-aarch64-apple-darwin/brush_app");
+  if (!existsSync(scriptPath)) {
+    // eslint-disable-next-line no-console
+    console.warn(`[capture-pipeline] skipping brush-train; ${scriptPath} not found`);
+    return;
+  }
+  if (!existsSync(brushBinary)) {
+    // eslint-disable-next-line no-console
+    console.warn(`[capture-pipeline] skipping brush-train; ${brushBinary} not installed`);
+    return;
+  }
+  // Idempotency: pick any existing .json descriptor under splats/brush-train/
+  // as evidence we already trained this fixture.
+  const brushDir = resolve(fixtureDir, "splats", "brush-train");
+  if (existsSync(brushDir)) {
+    try {
+      const descriptors = readdirSync(brushDir).filter((f) => f.endsWith(".json"));
+      if (descriptors.length > 0) {
+        // eslint-disable-next-line no-console
+        console.log(`[capture-pipeline] brush-train descriptor already present for ${args.fixture_id}; skipping`);
+        return;
+      }
+    } catch {
+      // fall through and re-run
+    }
+  }
+  const scriptArgs = [
+    ...command.prefix_args,
+    scriptPath,
+    "--fixture-id", args.fixture_id,
+    "--total-steps", String(args.total_steps ?? 30_000),
+    "--max-resolution", String(args.max_resolution ?? 960),
+  ];
+  const child = spawn(command.bin, scriptArgs, {
+    cwd: args.repo_root,
+    detached: true,
+    stdio: "ignore",
+    env: process.env,
+  });
+  child.on("error", (err) => {
+    // eslint-disable-next-line no-console
+    console.warn(`[capture-pipeline] brush-train spawn error for ${args.fixture_id}: ${err.message}`);
+  });
+  child.unref();
+  // eslint-disable-next-line no-console
+  console.log(`[capture-pipeline] enqueued brush-train for ${args.fixture_id} (pid=${child.pid ?? "?"})`);
+}
+
 
 interface RunScriptArgs {
   command: PipelineCommand;

@@ -503,12 +503,20 @@ function drawObjects(room, layer, objectNodesById) {
   for (const obj of room.objects) {
     if (!obj.obb) continue;
     const fill = objectFill(obj);
-    const group = obbRectNode(obj.obb, {
+    const style = {
       fill,
       fillOpacity: obj.class === 'generic_obstacle' ? 0.4 : 0.78,
       stroke: '#e2e8f0',
       strokeWidth: 0.025,
-    });
+    };
+    // Prefer the tight mesh-derived footprint when present — renders the
+    // actual object shape (chair-shaped, sofa-shaped) instead of a loose
+    // OBB rectangle. Falls back to the OBB rect when no footprint yet.
+    const fpVerts = obj.footprint_polygon?.vertices;
+    const useFootprint = Array.isArray(fpVerts) && fpVerts.length >= 3;
+    const group = useFootprint
+      ? wrapInGroup(polygonNode(fpVerts, style))
+      : obbRectNode(obj.obb, style);
     group.setAttribute('data-entity-id', obj.object_id);
     group.setAttribute('data-object-id', obj.object_id);
     group.setAttribute('data-object-class', obj.class);
@@ -520,6 +528,15 @@ function drawObjects(room, layer, objectNodesById) {
     }
     layer.appendChild(group);
   }
+}
+
+function wrapInGroup(child) {
+  // Polygon footprints are already in world coordinates, so the wrapping
+  // <g> needs no transform — but we keep one around for parity with
+  // obbRectNode's group (selection/drag helpers expect a group node).
+  const g = document.createElementNS(SVG_NS, 'g');
+  g.appendChild(child);
+  return g;
 }
 
 function drawZones(derived, selectionId, layer) {

@@ -209,6 +209,23 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
         sendStaticFile(response, resolved, fixtureTextureContentType(textureRequest.file));
         return;
       }
+
+      const candidateRequest = extractFixtureCandidateRequest(requestUrl.pathname);
+      if (candidateRequest) {
+        const fixture = getFixtures().find((c) => c.fixture_id === candidateRequest.fixture_id);
+        if (!fixture) {
+          sendJson(response, 404, { message: `Fixture ${candidateRequest.fixture_id} was not found.` });
+          return;
+        }
+        const fixtureDir = resolve(repoRoot, "fixtures", "roomplan", candidateRequest.fixture_id, "candidates");
+        const resolved = resolve(fixtureDir, candidateRequest.file);
+        if (!resolved.startsWith(fixtureDir + sep) && resolved !== fixtureDir) {
+          sendJson(response, 400, { message: "Invalid candidate path." });
+          return;
+        }
+        sendStaticFile(response, resolved, "application/json; charset=utf-8");
+        return;
+      }
     }
 
     const fixtureId = extractFixtureId(requestUrl.pathname);
@@ -252,13 +269,24 @@ function extractFixtureMeshRequest(pathname: string): { fixture_id: string; file
 }
 
 function extractFixtureSplatRequest(pathname: string): { fixture_id: string; file: string } | null {
-  const match = pathname.match(/^\/dev\/fixtures\/([^/]+)\/splats\/([^/]+)$/);
+  // `file` may span arbitrary subdirectory depth — HQ trained splats
+  // (scripts/brush-train.py) live under brush-train/… and per-object
+  // split outputs (cleanup-brush-ply.py --split-by-object) live under
+  // brush-train-v2/<stem>_split/. Path-traversal protection still lives
+  // in the handler via resolve() + startsWith().
+  const match = pathname.match(/^\/dev\/fixtures\/([^/]+)\/splats\/(.+)$/);
   if (!match) return null;
   return { fixture_id: decodeURIComponent(match[1]), file: decodeURIComponent(match[2]) };
 }
 
 function extractFixtureTextureRequest(pathname: string): { fixture_id: string; file: string } | null {
   const match = pathname.match(/^\/dev\/fixtures\/([^/]+)\/textures\/([^/]+)$/);
+  if (!match) return null;
+  return { fixture_id: decodeURIComponent(match[1]), file: decodeURIComponent(match[2]) };
+}
+
+function extractFixtureCandidateRequest(pathname: string): { fixture_id: string; file: string } | null {
+  const match = pathname.match(/^\/dev\/fixtures\/([^/]+)\/candidates\/([^/]+)$/);
   if (!match) return null;
   return { fixture_id: decodeURIComponent(match[1]), file: decodeURIComponent(match[2]) };
 }
@@ -288,8 +316,9 @@ function fixtureMeshContentType(file: string): string {
 function fixtureSplatContentType(file: string): string {
   const lower = file.toLowerCase();
   if (lower.endsWith(".json")) return "application/json; charset=utf-8";
-  if (lower.endsWith(".splat")) return "application/octet-stream";
-  if (lower.endsWith(".ply")) return "text/plain; charset=utf-8";
+  // .splat (antimatter15) and .ply (Brush / INRIA 3DGS) are both binary.
+  // Serving .ply as text/plain was corrupting bytes in transit.
+  if (lower.endsWith(".splat") || lower.endsWith(".ply")) return "application/octet-stream";
   return "application/octet-stream";
 }
 
@@ -628,6 +657,12 @@ function renderEditorShellHtml(input: {
           resetChatState();
           renderScene();
           setStatus("Loaded fixture " + fixtureSelect.value + ".");
+          // If the fixture's splat is still the fast RGBD init (not a
+          // Brush-trained PLY), start polling for a trained upgrade.
+          const splatAssetId = state.scene?.splat?.asset_id || null;
+          if (typeof splatAssetId === 'string' && !splatAssetId.startsWith('splat:brush-')) {
+            startBrushTrainPoll(fixtureSelect.value, splatAssetId);
+          }
         } catch (error) {
           setStatus(error.message || "Failed to load fixture.", true);
         }
@@ -1210,6 +1245,44 @@ function renderEditorShellHtml(input: {
             state.scanView.setScanSelection(state.selectionId);
           } catch (err) {
             console.error("scanView.setScanSelection failed", err);
+          }
+        }
+        // Move gizmo follows selection in both panes. We lift the
+        // object's OBB center out of canonical scene state + derive
+        // wall segments from the floor polygon for snap-to-wall, then
+        // hand both to each viewer's setMoveTarget.
+        const room = state.scene?.snapshot?.state?.room;
+        const selectedObject = state.selectionId && room
+          ? (room.objects || []).find((candidate) => candidate.object_id === state.selectionId)
+          : null;
+        const gizmoCenter = selectedObject?.obb?.center || selectedObject?.pose?.position || null;
+        const gizmoTargetId = selectedObject ? state.selectionId : null;
+        // Floor polygon edges → inward-normal wall segments. The polygon
+        // is typically CCW so interior is on the LEFT of each edge
+        // direction (inward normal = rotate edge by +90° = (-dy, dx)).
+        const walls = [];
+        const floorVerts = room?.shell?.floor_polygon?.vertices;
+        if (Array.isArray(floorVerts) && floorVerts.length >= 3) {
+          for (let i = 0; i < floorVerts.length; i += 1) {
+            const a = floorVerts[i];
+            const b = floorVerts[(i + 1) % floorVerts.length];
+            const ex = b.x - a.x;
+            const ey = b.y - a.y;
+            const len = Math.hypot(ex, ey);
+            if (len < 1e-6) continue;
+            walls.push({
+              ax: a.x, ay: a.y, bx: b.x, by: b.y,
+              nx: -ey / len, ny: ex / len,
+            });
+          }
+        }
+        const moveContext = selectedObject
+          ? { obb: selectedObject.obb, walls }
+          : {};
+        for (const view of [state.scanView, state.viewer]) {
+          if (view && typeof view.setMoveTarget === 'function') {
+            try { view.setMoveTarget(gizmoTargetId, gizmoCenter || null, moveContext); }
+            catch (err) { console.error('setMoveTarget failed', err); }
           }
         }
         if (state.scene && document.getElementById("layout-info-mount")) {
@@ -2092,6 +2165,29 @@ function renderEditorShellHtml(input: {
             if (!mount) return null;
             const view = mod.mountScanView(mount);
             state.scanView = view;
+            // Hook scan-pane clicks into the shared selection state so
+            // clicking a TSDF-mesh object or an OBB wireframe in the 3D
+            // view selects the object (previously selection only worked
+            // via the Objects panel).
+            if (typeof view.setOnSelect === 'function') {
+              view.setOnSelect((id) => {
+                if (id && state.selectionId !== id) setSelection(id);
+              });
+            }
+            // Wire the object-move gizmo's drag-end callback. On release,
+            // translate the selected object's OBB center + footprint
+            // polygon + pose position by the drag delta, then surface a
+            // toast so the move is visible. Persistence / violation
+            // recompute lands in a follow-up change.
+            if (typeof view.setOnObjectMoved === 'function') {
+              view.setOnObjectMoved((objectId, delta) => {
+                try {
+                  applyLocalObjectMove(objectId, delta);
+                } catch (err) {
+                  console.error('applyLocalObjectMove failed', err);
+                }
+              });
+            }
             // Register the Gaussian Splatting renderer (Track B). Guarded import so a
             // failure in the renderer never breaks the scan pane — setSplat simply
             // reports 'metadata_only' and the RoomPlan shell + scan proxies stay.
@@ -2134,6 +2230,7 @@ function renderEditorShellHtml(input: {
             await state.scanView.setSplat({
               uri: splat.uri,
               gaussian_count: splat.gaussian_count ?? null,
+              split_manifest_uri: splat.split_manifest_uri ?? null,
             });
           } catch (err) {
             console.error('setSplat failed', err);
@@ -2156,9 +2253,37 @@ function renderEditorShellHtml(input: {
           const mod = await import('/scan-proxies.js');
           if (typeof mod.buildObjectOutlines !== 'function') return;
           const outlineGroup = mod.buildObjectOutlines(state.scene);
+          // Experimental: splat-discovered candidate OBBs (amber) hidden
+          // by default. Validation showed ~8% recall on RoomPlan-known
+          // objects (most over-merged with neighbours) so surfacing them
+          // to users would be misleading. Opt in via ?show_candidates=1
+          // for pipeline debugging.
+          const params = new URLSearchParams(window.location.search);
+          const showCandidates = params.get('show_candidates') === '1';
+          const fixtureId = state.loadedFrom === 'fixture' ? fixtureSelect.value : null;
+          let candidateCount = 0;
+          if (showCandidates && fixtureId && typeof mod.loadCandidateOutlines === 'function') {
+            try {
+              const candGroup = await mod.loadCandidateOutlines(fixtureId);
+              if (candGroup) {
+                candidateCount = candGroup.children.length;
+                outlineGroup.add(candGroup);
+              }
+            } catch (candErr) {
+              console.warn('candidate outlines load failed', candErr);
+            }
+          }
           state.scanView.setObjectOutlines(outlineGroup);
           if (typeof state.scanView.setScanSelection === 'function') {
             state.scanView.setScanSelection(state.selectionId);
+          }
+          if (candidateCount > 0) {
+            showToast({
+              message: candidateCount + ' splat-discovered candidate object'
+                + (candidateCount === 1 ? '' : 's') + ' shown in amber.',
+              level: 'info',
+              duration_ms: 4500,
+            });
           }
         } catch (err) {
           // eslint-disable-next-line no-console
@@ -2214,6 +2339,12 @@ function renderEditorShellHtml(input: {
               level: 'success',
               duration_ms: 3600,
             });
+            // If Tier 2 meshes weren't available yet, poll for them — the
+            // capture pipeline fires bundle-to-meshes as a background job
+            // after finalize, so the manifest appears 5-10 minutes later.
+            if (meshCount === 0 && fixtureId) {
+              startMeshManifestPoll(fixtureId, scene);
+            }
           } catch (err) {
             console.error('scan proxies failed', err);
             showToast({ message: 'Scan proxies failed: ' + (err?.message || err), level: 'error' });
@@ -2221,6 +2352,114 @@ function renderEditorShellHtml(input: {
             state.scanProxiesLoading = null;
           }
         })();
+      }
+
+      // Polls for the Brush-trained HQ splat descriptor. When the fixture's
+      // scene.splat.asset_id flips to "splat:brush-*" (set by
+      // scripts/brush-train.py after training finishes), we know a higher-
+      // quality splat is ready. Show a toast that reloads the scene so the
+      // viewer picks up the new splat.uri on next fetch.
+      function startBrushTrainPoll(fixtureId, initialSplatAssetId) {
+        if (state.brushPollFixtureId === fixtureId) return;
+        state.brushPollFixtureId = fixtureId;
+        const intervalMs = 30_000;
+        const maxAttempts = 80; // ~40 minutes; Brush typically finishes in 15-30
+        let attempts = 0;
+        const tick = async () => {
+          attempts += 1;
+          if (state.loadedFrom !== 'fixture' || fixtureSelect.value !== fixtureId) {
+            state.brushPollFixtureId = null;
+            return;
+          }
+          try {
+            const response = await fetch(
+              '/dev/fixtures/' + encodeURIComponent(fixtureId) + '?_t=' + Date.now()
+            );
+            if (response.ok) {
+              const payload = await response.json();
+              const newAssetId = payload?.scene?.splat?.asset_id || null;
+              if (newAssetId && typeof newAssetId === 'string'
+                  && newAssetId.startsWith('splat:brush-')
+                  && newAssetId !== initialSplatAssetId) {
+                state.brushPollFixtureId = null;
+                showToast({
+                  message: 'High-quality splat finished training — click to upgrade.',
+                  level: 'info',
+                  duration_ms: 30_000,
+                  action: {
+                    label: 'Upgrade splat',
+                    onClick: () => {
+                      // Trigger the same path as the initial fixture load.
+                      fixtureSelect.value = fixtureId;
+                      fixtureButton.click();
+                    },
+                  },
+                });
+                return;
+              }
+            }
+          } catch {
+            // network hiccup; keep polling
+          }
+          if (attempts >= maxAttempts) {
+            state.brushPollFixtureId = null;
+            return;
+          }
+          setTimeout(tick, intervalMs);
+        };
+        setTimeout(tick, intervalMs);
+      }
+
+      // Polls for /dev/fixtures/{id}/meshes/manifest.json to appear, then
+      // shows a toast with a "Load meshes" action that re-runs
+      // installScanProxies(). Idempotent — refuses to start a second poll
+      // for the same fixture, and stops on scene change.
+      function startMeshManifestPoll(fixtureId, sceneAtStart) {
+        if (state.meshPollFixtureId === fixtureId) return;
+        state.meshPollFixtureId = fixtureId;
+        const intervalMs = 10_000;
+        const maxAttempts = 120; // ~20 minutes before giving up
+        let attempts = 0;
+        const tick = async () => {
+          attempts += 1;
+          // Bail if the user navigated to a different scene.
+          if (state.scene !== sceneAtStart) {
+            state.meshPollFixtureId = null;
+            return;
+          }
+          try {
+            // GET (server only routes GET for the mesh files route); the
+            // manifest is tiny (~3KB), so a full fetch is cheap enough.
+            const response = await fetch(
+              '/dev/fixtures/' + encodeURIComponent(fixtureId) + '/meshes/manifest.json?_t=' + Date.now()
+            );
+            if (response.ok) {
+              state.meshPollFixtureId = null;
+              showToast({
+                message: '3D object meshes are ready — click to load them.',
+                level: 'info',
+                duration_ms: 20_000,
+                action: {
+                  label: 'Load meshes',
+                  onClick: () => {
+                    // Clear the snapshot guard so installScanProxies actually re-runs.
+                    state.scanProxiesSnapshotId = null;
+                    installScanProxies();
+                  },
+                },
+              });
+              return;
+            }
+          } catch {
+            // network hiccup; keep polling
+          }
+          if (attempts >= maxAttempts) {
+            state.meshPollFixtureId = null;
+            return;
+          }
+          setTimeout(tick, intervalMs);
+        };
+        setTimeout(tick, intervalMs);
       }
 
       function updateScanModeBadge() {
@@ -2295,6 +2534,239 @@ function renderEditorShellHtml(input: {
           return;
         }
         layoutPane.innerHTML = '<div class="layout-svg-mount" id="layout-svg-mount"></div><div id="layout-info-mount"></div>';
+      }
+
+      // ---- Live validation (port of apps/api/src/overlap-policy.ts).
+      // Two rules, physics-only, no class-based exemptions:
+      //   1. OBJECT_OVERLAP — two floor-supported objects whose
+      //      footprint polygons intersect by >0.05 m².
+      //   2. OUT_OF_BOUNDS — object footprint majority-outside floor
+      //      polygon (approximated client-side via vertex count; the
+      //      Python rederive uses true area).
+      const HARD_OVERLAP_AREA_THRESHOLD_M2 = 0.05;
+      const OUT_OF_BOUNDS_OUTSIDE_FRACTION = 0.5;
+
+      function polygonFromObbLive(obb) {
+        const halfX = (obb.size_x || 0) / 2;
+        const halfY = (obb.size_y || 0) / 2;
+        const rad = ((obb.yaw_degrees || 0) * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        const cx = obb.center?.x || 0;
+        const cy = obb.center?.y || 0;
+        return [
+          [cx + -halfX * cos - -halfY * sin, cy + -halfX * sin + -halfY * cos],
+          [cx +  halfX * cos - -halfY * sin, cy +  halfX * sin + -halfY * cos],
+          [cx +  halfX * cos -  halfY * sin, cy +  halfX * sin +  halfY * cos],
+          [cx + -halfX * cos -  halfY * sin, cy + -halfX * sin +  halfY * cos],
+        ];
+      }
+
+      function footprintPolyForObject(obj) {
+        const stored = obj.footprint_polygon && obj.footprint_polygon.vertices;
+        if (Array.isArray(stored) && stored.length >= 3) {
+          return stored.map((v) => [v.x, v.y]);
+        }
+        return polygonFromObbLive(obj.obb);
+      }
+
+      function polygonSignedArea(verts) {
+        if (verts.length < 3) return 0;
+        let s = 0;
+        for (let i = 0; i < verts.length; i += 1) {
+          const a = verts[i];
+          const b = verts[(i + 1) % verts.length];
+          s += a[0] * b[1] - b[0] * a[1];
+        }
+        return s / 2;
+      }
+
+      function polygonArea(verts) {
+        return Math.abs(polygonSignedArea(verts));
+      }
+
+      function ensureCcw(verts) {
+        return polygonSignedArea(verts) < 0 ? [...verts].reverse() : verts.slice();
+      }
+
+      function segmentIntersection(p1, p2, p3, p4) {
+        const d1x = p2[0] - p1[0], d1y = p2[1] - p1[1];
+        const d2x = p4[0] - p3[0], d2y = p4[1] - p3[1];
+        const denom = d1x * d2y - d1y * d2x;
+        if (Math.abs(denom) < 1e-12) return p2;
+        const t = ((p3[0] - p1[0]) * d2y - (p3[1] - p1[1]) * d2x) / denom;
+        return [p1[0] + t * d1x, p1[1] + t * d1y];
+      }
+
+      function clipConvex(subject, clip) {
+        let output = subject.slice();
+        for (let i = 0; i < clip.length; i += 1) {
+          if (output.length === 0) return [];
+          const a = clip[i];
+          const b = clip[(i + 1) % clip.length];
+          const ex = b[0] - a[0], ey = b[1] - a[1];
+          const input = output;
+          output = [];
+          const insideOf = (p) => ex * (p[1] - a[1]) - ey * (p[0] - a[0]) >= 0;
+          for (let j = 0; j < input.length; j += 1) {
+            const curr = input[j];
+            const prev = input[(j - 1 + input.length) % input.length];
+            const ci = insideOf(curr);
+            const pi = insideOf(prev);
+            if (ci) {
+              if (!pi) output.push(segmentIntersection(prev, curr, a, b));
+              output.push(curr);
+            } else if (pi) {
+              output.push(segmentIntersection(prev, curr, a, b));
+            }
+          }
+        }
+        return output;
+      }
+
+      function polygonIntersectionArea(a, b) {
+        if (a.length < 3 || b.length < 3) return 0;
+        const clipped = clipConvex(ensureCcw(a), ensureCcw(b));
+        if (clipped.length < 3) return 0;
+        return Math.abs(polygonSignedArea(clipped));
+      }
+
+      function pointInPolygon(x, y, verts) {
+        let inside = false;
+        for (let i = 0, j = verts.length - 1; i < verts.length; j = i, i += 1) {
+          const xi = verts[i][0], yi = verts[i][1];
+          const xj = verts[j][0], yj = verts[j][1];
+          const intersect = ((yi > y) !== (yj > y))
+            && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-12) + xi;
+          if (intersect) inside = !inside;
+        }
+        return inside;
+      }
+
+      function polygonContainsPolygon(outer, inner) {
+        for (const v of inner) {
+          if (!pointInPolygon(v[0], v[1], outer)) return false;
+        }
+        return true;
+      }
+
+      function isFloorSupported(obj) {
+        return obj?.support?.support_kind === 'floor';
+      }
+
+      function recomputeHardViolations(room) {
+        const objects = room.objects || [];
+        const floorVerts = room.shell?.floor_polygon?.vertices || [];
+        const floor = floorVerts.map((v) => [v.x, v.y]);
+        const polys = objects.map((o) => footprintPolyForObject(o));
+        const out = [];
+
+        // OUT_OF_BOUNDS — vertex-count approximation to majority-outside.
+        // (Client-side; Python rederive uses true area for canonical
+        // derivation. Vertex count is a reasonable proxy and fast.)
+        if (floor.length >= 3) {
+          for (let i = 0; i < objects.length; i += 1) {
+            const poly = polys[i];
+            let inside = 0;
+            for (const v of poly) if (pointInPolygon(v[0], v[1], floor)) inside += 1;
+            const outsideFrac = 1 - inside / poly.length;
+            if (outsideFrac > OUT_OF_BOUNDS_OUTSIDE_FRACTION) {
+              out.push({
+                entity_id: objects[i].object_id,
+                reason_code: 'OUT_OF_BOUNDS',
+                message: objects[i].class + ' extends outside the captured floor polygon.',
+                outside_fraction: Math.round(outsideFrac * 100) / 100,
+              });
+            }
+          }
+        }
+
+        // OBJECT_OVERLAP — real polygon intersection, no class exemptions.
+        for (let i = 0; i < objects.length; i += 1) {
+          if (!isFloorSupported(objects[i])) continue;
+          for (let j = i + 1; j < objects.length; j += 1) {
+            if (!isFloorSupported(objects[j])) continue;
+            const inter = polygonIntersectionArea(polys[i], polys[j]);
+            if (inter > HARD_OVERLAP_AREA_THRESHOLD_M2) {
+              out.push({
+                entity_ids: [objects[i].object_id, objects[j].object_id],
+                reason_code: 'OBJECT_OVERLAP',
+                message: objects[i].class + ' overlaps ' + objects[j].class + '.',
+                overlap_area_m2: Math.round(inter * 1000) / 1000,
+              });
+            }
+          }
+        }
+        return out;
+      }
+
+      // Apply a translate-and/or-rotate delta to the given scene object.
+      // Updates the in-memory canonical scene (OBB center + yaw, pose
+      // position + yaw, footprint polygon vertices). The scan pane's
+      // three.js objects already moved during drag via the pointer
+      // handlers; this keeps the layout pane and violation derivation
+      // consistent. Local-only; persistence lands in a follow-up.
+      function applyLocalObjectMove(objectId, delta) {
+        const room = state.scene
+          && state.scene.snapshot
+          && state.scene.snapshot.state
+          && state.scene.snapshot.state.room;
+        if (!room || !Array.isArray(room.objects)) return;
+        const obj = room.objects.find((candidate) => candidate.object_id === objectId);
+        if (!obj) return;
+        const dx = delta.x || 0;
+        const dy = delta.y || 0;
+        const dz = delta.z || 0;
+        const dyaw = delta.yaw_degrees || 0;
+        if (obj.obb && obj.obb.center) {
+          obj.obb.center.x += dx;
+          obj.obb.center.y += dy;
+          obj.obb.center.z += dz;
+          if (dyaw) obj.obb.yaw_degrees = ((obj.obb.yaw_degrees || 0) + dyaw) % 360;
+        }
+        if (obj.pose && obj.pose.position) {
+          obj.pose.position.x += dx;
+          obj.pose.position.y += dy;
+          obj.pose.position.z += dz;
+          if (dyaw) obj.pose.yaw_degrees = ((obj.pose.yaw_degrees || 0) + dyaw) % 360;
+        }
+        const verts = obj.footprint_polygon && obj.footprint_polygon.vertices;
+        if (Array.isArray(verts)) {
+          for (const v of verts) {
+            v.x += dx;
+            v.y += dy;
+          }
+          // Rotate polygon around the (new) OBB center after translation.
+          if (dyaw && obj.obb && obj.obb.center) {
+            const rad = (dyaw * Math.PI) / 180;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+            const cx = obj.obb.center.x;
+            const cy = obj.obb.center.y;
+            for (const v of verts) {
+              const vx = v.x - cx;
+              const vy = v.y - cy;
+              v.x = cx + vx * cos - vy * sin;
+              v.y = cy + vx * sin + vy * cos;
+            }
+          }
+        }
+        try {
+          const fresh = recomputeHardViolations(room);
+          if (state.scene.derived_state_cache) {
+            state.scene.derived_state_cache.hard_violations = fresh;
+          } else {
+            state.scene.derived_state_cache = { hard_violations: fresh };
+          }
+        } catch (err) { console.error('recomputeHardViolations failed', err); }
+        try { syncLayoutView(); } catch (err) { console.error(err); }
+        // Refresh the violation summary + chip colours in the layout pane.
+        try {
+          const mount = document.getElementById('layout-info-mount');
+          if (mount) {
+            mount.innerHTML = renderLayoutPaneInfo(state.scene, state.selectionId, Boolean(state.sessionId));
+          }
+        } catch (err) { console.error(err); }
       }
 
       function syncLayoutView() {
@@ -2394,6 +2866,14 @@ function renderEditorShellHtml(input: {
             });
             installAssetUriResolver(api);
             state.viewer = api;
+            // Same move-gizmo callback the scan pane uses — the render
+            // pane writes into the same canonical scene state, so both
+            // panes agree after a drag.
+            if (typeof api.setOnObjectMoved === 'function') {
+              api.setOnObjectMoved((objectId, delta) => {
+                try { applyLocalObjectMove(objectId, delta); } catch (err) { console.error('applyLocalObjectMove failed', err); }
+              });
+            }
             if (state.scene && state.scene.snapshot) {
               api.setRoom(state.scene.snapshot.state.room, {
                 editing_asset_refs: state.scene.snapshot.editing_asset_refs || [],
@@ -2943,6 +3423,17 @@ function renderEditorShellHtml(input: {
         close.textContent = "×";
         toast.appendChild(dot);
         toast.appendChild(body);
+        if (options?.action && typeof options.action.onClick === "function") {
+          const actionBtn = document.createElement("button");
+          actionBtn.type = "button";
+          actionBtn.className = "toast__action";
+          actionBtn.textContent = String(options.action.label || "Open");
+          actionBtn.addEventListener("click", () => {
+            try { options.action.onClick(); } catch (err) { console.error("toast action failed", err); }
+            dismiss();
+          });
+          toast.appendChild(actionBtn);
+        }
         toast.appendChild(close);
         toastRegion.appendChild(toast);
         requestAnimationFrame(() => toast.classList.add("toast--visible"));
@@ -3137,6 +3628,17 @@ function renderEditorShellHtml(input: {
           if (splatGroup) splatGroup.visible = showSplat;
           if (meshesRoot) meshesRoot.visible = showMeshes;
           if (shellRoot) shellRoot.visible = showShell;
+          // Hide the shell floor whenever the splat is visible — otherwise
+          // the opaque floor mesh renders on top of the thin splat-floor
+          // layer and washes out its color where object meshes sit on top.
+          // Walls and ceiling stay for spatial context; the splat on them
+          // overlays naturally since walls don't double-bake with object
+          // meshes the way the floor does.
+          if (shellRoot) {
+            shellRoot.traverse((node) => {
+              if (node.userData?.kind === "floor") node.visible = showShell && !showSplat;
+            });
+          }
           // Wireframe mode: hide both splat and meshes; shell stays.
           if (mode === "wireframe") {
             if (splatGroup) splatGroup.visible = false;

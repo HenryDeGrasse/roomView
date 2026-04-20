@@ -1,5 +1,7 @@
 # Stretch Goals: The Full Product Vision
-*v0.4 Draft · Owner: Applied AI / 3D Systems*
+*v0.5 Draft · Owner: Applied AI / 3D Systems · Last updated: 2026-04-19*
+
+> **What's shipped since v0.4.** Tier 2 TSDF meshes per captured object, Brush (Rust + WebGPU) HQ splat training on the capture pipeline's 3rd background stage, per-object OBB refinement from splat density, cleaned-PLY post-processing (room-clip + OBB-subtract + opacity cull). Capture-to-viewer flow now produces three tiers automatically: fast splat (≤15s) → meshes (≤5min) → HQ splat (≤30min). This moves Track 1 v1.1 from "maturing" to "mostly landed"; the remaining known gap is open-vocabulary object discovery, covered in §Open-Vocabulary Object Discovery below.
 
 ## TL;DR
 
@@ -31,7 +33,9 @@ The capability to get a room — any room, any space — into the canonical sche
 
 **v1 (MVP).** iPhone capture via RoomPlan. Parametric shell plus object detection, with attributes and parent relationships preserved. Splat trains asynchronously for the scan pane. Single bedroom.
 
-**v1.1.** Splat quality and speed improvements as the open-source 3DGS ecosystem matures. Splat editing — modifying the scan directly (repaint a real wall, replace a real object inside the splat).
+**v1.1.** Splat quality and speed improvements as the open-source 3DGS ecosystem matures. Splat editing — modifying the scan directly (repaint a real wall, replace a real object inside the splat). *Status (2026-04-19): tiered rendering landed — Brush HQ training on Mac Metal, TSDF per-object meshes, baked wall textures, and a capture pipeline that emits all three tiers asynchronously with progressive editor upgrade toasts.*
+
+**v1.15 — Open-vocabulary object discovery.** RoomPlan recognizes a bounded taxonomy (bed, sofa, chair, table, storage, television, and their iOS-17 attributes). Everything else — pillows, lamps, plants, rugs, wall art, clutter on surfaces — is invisible to the editor. Stretch capability: **surface every distinct object in the room, with class labels, without re-scanning.** See §Open-Vocabulary Object Discovery below for the technical plan.
 
 **v1.2.** Floorplan ingestion — upload 2D plans (DXF, raster PDF with scale) and extrude shells. Same schema, same editor. Synthetic ingestion — generate a shell and populate from a prompt. The three entry points converge on identical `Scene` JSON.
 
@@ -109,6 +113,94 @@ Specific product moments that require progress on multiple tracks simultaneously
 
 ---
 
+## Open-Vocabulary Object Discovery
+
+*Track 1 v1.15 · Status: theorized, validated feasibility with prototype, ready to build.*
+
+### The problem
+
+RoomPlan's recognizer covers ~12 furniture classes. A typical bedroom contains 20–40 distinct objects worth editing: pillows, throw blankets, lamps, plants, books, picture frames, clothes, cables, remotes, cups. The current editor can't see any of these — they exist in the splat and LiDAR depth but not in `scene.objects`, so users can't select, move, or replace them.
+
+### What we tried and why it didn't work
+
+Prototype: `scripts/splat-to-mesh-candidates.py` — voxel-cluster the trained splat in 3D, fit OBBs to clusters outside the existing mesh boundaries.
+
+Validated via `--validate` mode: measured **8% recall** against RoomPlan-known objects (only 1 of 12 matched with IoU ≥ 0.15). Root causes:
+
+- **Brush-trained splats include view-synthesis haze gaussians** that aren't on real surfaces — clustering merges these with object surfaces.
+- **Fast RGBD-init splats have surface-only gaussians** (better input) but rooms are packed: bed against wall, nightstand against bed — simple connected-components can't separate touching objects.
+- **No class labels** — clusters are anonymous blobs with no semantic meaning.
+
+Validation harness preserved in the repo (`--validate` flag on the script) for any future approach we want to A/B.
+
+### The SOTA path
+
+Ranked from "ship this week" to "research-grade":
+
+**Tier A — YOLOv11 + LiDAR-depth projection.** Run a pretrained 2D object detector on every captured RGB frame. For each detection, use the per-frame ARKit LiDAR depth inside the bbox to unproject to 3D. Cluster across frames by `(class, world_center)`, require ≥ 5-frame vote.
+
+- Recall on RoomPlan-class objects: ~95%
+- Recall on long-tail COCO classes in a bedroom (clocks, cups, books, plants, vases, remotes, cell phones): ~70%
+- Effort: **~1 day**
+- Inference cost: ~10 seconds for 338 frames on Apple Silicon via Core ML
+- Failure mode: misses out-of-vocabulary items (throw pillow, fitted sheet, lampshade specifically)
+
+**Tier B — Open-vocabulary 2D detection.** Swap YOLO for YOLO-World, Grounding DINO, or Detic. These take a text prompt ("pillow, lampshade, cable, book, potted plant") and detect arbitrary classes.
+
+- Recall on long-tail: >85%
+- Effort: ~1.5 days
+- Inference cost: 2–5× YOLO but still seconds, not minutes
+- Failure mode: prompt engineering (what classes do you ask for?)
+
+**Tier C — SAM 2 promptable masks.** Replace bboxes with pixel-accurate 2D masks. Backproject masks through LiDAR depth to get **per-object 3D point clouds, not loose boxes containing 20% empty space.** Feed those clusters directly into per-object TSDF to produce actual meshes, not just bounding boxes.
+
+- Output quality: object shape, not just position
+- Enables "click any pixel → add as object": 500ms from click to mesh
+- Effort: ~2 days
+- Dependency: SAM 2 runs on Apple MPS via the MLX port (verified working on M3)
+
+**Tier D — Cross-view consistency via 2D tracking.** Object masks in frame N must appear at a consistent 3D location in frame N+1. Reject single-frame hallucinations. Standard video-SAM / SAMPro3D technique.
+
+- Eliminates ~90% of YOLO/SAM false positives
+- Effort: +1 day on top of Tier C
+
+**Tier E — Native 3D instance segmentation.** ODIN, Mask3D, PointTransformer V3 run on the fused RGBD point cloud directly. Better than 2D → 3D for occluded backsides, tight arrangements, and novel class clustering.
+
+- Best-in-class instance boundaries
+- Catches objects the camera never imaged directly (partial-view inference)
+- Effort: 5–7 days (model weights, preprocessing, tuning)
+
+**Tier F — Language-driven 3D segmentation.** OpenScene, LERF, or Language-driven Mask3D. User asks *"show me everything a toddler could trip on"* or *"show me all the soft-surface objects"* and gets a 3D segmentation honoring semantics.
+
+- Product-tier capability enabling non-obvious editor flows (accessibility audits, style inventories, safety checks)
+- Effort: 2+ weeks with current model weights
+
+### The recommended sprint
+
+If we invest a week:
+
+| Day | Deliverable |
+|---|---|
+| 1 | YOLOv11 + LiDAR depth projection + voting. ~90% recall, class labels. Ship as "Tier 1 discovery." |
+| 2 | Swap YOLO output for SAM 2 masks with YOLO bboxes as prompts. Pipe masks into TSDF → real meshes. |
+| 3 | OBB refinement of existing RoomPlan objects now driven by SAM 2 masks (deprecates `scripts/refine-object-obbs.py`). |
+| 4–5 | ODIN second opinion for candidate validation; reject any 2D-derived discovery that ODIN doesn't confirm as a coherent 3D cluster. |
+
+Product surface unlocked:
+
+- Editor's object list becomes dynamic: RoomPlan's 12 classes → 30–50 real objects with labels.
+- "**3 new objects found: plant, wall clock, desk organizer. Add to scene?**" toast in the capture pipeline (parallel 4th background stage after splat/meshes/Brush).
+- Click any pixel in the splat → SAM 2 mask → selected object, zero 3D expertise required.
+- OBB refinement becomes free as a side-effect of mask-based geometry.
+
+### Why this track is the right next investment
+
+- The current editor rendering stack (meshes + splat + textures) is mature enough that new capability beats polish. More gaussians or sharper textures won't make the bed any more editable than it already is.
+- Discovery is the thing RoomPlan fundamentally can't do without a new model — exactly the place a small ML sprint has leverage.
+- Every tier above (A→F) produces outputs the existing `Scene.objects` schema already accepts. No migrations required — this fits the v1.15 slot cleanly.
+
+---
+
 ## The Honest Caveats
 
 **"Replace your architect" is an aspiration, not a deliverable.** An architect does site analysis, navigates zoning and permitting, coordinates with structural engineers and MEP consultants, manages contractors, and bears professional liability. This system will accelerate the creative and exploratory parts of the process, and eventually produce permit-grade plans for simple projects. It will not replace a professional for anything structurally non-trivial on any timeline we can credibly promise. The right framing is *"the tool that makes layperson design inspiration-grade, and serves as high-quality input to a real architect when one gets involved."*
@@ -119,7 +211,7 @@ Specific product moments that require progress on multiple tracks simultaneously
 
 **Realistic compositing has a quality ceiling until lighting harmonization matures.** v1.1 Realistic will land with heuristic light matching — good enough for most rooms, imperfect in challenging lighting. True photographic quality for splat+mesh compositing requires ongoing research we're consuming, not producing.
 
-**RoomPlan class coverage is finite and useful, not comprehensive.** The published RoomPlan taxonomy is a bounded set of room-defining objects. iOS 17 attributes make it more expressive but it's not open-vocabulary. Supplementary detection covers smaller décor, lamps, and miscellany.
+**RoomPlan class coverage is finite and useful, not comprehensive.** The published RoomPlan taxonomy is a bounded set of room-defining objects. iOS 17 attributes make it more expressive but it's not open-vocabulary. Supplementary detection covers smaller décor, lamps, and miscellany. The v1.15 open-vocabulary discovery track (§Open-Vocabulary Object Discovery) breaks this ceiling by layering YOLO/SAM/ODIN on top of the Apple primitives rather than waiting for Apple to expand the taxonomy.
 
 ---
 

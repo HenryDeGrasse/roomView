@@ -1,82 +1,39 @@
 /**
- * Shared OBJECT_OVERLAP policy for ingest and mutation validation.
+ * Hard-violation policy — physics-only, two rules.
  *
- * Two independent copies of this check used to live in roomplan-ingest.ts
- * and mutation-engine.ts and drifted: ingest flagged any AABB intersection
- * while the mutation engine only flagged intersection areas above a
- * threshold. That meant a freshly-scanned room could land with
- * "hard violations" the mutation engine wouldn't have flagged, and every
- * subsequent edit inherited them and threw.
+ * History note: this file used to carry a small zoo of exemptions
+ * (canObjectsLegallyOverlap, isTolerableFurnitureOverlap, wall-cluster
+ * tolerances, chair-tuck-under-desk, rug special cases) that existed to
+ * paper over OBB-sized footprints that were loose by several cm. Now
+ * that each object's `footprint_polygon` is the true mesh-derived shape,
+ * real collisions and non-collisions separate cleanly on geometry alone
+ * and the exemptions are dead weight.
  *
- * One shared definition avoids the drift. The policy:
+ * Kept rules:
+ *   - OBJECT_OVERLAP: two floor-supported objects whose footprint
+ *     polygons intersect by more than a small epsilon. No class-aware
+ *     exemptions — if they really touch, the geometry says so.
+ *   - OUT_OF_BOUNDS: object's footprint majority-outside the floor
+ *     polygon (enforced at the caller; this module's helpers power it).
  *
- *   - `canObjectsLegallyOverlap` covers structural reasons two OBBs are
- *     allowed to coincide (non-floor-supported pair, rug, parent/child).
- *   - `isTolerableFurnitureOverlap` covers physical-reality reasons
- *     furniture boxes can touch without being a bug: shared wall-mount
- *     clusters, nightstand/lamp neighbors, chairs tucked under desks
- *     or tables. Small cabinet-cluster-style overlaps are tolerated;
- *     chair-under-desk is tolerated at any size because that is the
- *     literal physical configuration.
- *   - `exceedsOverlapThreshold` is the coarse area gate applied when
- *     neither of the above exemptions fires.
- *
- * Call `findHardObjectOverlaps` with an iterable of SceneObjects; it
- * returns pairs that should be reported as `OBJECT_OVERLAP` hard
- * violations. Callers can wrap each pair in their own violation struct.
+ * Dropped rules:
+ *   - OPENING_BLOCKED / CLEARANCE_VIOLATION — they depended on keepout
+ *     zones RoomPlan produces unreliably and on arbitrary walkway
+ *     thresholds. They belong in a future soft-scoring layer, not in
+ *     hard violations.
  */
-import type { ObjectClass, OBB3D, Point2D, Polygon2D, SceneObject } from "@roomview/contracts";
+import type { OBB3D, Point2D, Polygon2D, SceneObject } from "@roomview/contracts";
 
-const HARD_OVERLAP_AREA_THRESHOLD_M2 = 0.18;
-const WALL_CLUSTER_SMALLER_AREA_M2 = 0.35;
-
-const CHAIR_TUCK_UNDER_CLASSES = new Set<ObjectClass>(["desk", "table"]);
+// 0.05 m² ≈ 22 cm × 22 cm. Large enough to be visibly a collision,
+// small enough that real furniture-on-furniture contact (two
+// floor-supported pieces pushed together) still registers. Mesh bleed
+// at object boundaries typically sits at 0.005–0.03 m² — below this.
+const HARD_OVERLAP_AREA_THRESHOLD_M2 = 0.05;
 
 export interface HardOverlap {
   left: SceneObject;
   right: SceneObject;
   overlap_area_m2: number;
-}
-
-export function canObjectsLegallyOverlap(left: SceneObject, right: SceneObject): boolean {
-  if (left.support.support_kind !== "floor" || right.support.support_kind !== "floor") {
-    return true;
-  }
-  if (left.class === "rug" || right.class === "rug") {
-    return true;
-  }
-  if (left.parent_id === right.object_id || right.parent_id === left.object_id) {
-    return true;
-  }
-  return false;
-}
-
-export function isTolerableFurnitureOverlap(left: SceneObject, right: SceneObject, smallerAreaM2: number): boolean {
-  const leftClass = left.class;
-  const rightClass = right.class;
-
-  // Chairs tuck under desks and tables. Physical reality — not a bug —
-  // so allow regardless of overlap size.
-  if (
-    (leftClass === "chair" && CHAIR_TUCK_UNDER_CLASSES.has(rightClass)) ||
-    (rightClass === "chair" && CHAIR_TUCK_UNDER_CLASSES.has(leftClass))
-  ) {
-    return true;
-  }
-
-  // Wall-mount clusters: nightstands beside beds, lamps beside
-  // nightstands, decor mounted on the same wall. These sit close by
-  // design and may have slightly overlapping annotations. Tolerated
-  // only when the smaller footprint is modest.
-  const sharedHostSurface =
-    (left.host?.host_surface_id && left.host.host_surface_id === right.host?.host_surface_id) ?? false;
-  const hasNightstand = leftClass === "nightstand" || rightClass === "nightstand";
-  const hasLamp = leftClass === "lamp" || rightClass === "lamp";
-  if ((sharedHostSurface || hasNightstand || hasLamp) && smallerAreaM2 <= WALL_CLUSTER_SMALLER_AREA_M2) {
-    return true;
-  }
-
-  return false;
 }
 
 export function exceedsOverlapThreshold(overlapAreaM2: number): boolean {
@@ -101,6 +58,134 @@ export function footprintFromObb(obb: OBB3D): Polygon2D {
       y: obb.center.y + corner.x * sin + corner.y * cos,
     })),
   };
+}
+
+/**
+ * Return the object's tight mesh-derived footprint when available,
+ * otherwise fall back to the OBB rectangle. Prefer this over
+ * `footprintFromObb(obj.obb)` in any validation or layout path so the
+ * engine uses the truest-known shape for overlap / bounds / clearance
+ * checks.
+ */
+export function footprintForObject(object: SceneObject): Polygon2D {
+  const stored = object.footprint_polygon;
+  if (stored && Array.isArray(stored.vertices) && stored.vertices.length >= 3) {
+    return { vertices: stored.vertices };
+  }
+  return footprintFromObb(object.obb);
+}
+
+/**
+ * Signed area of a polygon (shoelace). Positive for CCW, negative for CW.
+ */
+function polygonSignedArea(vertices: readonly Point2D[]): number {
+  if (vertices.length < 3) return 0;
+  let sum = 0;
+  for (let i = 0; i < vertices.length; i += 1) {
+    const a = vertices[i]!;
+    const b = vertices[(i + 1) % vertices.length]!;
+    sum += a.x * b.y - b.x * a.y;
+  }
+  return sum / 2;
+}
+
+export function polygonArea(polygon: Polygon2D): number {
+  return Math.abs(polygonSignedArea(polygon.vertices));
+}
+
+function ensureCCW(vertices: readonly Point2D[]): Point2D[] {
+  return polygonSignedArea(vertices) < 0 ? [...vertices].reverse() : [...vertices];
+}
+
+function segmentIntersection(p1: Point2D, p2: Point2D, p3: Point2D, p4: Point2D): Point2D {
+  // Line-line intersection assuming non-parallel inputs (true for convex-polygon
+  // clipping when a prev/curr pair straddles a clip edge).
+  const d1x = p2.x - p1.x;
+  const d1y = p2.y - p1.y;
+  const d2x = p4.x - p3.x;
+  const d2y = p4.y - p3.y;
+  const denom = d1x * d2y - d1y * d2x;
+  if (Math.abs(denom) < 1e-12) return p2;
+  const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / denom;
+  return { x: p1.x + t * d1x, y: p1.y + t * d1y };
+}
+
+/**
+ * Sutherland-Hodgman convex polygon clipping. Returns the subject polygon
+ * clipped against the clip polygon. REQUIRES the clip polygon to be
+ * convex (subject can be any simple polygon). Both inputs must be
+ * CCW-ordered. Returns an empty array when the polygons don't overlap.
+ */
+function clipConvex(subject: readonly Point2D[], clip: readonly Point2D[]): Point2D[] {
+  let output: Point2D[] = [...subject];
+  for (let i = 0; i < clip.length; i += 1) {
+    if (output.length === 0) return [];
+    const a = clip[i]!;
+    const b = clip[(i + 1) % clip.length]!;
+    const edgeX = b.x - a.x;
+    const edgeY = b.y - a.y;
+    const input = output;
+    output = [];
+    const insideOf = (p: Point2D) => edgeX * (p.y - a.y) - edgeY * (p.x - a.x) >= 0;
+    for (let j = 0; j < input.length; j += 1) {
+      const curr = input[j]!;
+      const prev = input[(j - 1 + input.length) % input.length]!;
+      const currIn = insideOf(curr);
+      const prevIn = insideOf(prev);
+      if (currIn) {
+        if (!prevIn) output.push(segmentIntersection(prev, curr, a, b));
+        output.push(curr);
+      } else if (prevIn) {
+        output.push(segmentIntersection(prev, curr, a, b));
+      }
+    }
+  }
+  return output;
+}
+
+/**
+ * True polygon-vs-polygon intersection area. Both inputs must be
+ * convex for the Sutherland-Hodgman path below to return a correct
+ * result. Convex hulls from scipy (what extract-object-footprints.py
+ * produces) satisfy this. For mixed cases, callers should fall back to
+ * `intersectionArea(polygonBounds(a), polygonBounds(b))`.
+ */
+export function polygonIntersectionArea(a: Polygon2D, b: Polygon2D): number {
+  if (a.vertices.length < 3 || b.vertices.length < 3) return 0;
+  const subject = ensureCCW(a.vertices);
+  const clip = ensureCCW(b.vertices);
+  const clipped = clipConvex(subject, clip);
+  if (clipped.length < 3) return 0;
+  return Math.abs(polygonSignedArea(clipped));
+}
+
+/**
+ * Point-in-polygon via ray casting. Handles non-convex polygons.
+ */
+export function pointInPolygon(px: number, py: number, polygon: Polygon2D): boolean {
+  const verts = polygon.vertices;
+  let inside = false;
+  for (let i = 0, j = verts.length - 1; i < verts.length; j = i, i += 1) {
+    const xi = verts[i]!.x;
+    const yi = verts[i]!.y;
+    const xj = verts[j]!.x;
+    const yj = verts[j]!.y;
+    const intersect = ((yi > py) !== (yj > py)) && px < ((xj - xi) * (py - yi)) / ((yj - yi) || 1e-12) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * True iff every vertex of `inner` is inside `outer`. For typical
+ * room-floor / object-footprint pairs this is equivalent to containment
+ * since object footprints are convex.
+ */
+export function polygonContainsPolygon(outer: Polygon2D, inner: Polygon2D): boolean {
+  for (const v of inner.vertices) {
+    if (!pointInPolygon(v.x, v.y, outer)) return false;
+  }
+  return true;
 }
 
 export interface AABB2D {
@@ -140,23 +225,20 @@ export function intersectionArea(a: AABB2D, b: AABB2D): number {
 
 export function findHardObjectOverlaps(objects: readonly SceneObject[]): HardOverlap[] {
   const overlaps: HardOverlap[] = [];
+  const footprints = objects.map((obj) => footprintForObject(obj));
+  const bounds = footprints.map((fp) => polygonBounds(fp));
+
   for (let index = 0; index < objects.length; index += 1) {
     const left = objects[index]!;
-    const leftBounds = polygonBounds(footprintFromObb(left.obb));
+    // Only floor-supported objects can physically collide. Wall-mounted
+    // art, ceiling fixtures, things on-top-of other things don't need
+    // to fight for floor space.
+    if (left.support.support_kind !== "floor") continue;
     for (let inner = index + 1; inner < objects.length; inner += 1) {
       const right = objects[inner]!;
-      if (canObjectsLegallyOverlap(left, right)) {
-        continue;
-      }
-      const rightBounds = polygonBounds(footprintFromObb(right.obb));
-      if (!intersectsBounds(leftBounds, rightBounds)) {
-        continue;
-      }
-      const overlapArea = intersectionArea(leftBounds, rightBounds);
-      const smallerArea = Math.min(boundsArea(leftBounds), boundsArea(rightBounds));
-      if (isTolerableFurnitureOverlap(left, right, smallerArea)) {
-        continue;
-      }
+      if (right.support.support_kind !== "floor") continue;
+      if (!intersectsBounds(bounds[index]!, bounds[inner]!)) continue;
+      const overlapArea = polygonIntersectionArea(footprints[index]!, footprints[inner]!);
       if (exceedsOverlapThreshold(overlapArea)) {
         overlaps.push({ left, right, overlap_area_m2: overlapArea });
       }

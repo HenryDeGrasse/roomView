@@ -197,6 +197,13 @@ def column_major_to_4x4(flat16: list[float]) -> np.ndarray:
     return np.array(flat16, dtype=np.float64).reshape(4, 4, order="F")
 
 
+# ARKit LiDAR confidence: 0=low, 1=medium, 2=high. Medium+high cover the
+# reliable ~66% of depth pixels on typical iPhone captures; low-confidence
+# pixels concentrate on glass, edges, and distant/dark surfaces — exactly
+# the regions that produce spurious mesh artifacts.
+MIN_DEPTH_CONFIDENCE = 1
+
+
 def arkit_world_from_camera_to_opencv_camera_from_world(world_from_camera: np.ndarray) -> np.ndarray:
     """
     ARKitScenes camera_transform is world-from-camera in OpenCV convention
@@ -241,6 +248,24 @@ def load_all_frames(scene: dict[str, Any], options: Options) -> list[LoadedFrame
         cx = intr["cx"] * scale_x
         cy = intr["cy"] * scale_y
         depth_m = np.where(np.isfinite(depth), depth, 0.0).astype(np.float32)
+        # ARKit LiDAR confidence (0=low, 1=medium, 2=high). Zero-out depth
+        # pixels below `min_confidence` before feeding into TSDF fusion —
+        # low-confidence pixels on glass/edges/distant surfaces produce
+        # spurious geometry that survives marching cubes as thin spikes
+        # and doughnuts on the object meshes.
+        conf_entry = frame.get("confidence") or {}
+        conf_uri = conf_entry.get("uri") if isinstance(conf_entry, dict) else None
+        if conf_uri:
+            conf_path = frame_file(options.fixture_dir, conf_uri)
+            if conf_path.exists():
+                try:
+                    conf = np.load(conf_path)
+                    if conf.ndim == 2 and conf.shape == depth_m.shape:
+                        depth_m = np.where(conf >= MIN_DEPTH_CONFIDENCE, depth_m, 0.0).astype(np.float32)
+                except Exception:
+                    # On any load error, fall through silently — TSDF still
+                    # works without confidence, just slightly noisier.
+                    pass
         wfc = column_major_to_4x4(frame["camera_transform"])
         extrinsic = arkit_world_from_camera_to_opencv_camera_from_world(wfc)
         out.append(LoadedFrame(

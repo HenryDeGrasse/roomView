@@ -179,6 +179,13 @@ export interface Opening {
   provenance: Provenance;
 }
 
+export interface ObjectFootprint {
+  vertices: Polygon2D["vertices"];
+  source: "tsdf_mesh_convex_hull" | "manual" | "fitted_rectangle";
+  mesh_vertex_count?: number;
+  generated_at?: ISO8601Timestamp;
+}
+
 export interface SceneObject {
   object_id: EntityId;
   class: ObjectClass;
@@ -195,6 +202,13 @@ export interface SceneObject {
   material_state: MaterialState | null;
   user_locked: boolean;
   provenance: Provenance;
+  /**
+   * Optional tight 2D footprint polygon (XY, +z up) derived from the
+   * object's TSDF mesh. When present, validation and 2D rendering
+   * prefer it over the OBB-rectangle footprint. CCW-ordered, no
+   * closing vertex. Convex for v1 (scipy ConvexHull of mesh vertices).
+   */
+  footprint_polygon?: ObjectFootprint;
 }
 
 export interface FixedElement {

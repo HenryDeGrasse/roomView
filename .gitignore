@@ -27,6 +27,11 @@ ios/**/.swiftpm/
 # share a reference scan.
 fixtures/roomplan/capture-*/
 
+# Brush (Rust + WebGPU 3DGS trainer) binary — 150MB, installed per-dev
+# from https://github.com/ArthurBrussee/brush/releases. Path hard-coded
+# in scripts/brush-train.py as tools/brush/brush-app-aarch64-apple-darwin.
+tools/brush/
+
 # Dev-environment node lockfile — `npm install` regenerates it. Avoids
 # merge conflicts when teammates install on different Node versions.
 package-lock.json

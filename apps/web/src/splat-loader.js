@@ -1,87 +1,158 @@
 // Gaussian Splat loader — wires @mkkellogg/gaussian-splats-3d into the
 // scan-pane viewer via the viewer's setSplatLoader hook.
 //
-// The viewer (apps/web/src/viewer.js) exposes setSplat({ uri, gaussian_count })
-// which, when a splatLoader is registered, downloads the .splat bytes, parses
-// them, and adds a GaussianSplatMesh to the Three.js scene at LAYER_SPLAT.
+// Two loading paths:
+//   1. Single-PLY (legacy): one DropInViewer covers the whole scene.
+//   2. Per-object split: N DropInViewers, one for each object_id plus a
+//      shell viewer for walls/floor/ceiling. Each sub-viewer's Object3D
+//      carries `userData.object_id` so the move-handle in viewer.js
+//      translates its gaussians in lockstep with the mesh.
 //
-// Format: the binary .splat produced by scripts/splat-generate.py --mode
-// rgbd_init is the antimatter15 / gsplat.js standard (32 bytes per gaussian).
-// @mkkellogg/gaussian-splats-3d reads this natively via SceneFormat.Splat.
+// The split path activates when setSplat receives a descriptor with
+// `split_manifest_uri`. The viewer fetches the manifest, then fires off
+// one DropInViewer per entry. All sub-viewers live under a single root
+// group added to scene.children so the existing visibility toggle
+// ("Splat" vs "Meshes" mode) can flip the whole tree at once.
 //
-// This module is intentionally tiny: the heavy renderer lives in the vendored
-// library; our loader just adapts its API to the viewer's setSplatLoader
-// contract.
+// Format: Brush writes antimatter15/gsplat.js compatible PLYs. The
+// vendored library detects the format from the URL extension.
 import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
 
-let activeViewer = null;   // singleton DropInViewer attached to the scan scene
+let activeViewer = null;           // legacy: singleton DropInViewer
+let activeSplatRoot = null;        // new: root Group holding all sub-viewers
+let activeSubViewers = [];         // { viewer, object_id } entries
 let lastDisposedAt = 0;
 
-/** Returns the DropInViewer Three.js object, if any splat is loaded. */
+/** Returns the legacy DropInViewer for the dollhouse visibility toggle. */
 export function getActiveSplatViewer() {
-  return activeViewer;
+  return activeSplatRoot || activeViewer;
 }
 
-function disposeActiveSplat(scene) {
-  if (!activeViewer) return;
-  try {
-    scene.remove(activeViewer);
-    if (typeof activeViewer.dispose === 'function') {
-      activeViewer.dispose();
+function disposeActive(scene) {
+  if (activeViewer) {
+    try {
+      scene.remove(activeViewer);
+      if (typeof activeViewer.dispose === 'function') activeViewer.dispose();
+    } catch (err) {
+      console.warn('[splat-loader] dispose legacy failed', err);
     }
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn('[splat-loader] dispose failed', err);
+    activeViewer = null;
   }
-  activeViewer = null;
+  if (activeSplatRoot) {
+    try {
+      for (const { viewer } of activeSubViewers) {
+        if (viewer && typeof viewer.dispose === 'function') viewer.dispose();
+      }
+      scene.remove(activeSplatRoot);
+    } catch (err) {
+      console.warn('[splat-loader] dispose split failed', err);
+    }
+    activeSplatRoot = null;
+    activeSubViewers = [];
+  }
   lastDisposedAt = performance.now();
+}
+
+function makeDropInViewer() {
+  return new GaussianSplats3D.DropInViewer({
+    sharedMemoryForWorkers: false,
+    gpuAcceleratedSort: false,
+  });
+}
+
+function propagateLayer(object, layer) {
+  object.traverse((child) => {
+    if (child.layers && typeof child.layers.set === 'function') {
+      child.layers.set(layer);
+    }
+  });
+}
+
+async function loadSingleSplat({ uri, scene, layer }) {
+  const viewer = makeDropInViewer();
+  viewer.addSplatScenes([
+    {
+      path: uri,
+      splatAlphaRemovalThreshold: 5,
+      showLoadingUI: false,
+    },
+  ])
+    .then(() => propagateLayer(viewer, layer))
+    .catch((err) => console.error('[splat-loader] addSplatScenes failed', err));
+  scene.add(viewer);
+  activeViewer = viewer;
+  return { status: 'ready' };
+}
+
+async function loadSplitSplats({ splitManifestUri, scene, layer, THREE }) {
+  const res = await fetch(splitManifestUri);
+  if (!res.ok) {
+    console.warn('[splat-loader] split manifest fetch failed', res.status, 'falling back to single-load');
+    return null;
+  }
+  const manifest = await res.json();
+  const entries = Array.isArray(manifest?.sub_splats) ? manifest.sub_splats : [];
+  if (entries.length === 0) return null;
+
+  const root = new THREE.Group();
+  root.name = 'splat_sub_viewers_root';
+  root.userData.kind = 'splat_sub_viewers';
+  scene.add(root);
+
+  for (const entry of entries) {
+    if (!entry?.uri) continue;
+    const wrapper = new THREE.Group();
+    wrapper.name = `splat_sub_${entry.owner}`;
+    // The shell sub-splat has owner === "shell"; object sub-splats carry
+    // the actual object_id so viewer.js's move handler translates them
+    // with the matching mesh via the existing `userData.object_id` test.
+    if (entry.owner && entry.owner !== 'shell') {
+      wrapper.userData.object_id = entry.owner;
+    }
+    wrapper.userData.kind = 'splat_sub_viewer';
+    const viewer = makeDropInViewer();
+    wrapper.add(viewer);
+    root.add(wrapper);
+    activeSubViewers.push({ viewer, object_id: entry.owner, wrapper });
+
+    // Kick loading async; each viewer renders itself once its GPU
+    // buffers are built. Layer propagation happens post-load so every
+    // descendant (including buffers created during load) gets tagged.
+    viewer
+      .addSplatScenes([
+        {
+          path: entry.uri,
+          splatAlphaRemovalThreshold: 5,
+          showLoadingUI: false,
+        },
+      ])
+      .then(() => propagateLayer(viewer, layer))
+      .catch((err) => console.error('[splat-loader] sub addSplatScenes failed', entry.owner, err));
+  }
+
+  activeSplatRoot = root;
+  return { status: 'ready', split: true, sub_count: entries.length };
 }
 
 /**
  * Register a splatLoader with the scan-pane viewer. The callback gets
- * { uri, scene, camera, layer, THREE } from setSplat(); we hand back a
- * DropInViewer mounted into the scene at the requested layer.
- *
- * Returns an object shaped `{ status: 'ready' | 'failed' }` so the viewer's
- * setSplat() can set splatMeta.status and callers can react accordingly.
+ * `{ uri, splitManifestUri, scene, camera, layer, THREE }` from setSplat().
+ * When a split manifest is provided we load N sub-splats (one per object
+ * plus a shell); otherwise we fall back to a single-splat load.
  */
-export async function loadSplatIntoScene({ uri, scene, camera, layer, THREE }) {
-  disposeActiveSplat(scene);
+export async function loadSplatIntoScene(opts) {
+  const { uri, splitManifestUri, scene, layer, THREE } = opts;
+  disposeActive(scene);
 
-  // DropInViewer is the Three.js-friendly top-level object. It internally
-  // drives its own rendering pass (custom shader), so we only need to add it
-  // to our scene; the main RAF loop in viewer.js keeps it updating.
-  const viewer = new GaussianSplats3D.DropInViewer({
-    sharedMemoryForWorkers: false, // works over HTTP dev server (no COOP/COEP)
-    gpuAcceleratedSort: false,      // CPU sort — safer across GPUs, still fast for < 1M gaussians
-  });
-  viewer.addSplatScenes([
-    {
-      path: uri,
-      splatAlphaRemovalThreshold: 5, // drop near-transparent splats for speed
-      showLoadingUI: false,
-    },
-  ]).then(() => {
-    // Assign layer to every descendant so the scan pane's layer mask picks it up.
-    viewer.traverse((child) => {
-      if (child.layers && typeof child.layers.set === 'function') {
-        child.layers.set(layer);
-      }
-    });
-  }).catch((err) => {
-    // eslint-disable-next-line no-console
-    console.error('[splat-loader] addSplatScenes failed', err);
-  });
-
-  scene.add(viewer);
-  activeViewer = viewer;
-  // The scenes list loads asynchronously; the viewer has already been
-  // attached so Three.js will render it as soon as the GPU buffers are
-  // built. We report 'ready' on the synchronous path — the viewer.js
-  // splat status turns into 'ready' immediately, matching the UX intent
-  // (user sees a "splat loading" → "splat live" transition driven by
-  // the vendored library's own progress callbacks).
-  return { status: 'ready' };
+  if (splitManifestUri) {
+    try {
+      const result = await loadSplitSplats({ splitManifestUri, scene, layer, THREE });
+      if (result) return result;
+    } catch (err) {
+      console.warn('[splat-loader] split-load failed, falling back to single', err);
+    }
+  }
+  return loadSingleSplat({ uri, scene, layer });
 }
 
 /**
@@ -91,10 +162,6 @@ export async function loadSplatIntoScene({ uri, scene, camera, layer, THREE }) {
 export function installSplatLoader(scanView) {
   if (!scanView || typeof scanView.setSplatLoader !== 'function') return false;
   scanView.setSplatLoader(loadSplatIntoScene);
-  // Also let the viewer toggle the splat's .visible directly when the
-  // camera crosses the room boundary — the gaussian-splat library
-  // renders through its own pass and doesn't always honour the outer
-  // camera's layer mask, so we need the object-level toggle.
   if (typeof scanView.setSplatViewerGetter === 'function') {
     scanView.setSplatViewerGetter(getActiveSplatViewer);
   }

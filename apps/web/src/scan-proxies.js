@@ -102,6 +102,85 @@ export function buildObjectOutlines(scene) {
   return group;
 }
 
+/**
+ * Fetch candidates/manifest.json (produced by
+ * scripts/splat-to-mesh-candidates.py) and return a THREE.Group of amber
+ * wireframes for any candidates the splat discovered that RoomPlan's
+ * recognizer missed. Returns null if the manifest is absent.
+ */
+export async function loadCandidateOutlines(fixtureId) {
+  if (!fixtureId) return null;
+  const url = '/dev/fixtures/' + encodeURIComponent(fixtureId) + '/candidates/manifest.json';
+  let manifest;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    manifest = await response.json();
+  } catch {
+    return null;
+  }
+  const candidates = Array.isArray(manifest?.candidates) ? manifest.candidates : [];
+  if (!candidates.length) return null;
+  const group = new THREE.Group();
+  group.name = 'scan_candidate_outlines';
+  // Amber = distinct from the per-class object accents so the user can
+  // tell "splat-discovered candidate" from "RoomPlan-recognized object"
+  // at a glance. Opacity slightly dimmer so they don't overpower real
+  // objects when both render.
+  const ACCENT = 0xffbf4d;
+  for (const cand of candidates) {
+    const line = buildOneCandidateOutline(cand, ACCENT);
+    if (line) group.add(line);
+  }
+  return group;
+}
+
+function buildOneCandidateOutline(candidate, color) {
+  const obb = candidate?.obb;
+  if (!obb) return null;
+  const hx = obb.size_x * 0.5;
+  const hy = obb.size_y * 0.5;
+  const hz = obb.size_z * 0.5;
+  const corners = [];
+  for (const sx of [-1, 1]) {
+    for (const sy of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        corners.push([sx * hx, sy * hy, sz * hz]);
+      }
+    }
+  }
+  const edges = [
+    [0, 1], [2, 3], [4, 5], [6, 7],
+    [0, 2], [1, 3], [4, 6], [5, 7],
+    [0, 4], [1, 5], [2, 6], [3, 7],
+  ];
+  const positions = new Float32Array(edges.length * 2 * 3);
+  for (let i = 0; i < edges.length; i += 1) {
+    const [a, b] = edges[i];
+    const pa = corners[a]; const pb = corners[b];
+    positions[i * 6 + 0] = pa[0]; positions[i * 6 + 1] = pa[1]; positions[i * 6 + 2] = pa[2];
+    positions[i * 6 + 3] = pb[0]; positions[i * 6 + 4] = pb[1]; positions[i * 6 + 5] = pb[2];
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const material = new THREE.LineBasicMaterial({
+    color, transparent: true, opacity: 0.85,
+  });
+  const line = new THREE.LineSegments(geometry, material);
+  const center = obb.center || { x: 0, y: 0, z: 0 };
+  const yawDeg = obb.yaw_degrees || 0;
+  line.position.set(center.x, center.y, center.z);
+  line.rotation.z = yawDeg * (Math.PI / 180);
+  line.userData = {
+    scan_obb: true,
+    candidate_id: candidate.candidate_id,
+    is_candidate: true,
+    n_gaussians: candidate.n_gaussians,
+    base_color: color,
+  };
+  return line;
+}
+
 function buildOneOutline(obj) {
   const obb = obj?.obb;
   if (!obb) return null;
@@ -324,6 +403,24 @@ function plyAsciiToMesh(text) {
     color: colors ? 0xffffff : 0xbbbbbb,
     side: THREE.DoubleSide,
   });
+  if (colors) {
+    // TSDF vertex colors are the running average of every RGB observation per
+    // voxel, which desaturates specular highlights and mixes in noisy edge
+    // pixels. Bump saturation + contrast + a small gamma to recover the punch
+    // Brush splats keep for free via view-dependent SH coefficients.
+    material.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <dithering_fragment>',
+        [
+          '#include <dithering_fragment>',
+          'float _lum = dot(gl_FragColor.rgb, vec3(0.2126, 0.7152, 0.0722));',
+          'vec3 _sat = mix(vec3(_lum), gl_FragColor.rgb, 1.45);',
+          'vec3 _con = (_sat - 0.5) * 1.18 + 0.5;',
+          'gl_FragColor.rgb = clamp(pow(_con, vec3(0.92)), 0.0, 1.0);',
+        ].join('\n'),
+      );
+    };
+  }
   const mesh = new THREE.Mesh(geometry, material);
   mesh.frustumCulled = false;
   return mesh;

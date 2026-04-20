@@ -977,6 +977,26 @@ label {
   border-color: var(--color-border-strong);
 }
 
+.toast__action {
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-accent-info);
+  color: #0b1222;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--motion-fast) var(--motion-ease),
+              transform var(--motion-fast) var(--motion-ease);
+}
+
+.toast__action:hover {
+  background: var(--color-text-primary);
+  transform: translateY(-1px);
+}
+
 /* ===================================================================
  * Panes (the three-column editor layout)
  * =================================================================== */

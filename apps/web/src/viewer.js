@@ -105,18 +105,13 @@ function mountThreeView(container, opts) {
   resizeObserver.observe(container);
   window.addEventListener('resize', resize);
 
-  // Dollhouse mode — when the camera moves OUTSIDE the room polygon,
-  // hide the splat + mesh content so the shell reads as a clean box
-  // from every exterior angle. The same FrontSide culling that makes
-  // walls see-through from outside doesn't affect gaussian splats
-  // (they're view-aligned sprites), so we gate them on a polygon
-  // inside-test every tick.
-  let dollhouseState = { inside: true, splatViewerGetter: null }; // start inside so splats show until we know otherwise
+  // Dollhouse mode used to hide the splat when the camera left the room
+  // polygon (splats looked noisy from outside). Now that cleanup carves
+  // the splat to a thin shell on the scene mesh, exterior views read
+  // fine — we keep the splat visible in all orbits.
+  let dollhouseState = { inside: true, splatViewerGetter: null };
   const tick = () => {
     controls.update();
-    if (mountKind === 'scan') {
-      updateDollhouseVisibility(camera, roomsRoot, scanProxiesRoot, dollhouseState);
-    }
     renderer.render(scene, camera);
     rafHandle = requestAnimationFrame(tick);
   };
@@ -157,10 +152,29 @@ function mountThreeView(container, opts) {
         candidates.push(child);
       }
     });
+    // Scan pane pickables — TSDF proxy meshes (real surfaces, easy to hit)
+    // + OBB wireframes (LineSegments) for empty-mesh objects. Users expect
+    // clicking any part of the scan-rendered object (or its visible box)
+    // to select it, not just entries in the Objects panel.
+    scanProxiesRoot.traverse((child) => {
+      if (!child.isMesh) return;
+      if (!child.userData?.object_id) return;
+      candidates.push(child);
+    });
+    scanObjectOutlines.traverse((child) => {
+      if (!child.isLineSegments) return;
+      if (!child.userData?.object_id) return;
+      candidates.push(child);
+    });
+    // Increase line-picking tolerance so clicking near (not exactly on) an
+    // OBB wireframe edge still registers.
+    raycaster.params.Line = raycaster.params.Line || {};
+    raycaster.params.Line.threshold = 0.05;
     const hits = raycaster.intersectObjects(candidates, false);
     const firstVisible = hits.find((hit) => camera.layers.test(hit.object.layers));
     if (firstVisible) {
-      const id = firstVisible.object.userData?.canonical_id;
+      const id = firstVisible.object.userData?.canonical_id
+        || firstVisible.object.userData?.object_id;
       if (id) {
         onSelect(id);
         return;
@@ -253,7 +267,14 @@ function mountThreeView(container, opts) {
       return { status: 'metadata_only' };
     }
     try {
-      const result = await splatLoader({ uri: descriptor.uri, scene, camera, layer: LAYER_SPLAT, THREE });
+      const result = await splatLoader({
+        uri: descriptor.uri,
+        splitManifestUri: descriptor.split_manifest_uri || descriptor.splitManifestUri || null,
+        scene,
+        camera,
+        layer: LAYER_SPLAT,
+        THREE,
+      });
       splatMeta.status = result?.status ?? 'ready';
       return { status: splatMeta.status };
     } catch (err) {
@@ -358,6 +379,248 @@ function mountThreeView(container, opts) {
         }
       }
     }
+  }
+
+  // Object-move handle — a single small sphere the user grabs to drag
+  // the selected object in the floor plane. Replaces the older
+  // TransformControls gizmo, which was too visually heavy for a quick
+  // drag. Dragging translates every three.js node whose userData's
+  // object_id/canonical_id matches the target so the TSDF mesh, the OBB
+  // wireframe, and any editable proxies move as a unit. The baked splat
+  // gaussians stay put in v1 — see the v2 plan for per-object splat
+  // segmentation.
+  const dragHandleMaterial = new THREE.MeshBasicMaterial({
+    color: 0xfbbf24,
+    depthTest: false,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.95,
+  });
+  const dragHandle = new THREE.Mesh(new THREE.SphereGeometry(0.06, 20, 14), dragHandleMaterial);
+  dragHandle.renderOrder = 999;
+  dragHandle.visible = false;
+  dragHandle.userData.is_drag_handle = true;
+  scene.add(dragHandle);
+
+  let moveTargetId = null;
+  let moveStartPosition = new THREE.Vector3();
+  let moveLastPosition = new THREE.Vector3();
+  let onObjectMoved = () => {};
+  let onObjectMoveDragging = () => {};
+  // Wall snap context for the active move target — walls (each a line
+  // segment with inward normal, derived from the floor polygon) + the
+  // object's OBB half-extents + current yaw. Used to pull the object
+  // flush with a wall when its edge crosses into the SNAP band.
+  const SNAP_DISTANCE_M = 0.1;
+  let moveTargetWalls = [];
+  let moveTargetObb = null;
+
+  const dragRaycaster = new THREE.Raycaster();
+  const dragPointer = new THREE.Vector2();
+  const dragPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+  const dragHitPoint = new THREE.Vector3();
+  let isDraggingHandle = false;
+  // Rotation mode: shift+drag on the handle rotates the object in the
+  // floor plane around the object's OBB center. Horizontal pointer
+  // motion maps to yaw — 150 px ≈ 90°.
+  const ROT_DEGREES_PER_PIXEL = 0.6;
+  let isRotatingHandle = false;
+  let rotationStartPointerX = 0;
+  let rotationLastYawDeg = 0;
+  let rotationPivot = new THREE.Vector3();
+
+  function ndcFromEvent(event) {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    dragPointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    dragPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    return dragPointer;
+  }
+
+  canvas.addEventListener('pointerdown', (event) => {
+    if (!dragHandle.visible || !moveTargetId) return;
+    const ndc = ndcFromEvent(event);
+    if (!ndc) return;
+    dragRaycaster.setFromCamera(ndc, camera);
+    const hits = dragRaycaster.intersectObject(dragHandle, false);
+    if (hits.length === 0) return;
+    if (event.shiftKey) {
+      isRotatingHandle = true;
+      rotationStartPointerX = event.clientX;
+      rotationLastYawDeg = 0;
+      rotationPivot.copy(dragHandle.position);
+    } else {
+      isDraggingHandle = true;
+      moveStartPosition.copy(dragHandle.position);
+      moveLastPosition.copy(dragHandle.position);
+      dragPlane.set(new THREE.Vector3(0, 0, 1), -dragHandle.position.z);
+    }
+    controls.enabled = false;
+    canvas.setPointerCapture(event.pointerId);
+    event.stopPropagation();
+    event.preventDefault();
+  });
+
+  const matchesTarget = (node) =>
+    node !== dragHandle &&
+    (node.userData?.canonical_id === moveTargetId ||
+      node.userData?.object_id === moveTargetId);
+
+  canvas.addEventListener('pointermove', (event) => {
+    if (!moveTargetId) return;
+    if (isRotatingHandle) {
+      const newYawDeg = (event.clientX - rotationStartPointerX) * ROT_DEGREES_PER_PIXEL;
+      const deltaYawDeg = newYawDeg - rotationLastYawDeg;
+      rotationLastYawDeg = newYawDeg;
+      if (Math.abs(deltaYawDeg) < 1e-4) return;
+      const deltaRad = (deltaYawDeg * Math.PI) / 180;
+      const deltaRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), deltaRad);
+      scene.traverse((node) => {
+        if (!matchesTarget(node)) return;
+        node.quaternion.premultiply(deltaRot);
+        node.position.sub(rotationPivot).applyQuaternion(deltaRot).add(rotationPivot);
+      });
+      onObjectMoveDragging(moveTargetId, { x: 0, y: 0, z: 0, yaw_degrees: newYawDeg });
+      return;
+    }
+    if (!isDraggingHandle) return;
+    const ndc = ndcFromEvent(event);
+    if (!ndc) return;
+    dragRaycaster.setFromCamera(ndc, camera);
+    if (!dragRaycaster.ray.intersectPlane(dragPlane, dragHitPoint)) return;
+    dragHitPoint.z = moveLastPosition.z;
+    // Snap the raw cursor hit to any wall within the snap band before
+    // computing the incremental delta. This keeps the drag "sticky" —
+    // once you enter the band the object glues to the wall until you
+    // pull away decisively.
+    const snapped = applyWallSnap({ x: dragHitPoint.x, y: dragHitPoint.y, z: dragHitPoint.z });
+    dragHitPoint.set(snapped.x, snapped.y, snapped.z);
+    const delta = dragHitPoint.clone().sub(moveLastPosition);
+    if (delta.lengthSq() < 1e-12) return;
+    dragHandle.position.copy(dragHitPoint);
+    // Traverse the whole scene so per-object splat sub-viewers (added by
+    // splat-loader.js under their own root) pick up the same delta as
+    // the mesh. We used to loop over just [roomsRoot, scanProxiesRoot,
+    // scanObjectOutlines]; with per-object splats, the gaussian wrappers
+    // live in a separate splat_sub_viewers root and need to move too.
+    scene.traverse((node) => {
+      if (matchesTarget(node)) node.position.add(delta);
+    });
+    moveLastPosition.copy(dragHitPoint);
+    onObjectMoveDragging(moveTargetId, {
+      x: dragHitPoint.x - moveStartPosition.x,
+      y: dragHitPoint.y - moveStartPosition.y,
+      z: 0,
+    });
+  });
+
+  function finishDrag(event) {
+    if (!isDraggingHandle && !isRotatingHandle) return;
+    if (event && typeof event.pointerId === 'number' && canvas.hasPointerCapture(event.pointerId)) {
+      canvas.releasePointerCapture(event.pointerId);
+    }
+    if (isRotatingHandle) {
+      isRotatingHandle = false;
+      controls.enabled = true;
+      if (moveTargetId && Math.abs(rotationLastYawDeg) > 1e-4) {
+        onObjectMoved(moveTargetId, {
+          x: 0, y: 0, z: 0,
+          yaw_degrees: rotationLastYawDeg,
+        });
+      }
+      return;
+    }
+    isDraggingHandle = false;
+    controls.enabled = true;
+    const totalDelta = dragHandle.position.clone().sub(moveStartPosition);
+    if (moveTargetId && totalDelta.lengthSq() > 1e-8) {
+      onObjectMoved(moveTargetId, {
+        x: totalDelta.x,
+        y: totalDelta.y,
+        z: totalDelta.z,
+      });
+    }
+  }
+  canvas.addEventListener('pointerup', finishDrag);
+  canvas.addEventListener('pointercancel', finishDrag);
+
+  /**
+   * Position the drag handle at `centerPosition` and enable it for the
+   * object identified by `objectId`. Pass `null` to hide the handle.
+   * `context` optionally carries `{ obb, walls }` — OBB half-extents and
+   * an array of wall records (`{ ax, ay, bx, by, nx, ny }`, inward
+   * normal). Used for snap-to-wall while translating.
+   */
+  function setMoveTarget(objectId, centerPosition, context = {}) {
+    moveTargetId = objectId || null;
+    if (!moveTargetId) {
+      dragHandle.visible = false;
+      moveTargetWalls = [];
+      moveTargetObb = null;
+      return;
+    }
+    if (centerPosition && typeof centerPosition.x === 'number') {
+      dragHandle.position.set(
+        centerPosition.x,
+        centerPosition.y,
+        typeof centerPosition.z === 'number' ? centerPosition.z : 0,
+      );
+    }
+    moveTargetWalls = Array.isArray(context.walls) ? context.walls : [];
+    moveTargetObb = context.obb || null;
+    dragHandle.visible = true;
+  }
+
+  // Project the OBB half-extents onto a wall normal in world XY, giving
+  // the object's "reach" toward that wall. For yaw≠0 the axis-aligned
+  // box is rotated; this uses the |projection| trick to find the maximal
+  // extent along n without iterating every corner.
+  function obbExtentAlongNormal(obb, nx, ny) {
+    if (!obb) return 0;
+    const halfX = (obb.size_x || 0) / 2;
+    const halfY = (obb.size_y || 0) / 2;
+    const yaw = ((obb.yaw_degrees || 0) * Math.PI) / 180;
+    const ux = Math.cos(yaw), uy = Math.sin(yaw);
+    const vx = -Math.sin(yaw), vy = Math.cos(yaw);
+    return Math.abs(halfX * (ux * nx + uy * ny)) + Math.abs(halfY * (vx * nx + vy * ny));
+  }
+
+  // Apply wall-snap correction to a proposed center point. Walks each
+  // wall, computes the gap between the OBB edge-toward-wall and the
+  // wall plane; if the gap falls in [0, SNAP_DISTANCE_M], pull the
+  // center so the edge touches the wall. Returns the snapped point.
+  function applyWallSnap(center) {
+    if (!moveTargetObb || moveTargetWalls.length === 0) return center;
+    let best = null;
+    for (const wall of moveTargetWalls) {
+      const signed = (center.x - wall.ax) * wall.nx + (center.y - wall.ay) * wall.ny;
+      const extent = obbExtentAlongNormal(moveTargetObb, wall.nx, wall.ny);
+      const gap = signed - extent;
+      if (gap < 0 || gap >= SNAP_DISTANCE_M) continue;
+      // Only snap if the projected point on the wall line falls inside the
+      // wall segment — avoids snapping to the extension of a short wall.
+      const ex = wall.bx - wall.ax;
+      const ey = wall.by - wall.ay;
+      const lenSq = ex * ex + ey * ey;
+      if (lenSq < 1e-9) continue;
+      const t = ((center.x - wall.ax) * ex + (center.y - wall.ay) * ey) / lenSq;
+      if (t < -0.05 || t > 1.05) continue;
+      if (!best || gap < best.gap) best = { gap, nx: wall.nx, ny: wall.ny };
+    }
+    if (!best) return center;
+    return {
+      x: center.x - best.gap * best.nx,
+      y: center.y - best.gap * best.ny,
+      z: center.z,
+    };
+  }
+
+  function setOnObjectMoved(fn) {
+    onObjectMoved = typeof fn === 'function' ? fn : () => {};
+  }
+
+  function setOnObjectMoveDragging(fn) {
+    onObjectMoveDragging = typeof fn === 'function' ? fn : () => {};
   }
 
   function disposeScanProxies() {
@@ -606,6 +869,9 @@ function mountThreeView(container, opts) {
     setScanProxies,
     setObjectOutlines,
     setScanSelection,
+    setMoveTarget,
+    setOnObjectMoved,
+    setOnObjectMoveDragging,
     captureConditioning,
     getCurrentCameraView,
     flyToPose,

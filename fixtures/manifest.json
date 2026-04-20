@@ -17,6 +17,18 @@
       "request_path": "fixtures/roomplan/fixture-bedroom-arkitscenes/capture-request.json",
       "scene_path": "fixtures/roomplan/fixture-bedroom-arkitscenes/scene.json",
       "notes": "ARKitScenes 47333463 bedroom, 100 captured frames."
+    },
+    {
+      "fixture_id": "capture-bedroom110-3-20260420-003637",
+      "request_path": "fixtures/roomplan/capture-bedroom110-3-20260420-003637/capture-request.json",
+      "scene_path": "fixtures/roomplan/capture-bedroom110-3-20260420-003637/scene.json",
+      "notes": "iOS capture · Bedroom110 retry #3 · salvaged via fix-ios-pose-frame.py · 400k gaussians"
+    },
+    {
+      "fixture_id": "capture-bedroom110-4-20260420-005336",
+      "request_path": "fixtures/roomplan/capture-bedroom110-4-20260420-005336/capture-request.json",
+      "scene_path": "fixtures/roomplan/capture-bedroom110-4-20260420-005336/scene.json",
+      "notes": "iOS capture · bedroom110-4 · 2026-04-20T00:53:36.331Z"
     }
   ]
 }

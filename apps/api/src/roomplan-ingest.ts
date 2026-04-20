@@ -83,7 +83,11 @@ import {
   SceneMutationError,
   simulateScenePreview,
 } from "./mutation-engine";
-import { findHardObjectOverlaps } from "./overlap-policy";
+import {
+  findHardObjectOverlaps,
+  footprintForObject,
+  pointInPolygon,
+} from "./overlap-policy";
 import { OpenRouterPlanner, type AiPlannerResult, type OpenRouterPlannerOptions } from "./ai-planner";
 import { planDeterministicTurn } from "./planner";
 import {
@@ -97,7 +101,7 @@ import {
   FileSystemRoomPlanCaptureRecordStore,
 } from "./roomplan-store";
 import { promoteSceneToFixture } from "./fixture-promotion";
-import { runCapturePipeline, type CapturePipelineResult, type CapturePipelineInputs } from "./capture-pipeline";
+import { enqueueBrushTrainJob, enqueueMeshJob, runCapturePipeline, type CapturePipelineResult, type CapturePipelineInputs } from "./capture-pipeline";
 import type {
   PersistedPreviewRecord,
   PersistedRoomPlanCaptureRecord,
@@ -1863,6 +1867,28 @@ export class RoomPlanCaptureService {
       job.updated_at = now;
       const stored = this.scenesById.get(args.scene_id);
       if (stored) this.persistStoredScene(stored);
+      // Fire-and-forget Tier 2 mesh generation. Runs ~5-10 minutes; the
+      // room is already viewable (splat + textures + shell) when the main
+      // job reports "ready". When the mesh manifest appears on disk the
+      // editor's poll surfaces a "load meshes" toast.
+      if (repoRoot) {
+        try {
+          enqueueMeshJob({ fixture_id: args.fixture_id, repo_root: repoRoot });
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn(`[capture-pipeline] enqueueMeshJob failed for ${args.fixture_id}:`, err);
+        }
+        // Fire-and-forget HQ splat training via Brush. Runs 15-30 min on
+        // Apple Silicon. Writes a trained PLY + descriptor which the
+        // editor's poll picks up; falls back silently (no scene.splat
+        // modification) if Brush isn't installed or training errors.
+        try {
+          enqueueBrushTrainJob({ fixture_id: args.fixture_id, repo_root: repoRoot });
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn(`[capture-pipeline] enqueueBrushTrainJob failed for ${args.fixture_id}:`, err);
+        }
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown pipeline error.";
       this.failCapturePipelineJob(args.job_id, message);
@@ -3156,14 +3182,25 @@ function deriveInitialStateCache(
         zone_id: makeStableId("zone", `${object.object_id}:obstacle-buffer`),
         kind: "obstacle_buffer",
         entity_id: object.object_id,
-        polygon: expandPolygon(footprintFromObb(object.obb), 0.15),
+        polygon: expandPolygon(footprintForObject(object), 0.15),
       });
     }
   }
 
   const hardViolations: Array<Record<string, unknown>> = [];
+  // OUT_OF_BOUNDS: object footprint majority-outside the floor polygon.
+  // Mild TSDF bleed past walls (1-2 cm voxel fuzz, or through a doorway
+  // into an unmapped region) is not a violation — we flag only when the
+  // object is genuinely misplaced.
   for (const object of objects) {
-    if (!boundsContainBounds(floorBounds, polygonBounds(footprintFromObb(object.obb)))) {
+    const footprint = footprintForObject(object);
+    const verts = footprint.vertices;
+    if (!verts.length) continue;
+    let outsideCount = 0;
+    for (const v of verts) {
+      if (!pointInPolygon(v.x, v.y, room.shell.floor_polygon)) outsideCount += 1;
+    }
+    if (outsideCount / verts.length > 0.5) {
       hardViolations.push({
         entity_id: object.object_id,
         reason_code: "OUT_OF_BOUNDS",
@@ -3172,6 +3209,8 @@ function deriveInitialStateCache(
     }
   }
 
+  // OBJECT_OVERLAP: true mesh-derived polygon intersection above the
+  // hard threshold. Every flag corresponds to real geometric collision.
   for (const overlap of findHardObjectOverlaps(objects)) {
     hardViolations.push({
       entity_ids: [overlap.left.object_id, overlap.right.object_id],
@@ -3180,39 +3219,11 @@ function deriveInitialStateCache(
     });
   }
 
-  for (const opening of openings) {
-    const keepout = opening.keepout_zone ? polygonBounds(opening.keepout_zone) : null;
-    if (!keepout) {
-      continue;
-    }
-    const blockedBy = objects
-      .filter((object) => blocksFloorZones(object) && intersectsBounds(keepout, polygonBounds(footprintFromObb(object.obb))))
-      .map((object) => object.object_id);
-    if (blockedBy.length > 0) {
-      hardViolations.push({
-        entity_id: opening.opening_id,
-        reason_code: "OPENING_BLOCKED",
-        blocked_by: blockedBy,
-      });
-    }
-  }
-
-  for (const fixedElement of fixedElements) {
-    if (fixedElement.keepout_zone) {
-      const keepout = polygonBounds(fixedElement.keepout_zone);
-      const blockedBy = objects
-        .filter((object) => blocksFloorZones(object) && intersectsBounds(keepout, polygonBounds(footprintFromObb(object.obb))))
-        .map((object) => object.object_id);
-      if (blockedBy.length > 0) {
-        hardViolations.push({
-          entity_id: fixedElement.fixed_element_id,
-          reason_code: "OBJECT_OVERLAP",
-          blocked_by: blockedBy,
-        });
-      }
-    }
-  }
-
+  // OPENING_BLOCKED and CLEARANCE_VIOLATION used to live here; they
+  // relied on keepout zones and a straight-line walkway heuristic that
+  // produced too many false positives. Clearance paths are still
+  // computed for the layout-pane overlay (informational, not a hard
+  // violation). Re-flagging belongs in a future soft-score layer.
   const door = openings.find((opening) => opening.type === "door" || opening.type === "closet_door") ?? null;
   const clearance_paths: Array<Record<string, unknown>> = [];
   if (door) {
@@ -3226,13 +3237,6 @@ function deriveInitialStateCache(
         width_m,
         waypoints: [start, midPoint, targetPoint],
       });
-      if (width_m < DEFAULT_CLEARANCE_WIDTH_M) {
-        hardViolations.push({
-          entity_id: target.object_id,
-          reason_code: "CLEARANCE_VIOLATION",
-          message: `Insufficient walkway width (${width_m}m) from door to ${target.class}.`,
-        });
-      }
     }
   }
 
@@ -3522,7 +3526,7 @@ function footprintFromObb(obb: SceneObject["obb"]): Polygon2D {
 }
 
 function accessZoneForObject(object: SceneObject, depth: number): Polygon2D {
-  const footprint = footprintFromObb(object.obb);
+  const footprint = footprintForObject(object);
   const bounds = polygonBounds(footprint);
   const hostNormal = object.host ? hostSurfaceNormalToAccessDirection(object.host.host_surface_id, object) : null;
   if (hostNormal) {
@@ -3533,7 +3537,7 @@ function accessZoneForObject(object: SceneObject, depth: number): Polygon2D {
 
 function frontAccessZoneForObject(object: SceneObject, depth: number): Polygon2D {
   const front = yawVector(object.pose.yaw_degrees);
-  return expandTowardDirection(footprintFromObb(object.obb), front, depth);
+  return expandTowardDirection(footprintForObject(object), front, depth);
 }
 
 function hostSurfaceNormalToAccessDirection(_hostSurfaceId: string, object: SceneObject): Point2D | null {
@@ -3556,7 +3560,7 @@ function estimatePathWidth(
     if (!blocksFloorZones(object) || object.object_id === targetObjectId) {
       continue;
     }
-    const bounds = polygonBounds(footprintFromObb(object.obb));
+    const bounds = polygonBounds(footprintForObject(object));
     if (pointInBounds(start, bounds) || pointInBounds(end, bounds)) {
       continue;
     }
