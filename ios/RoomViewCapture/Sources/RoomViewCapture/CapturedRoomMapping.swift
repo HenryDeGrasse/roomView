@@ -344,32 +344,62 @@ func canonicalCentroid(walls: [CanonicalWall], offset: simd_float3) -> simd_floa
 }
 
 /// Build the floor polygon in canonical 2D (x,y) coordinates, CCW-wound.
+///
+/// Primary: try Apple's `floor.polygonCorners`. In practice this is often
+/// degenerate — on multi-room or irregular layouts RoomPlan sometimes
+/// returns corners that all collapse onto one line (same Y), producing a
+/// zero-area polygon that breaks the viewer's wall + floor rendering.
+///
+/// Fallback: build the polygon from each wall's two bottom endpoints
+/// (center ± width/2 * uAxis), dedupe nearby points, order by angle
+/// around the wall-centroid. Works for any convex or mildly-concave room
+/// shape and doesn't depend on Apple's sometimes-broken polygonCorners.
 func floorPolygon(
     floors: [RoomPlanMapperInputs.Surface],
     walls: [CanonicalWall],
     offset: simd_float3
 ) throws -> [simd_float2] {
-    var ring: [simd_float2] = []
     if let floor = floors.first, !floor.polygonCorners.isEmpty {
-        ring = floor.polygonCorners.map { corner in
+        let applePoly: [simd_float2] = floor.polygonCorners.map { corner in
             let c = canonicalize(point: corner) - offset
             return simd_float2(c.x, c.y)
         }
-    } else {
-        // Fall back to wall bottom-center (in canonical XY) ordered by angle
-        // around the centroid. Works for simple convex rooms.
-        let centers = walls.map { wall -> simd_float2 in
-            let c = wall.center - offset
-            return simd_float2(c.x, c.y)
-        }
-        guard centers.count >= 3 else { throw RoomPlanMapperError.degenerateFloor }
-        let cx = centers.map(\.x).reduce(0, +) / Float(centers.count)
-        let cy = centers.map(\.y).reduce(0, +) / Float(centers.count)
-        ring = centers.sorted { a, b in
-            atan2(a.y - cy, a.x - cx) < atan2(b.y - cy, b.x - cx)
+        // Accept Apple's polygon only if it has meaningful area (not a
+        // degenerate line). `shoelaceArea` returns signed area; take |area|.
+        if abs(shoelaceArea(applePoly)) > 0.1 {
+            var ring = applePoly
+            if shoelaceArea(ring) < 0 { ring.reverse() }
+            return ring
         }
     }
-    guard ring.count >= 3 else { throw RoomPlanMapperError.degenerateFloor }
+
+    // Fallback: derive from wall endpoints.
+    guard walls.count >= 2 else { throw RoomPlanMapperError.degenerateFloor }
+    var endpoints: [simd_float2] = []
+    for wall in walls {
+        let centerXY = simd_float2(wall.center.x - offset.x, wall.center.y - offset.y)
+        let uXY = simd_float2(wall.uAxis.x, wall.uAxis.y)
+        let halfW = Float(wall.width) * 0.5
+        endpoints.append(centerXY + halfW * uXY)
+        endpoints.append(centerXY - halfW * uXY)
+    }
+    // Dedupe: points within 15cm are treated as the same corner (adjacent
+    // walls share a corner). Use a simple O(n²) pass — n is small (usually
+    // <= ~20 endpoints even for L-shaped rooms).
+    let tolerance: Float = 0.15
+    var unique: [simd_float2] = []
+    for p in endpoints {
+        if !unique.contains(where: { simd_distance($0, p) < tolerance }) {
+            unique.append(p)
+        }
+    }
+    guard unique.count >= 3 else { throw RoomPlanMapperError.degenerateFloor }
+    // Order by angle around the centroid so we get a proper CCW ring.
+    let cx = unique.map(\.x).reduce(0, +) / Float(unique.count)
+    let cy = unique.map(\.y).reduce(0, +) / Float(unique.count)
+    var ring = unique.sorted { a, b in
+        atan2(a.y - cy, a.x - cx) < atan2(b.y - cy, b.x - cx)
+    }
     if shoelaceArea(ring) < 0 { ring.reverse() }
     return ring
 }
