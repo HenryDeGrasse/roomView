@@ -156,11 +156,13 @@ final class CaptureController: NSObject, ObservableObject {
     private var capturedRoom: CapturedRoom?
     private var captureStartedAt: Date?
 
-    // Ring-buffer cap. 600 × 0.5s = ~5 min of scan before we start dropping
-    // the oldest samples. Each sample is ~400KB (RGB+depth+confidence) →
-    // ~240MB peak RAM. Well within an iPhone Pro's budget (6-8GB total).
+    // Ring-buffer cap. 600 × 0.33s = ~3.3 min of scan before we start
+    // dropping the oldest samples — plenty for any realistic room-walk.
+    // 0.33s interval = ~180 samples/min, 2x denser spatial coverage than
+    // 0.5s for the same scan duration.
+    // Each sample is ~400KB (RGB+depth+confidence) → ~240MB peak RAM.
     private let frameRecorder: FrameCaptureRecorder = FrameCaptureRecorder(
-        minimumInterval: 0.5,
+        minimumInterval: 0.33,
         maxSampleCount: 600,
         jpegQuality: 0.85
     )
