@@ -2,14 +2,20 @@
  * Unit tests for apps/api/src/scene-graph.ts.
  *
  * Loaded fixtures:
- *   - capture-bedroom110-4-20260420-005336: 12 objects, 4 walls, 4 openings,
- *     2 hard violations (ground truth from rederive-hard-violations.py).
+ *   - capture-bedroom110-4-20260420-005336: 12 objects, 4 walls, 4 openings.
+ *     Real iPhone capture; one legitimate bed↔storage clip (z-overlap ~0.68 m).
  *   - bedroom-primary: curated pre-capture fixture, simpler topology.
  *
  * These tests assert both topology (counts, expected edges) and behavior
  * under degeneracy (missing footprint, orphan support, zero-size OBB,
  * support cycles). The latter exercise the warning surface without
  * mutating the fixture files.
+ *
+ * COLLIDES edges are compared to live `findHardObjectOverlaps` output
+ * rather than the fixture's `derived_state_cache.hard_violations` — the
+ * stored cache is written at ingest time and may be stale w.r.t. the
+ * current overlap-policy, so the live computation is the real parity
+ * contract.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -18,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { describe, test } from "node:test";
 
 import { buildSceneGraph, GRAPH_CONSTANTS } from "../../apps/api/src/scene-graph.ts";
+import { findHardObjectOverlaps } from "../../apps/api/src/overlap-policy.ts";
 import type { Scene, SceneObject } from "../../packages/contracts/src/index.ts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -78,11 +85,10 @@ describe("buildSceneGraph — bedroom110-4 fixture topology", () => {
     }
   });
 
-  test("hard_violations count matches COLLIDES edges", () => {
-    const cached = scene.derived_state_cache?.hard_violations ?? [];
-    const expectedCollisions = cached.filter((v) => (v as { reason_code: string }).reason_code === "OBJECT_OVERLAP").length;
+  test("COLLIDES edges match live overlap-policy output", () => {
+    const liveOverlaps = findHardObjectOverlaps(scene.snapshot.state.room.objects);
     const collides = graph.edges.filter((e) => e.kind === "COLLIDES");
-    assert.equal(collides.length, expectedCollisions);
+    assert.equal(collides.length, liveOverlaps.length);
   });
 
   test("ADJACENT_TO evidence carries polygon gap ≤ threshold", () => {

@@ -30,6 +30,15 @@ import type { OBB3D, Point2D, Polygon2D, SceneObject } from "@roomview/contracts
 // at object boundaries typically sits at 0.005–0.03 m² — below this.
 const HARD_OVERLAP_AREA_THRESHOLD_M2 = 0.05;
 
+// Two objects whose footprints intersect in XY can still be physically
+// non-colliding if they occupy different Z ranges — a rug under a bed,
+// a wall-mounted shelf above a dresser, or two storage cabinets at
+// different shelf heights (common in captured LiDAR where "storage" is
+// a catch-all class). Require ≥10 cm of shared vertical space before
+// counting as a hard violation. Matches scene-graph's COLLIDE_MIN_Z_OVERLAP_M
+// so the two systems agree on what a collision is.
+const HARD_OVERLAP_MIN_Z_OVERLAP_M = 0.10;
+
 export interface HardOverlap {
   left: SceneObject;
   right: SceneObject;
@@ -238,6 +247,7 @@ export function findHardObjectOverlaps(objects: readonly SceneObject[]): HardOve
       const right = objects[inner]!;
       if (right.support.support_kind !== "floor") continue;
       if (!intersectsBounds(bounds[index]!, bounds[inner]!)) continue;
+      if (!sharesVerticalSpace(left.obb, right.obb)) continue;
       const overlapArea = polygonIntersectionArea(footprints[index]!, footprints[inner]!);
       if (exceedsOverlapThreshold(overlapArea)) {
         overlaps.push({ left, right, overlap_area_m2: overlapArea });
@@ -245,4 +255,12 @@ export function findHardObjectOverlaps(objects: readonly SceneObject[]): HardOve
     }
   }
   return overlaps;
+}
+
+function sharesVerticalSpace(a: OBB3D, b: OBB3D): boolean {
+  const aTop = (a.center.z ?? 0) + (a.size_z ?? 0) / 2;
+  const aBot = (a.center.z ?? 0) - (a.size_z ?? 0) / 2;
+  const bTop = (b.center.z ?? 0) + (b.size_z ?? 0) / 2;
+  const bBot = (b.center.z ?? 0) - (b.size_z ?? 0) / 2;
+  return Math.min(aTop, bTop) - Math.max(aBot, bBot) > HARD_OVERLAP_MIN_Z_OVERLAP_M;
 }
