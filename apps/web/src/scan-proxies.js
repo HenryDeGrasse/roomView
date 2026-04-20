@@ -276,13 +276,14 @@ export async function loadScanMeshes(fixtureId, options = {}) {
       const mesh = plyAsciiToMesh(plyText);
       if (!mesh) return null;
       const perObjectMethod = (manifest.methods && manifest.methods[objectId]) || manifest.mode || 'tsdf';
+      const floorSamples = mesh.userData?.floor_bleed_color_samples || null;
       mesh.userData = {
         scan_mesh: true,
         object_id: objectId,
         vertex_count: mesh.geometry.getAttribute('position').count,
         mode: perObjectMethod,
       };
-      return [objectId, mesh];
+      return [objectId, mesh, floorSamples];
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('[scan-proxies] mesh load failed', objectId, err);
@@ -291,10 +292,50 @@ export async function loadScanMeshes(fixtureId, options = {}) {
   }));
 
   const out = new Map();
+  const floorSamplesPooled = [];
   for (const entry of results) {
-    if (entry) out.set(entry[0], entry[1]);
+    if (!entry) continue;
+    out.set(entry[0], entry[1]);
+    if (entry[2]) floorSamplesPooled.push(entry[2]);
   }
-  return { manifest, meshes: out };
+  const floorColor = computeMedianColor(floorSamplesPooled);
+  return { manifest, meshes: out, floorColor };
+}
+
+/**
+ * Median RGB across all pooled vertex-colour samples. RGB floats in [0,1].
+ * Median (not mean) because isolated pure-white highlight verts and
+ * object-adjacent edge verts would skew a mean — the median is the
+ * dominant real-floor colour by construction. Returns null when there
+ * aren't enough samples to be trustworthy.
+ */
+function computeMedianColor(pooledSamples) {
+  const MIN_SAMPLES = 60; // 20 triangles × 3 verts — below this, don't trust
+  let total = 0;
+  for (const s of pooledSamples) total += s.length / 3;
+  if (total < MIN_SAMPLES) return null;
+  const rs = new Float32Array(total);
+  const gs = new Float32Array(total);
+  const bs = new Float32Array(total);
+  let k = 0;
+  for (const s of pooledSamples) {
+    for (let i = 0; i < s.length; i += 3) {
+      rs[k] = s[i];
+      gs[k] = s[i + 1];
+      bs[k] = s[i + 2];
+      k += 1;
+    }
+  }
+  // partial sort to find the median via Float32Array sort
+  const median = (arr) => {
+    arr.sort();
+    const mid = arr.length >> 1;
+    return arr.length % 2 === 0 ? (arr[mid - 1] + arr[mid]) / 2 : arr[mid];
+  };
+  const r = median(rs);
+  const g = median(gs);
+  const b = median(bs);
+  return { r, g, b };
 }
 
 /**
@@ -369,7 +410,35 @@ function plyAsciiToMesh(text) {
 
   // Faces: one line per face, `count v0 v1 v2 [v3 ...]`. We split fans of
   // quads/ngons into triangles so the geometry is always triangle-indexed.
+  //
+  // TSDF voxel fuzz at the object-floor interface produces near-horizontal
+  // "halo" triangles that extend a few cm onto the floor. Those triangles
+  // render with the TSDF's desaturated average colour (neither the object
+  // nor the floor RGB really), causing a milky ring under every object
+  // when the splat is also visible. Cull triangles that sit within
+  // FLOOR_BLEED_MAX_Z of the mesh's own minimum Z AND whose face normal
+  // is near-vertical. This is a per-mesh heuristic — it wouldn't work on
+  // the shell (where the whole floor is legitimately horizontal near z=0)
+  // but object TSDF meshes are local, so "near the bottom of this mesh"
+  // means "the floor halo".
+  const FLOOR_BLEED_MAX_Z = 0.03; // 3 cm — matches observed TSDF voxel bleed
+  const FLOOR_BLEED_NORMAL_DOT = 0.85; // cos(~32°) — "roughly horizontal"
+  let meshMinZ = Infinity;
+  for (let i = 0; i < vertexElement.count; i += 1) {
+    const z = positions[i * 3 + 2];
+    if (z < meshMinZ) meshMinZ = z;
+  }
+  const bleedThreshold = meshMinZ + FLOOR_BLEED_MAX_Z;
+
   const triIndices = [];
+  let floorBleedCulled = 0;
+  // The triangles we cull *are* back-projected floor pixels with real
+  // captured RGB — we drop them as geometry (they smear the object
+  // silhouette) but the colour is authoritative. Collect vertex colours
+  // from culled floor-adjacent tris so `loadScanMeshes` can compute a
+  // scene-wide median floor colour and tint the ShapeGeometry floor so
+  // it matches the capture when an object is moved away.
+  const floorBleedColorSamples = colors ? [] : null;
   for (let i = 0; i < faceElement.count; i += 1) {
     const line = bodyLines[cursor++];
     if (!line) return null;
@@ -379,8 +448,56 @@ function plyAsciiToMesh(text) {
     const verts = [];
     for (let j = 0; j < count; j += 1) verts.push(parseInt(parts[1 + j], 10));
     for (let j = 1; j < count - 1; j += 1) {
-      triIndices.push(verts[0], verts[j], verts[j + 1]);
+      const a = verts[0], b = verts[j], c = verts[j + 1];
+      const az = positions[a * 3 + 2];
+      const bz = positions[b * 3 + 2];
+      const cz = positions[c * 3 + 2];
+      // Compute the face normal once — we use it for floor-bleed and
+      // for strongly-downward-facing triangle culling.
+      const ax = positions[a * 3], ay = positions[a * 3 + 1];
+      const bx = positions[b * 3], by = positions[b * 3 + 1];
+      const cx = positions[c * 3], cy = positions[c * 3 + 1];
+      const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+      const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+      const nx = e1y * e2z - e1z * e2y;
+      const ny = e1z * e2x - e1x * e2z;
+      const nz = e1x * e2y - e1y * e2x;
+      const nMag = Math.hypot(nx, ny, nz) || 1;
+      const nzNorm = nz / nMag;
+      if (az <= bleedThreshold && bz <= bleedThreshold && cz <= bleedThreshold) {
+        // Floor-adjacent horizontal bleed: cull either orientation (nz
+        // positive OR negative).
+        if (Math.abs(nzNorm) >= FLOOR_BLEED_NORMAL_DOT) {
+          floorBleedCulled += 1;
+          if (floorBleedColorSamples) {
+            // Only the upward-facing side is colored from the floor
+            // capture; the underside mirrors the top. Both represent
+            // what the floor looked like, so sample all three verts.
+            floorBleedColorSamples.push(
+              colors[a * 3], colors[a * 3 + 1], colors[a * 3 + 2],
+              colors[b * 3], colors[b * 3 + 1], colors[b * 3 + 2],
+              colors[c * 3], colors[c * 3 + 1], colors[c * 3 + 2],
+            );
+          }
+          continue;
+        }
+      }
+      // Even above the floor-bleed threshold, downward-pointing
+      // horizontal faces are "bottom of object" polys that TSDF
+      // integration filled with floor-averaged RGB. They're invisible
+      // to a camera looking from above, so culling them both silences
+      // the floor colour smear and saves triangles. Threshold is the
+      // same 0.85 dot (≈ within ~32° of straight-down).
+      if (nzNorm <= -FLOOR_BLEED_NORMAL_DOT) {
+        floorBleedCulled += 1;
+        continue;
+      }
+      triIndices.push(a, b, c);
     }
+  }
+  if (floorBleedCulled > 0) {
+    // eslint-disable-next-line no-console
+    console.debug('[scan-proxies] culled ' + floorBleedCulled + ' floor-bleed triangles from mesh');
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -398,10 +515,18 @@ function plyAsciiToMesh(text) {
   // MeshBasicMaterial avoids double-lighting (scene lights would darken
   // surfaces that are already lit correctly in their RGB). When vertex
   // colors aren't present, fall back to a neutral base color.
+  //
+  // `side: FrontSide` (previously DoubleSide) matters for the combined
+  // splat+mesh view: the bottom faces of each TSDF reconstruction
+  // averaged floor RGB during integration, so they carry the floor's
+  // colour. Rendered with DoubleSide they smear a "light skin tone"
+  // layer over the splat's true floor. With FrontSide only outward-
+  // facing polys render, and camera-from-above never sees the mesh
+  // underside — so the splat floor comes through untouched.
   const material = new THREE.MeshBasicMaterial({
     vertexColors: !!colors,
     color: colors ? 0xffffff : 0xbbbbbb,
-    side: THREE.DoubleSide,
+    side: THREE.FrontSide,
   });
   if (colors) {
     // TSDF vertex colors are the running average of every RGB observation per
@@ -423,6 +548,13 @@ function plyAsciiToMesh(text) {
   }
   const mesh = new THREE.Mesh(geometry, material);
   mesh.frustumCulled = false;
+  if (floorBleedColorSamples && floorBleedColorSamples.length >= 3) {
+    // Stash on userData for the aggregator in loadScanMeshes. Keeping
+    // it here (rather than threading a separate return value) lets
+    // callers who reuse plyAsciiToMesh ignore it.
+    mesh.userData = mesh.userData || {};
+    mesh.userData.floor_bleed_color_samples = floorBleedColorSamples;
+  }
   return mesh;
 }
 

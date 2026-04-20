@@ -657,6 +657,11 @@ function mountThreeView(container, opts) {
       resolveAssetUri: assetUriResolver,
       captureInpaintTextureManifest: options?.captureInpaintTextureManifest ?? null,
       captureInpaintTextureBaseUri: options?.captureInpaintTextureBaseUri ?? null,
+      // Median RGB sampled from culled mesh-bleed verts — used to tint
+      // the floor ShapeGeometry so that areas revealed when an object
+      // is moved match the captured floor colour instead of the default
+      // brown fallback.
+      capturedFloorColor: options?.captured_floor_color ?? null,
       versionToken,
       getVersion: () => setRoomVersion,
     };
@@ -940,9 +945,15 @@ function buildFloor(room, parent, ctx) {
   const shape = new THREE.Shape(points);
   const geom = new THREE.ShapeGeometry(shape);
   const isCapture = ctx?.appearanceMode === 'capture';
+  // Prefer the mesh-bleed-sampled floor colour when the scan proxies
+  // have loaded — makes moved-object reveals match the captured floor
+  // instead of a default brown.
+  const captured = ctx?.capturedFloorColor;
   const color = isCapture
     ? CAPTURE_SHELL_COLORS.floor
-    : materialColor(floorSurface?.material_state, 0x6b5a3e);
+    : (captured
+        ? new THREE.Color(captured.r, captured.g, captured.b).getHex()
+        : materialColor(floorSurface?.material_state, 0x6b5a3e));
   const mat = new THREE.MeshStandardMaterial({
     color,
     side: THREE.DoubleSide,
