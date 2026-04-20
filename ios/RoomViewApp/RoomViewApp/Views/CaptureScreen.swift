@@ -258,7 +258,11 @@ final class CaptureController: NSObject, ObservableObject {
 
     fileprivate func recordARFrame(_ frame: ARFrame) {
         frameRecorder.record(arFrame: frame)
-        let currentCount = frameRecorder.finalize(targetFrameCount: 64).count
+        // Report the true buffer count (up to maxSampleCount) so the user sees
+        // the real scan progress. Previously this called finalize(targetFrameCount:64)
+        // which silently capped the visible count at 64 even though the ring
+        // buffer was happily holding hundreds of samples.
+        let currentCount = frameRecorder.bufferedCount
         if currentCount != recordedFrameCount {
             recordedFrameCount = currentCount
         }

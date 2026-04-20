@@ -42,6 +42,10 @@ public final class FrameCaptureRecorder {
     private var nextFrameIndex: Int = 0
     public private(set) var isActive: Bool = false
 
+    /// Current number of samples buffered — useful for UI progress counters.
+    /// Cheap to read; doesn't allocate like `finalize(targetFrameCount:)` does.
+    public var bufferedCount: Int { samples.count }
+
     public init(minimumInterval: TimeInterval = 0.5, maxSampleCount: Int = 32, jpegQuality: CGFloat = 0.85) {
         self.minimumInterval = minimumInterval
         self.maxSampleCount = maxSampleCount
