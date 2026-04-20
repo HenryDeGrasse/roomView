@@ -10,6 +10,7 @@ apps/api/data/
 .claude/
 .pi/duet/runs/
 .pi/todos/
+.pi/feedback.jsonl
 experiments/phase0/.venv/
 experiments/phase0/results/*
 !experiments/phase0/results/README.md
