@@ -40,7 +40,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: roomview.RoomViewApp
-        DEVELOPMENT_TEAM: ZYDZ2387Y4
+        DEVELOPMENT_TEAM: CF7PAY3FR7
         CODE_SIGN_STYLE: Automatic
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"

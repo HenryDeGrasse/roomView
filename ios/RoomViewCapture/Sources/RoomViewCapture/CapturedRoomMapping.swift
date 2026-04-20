@@ -3,6 +3,18 @@ import simd
 
 #if canImport(RoomPlan)
 import RoomPlan
+
+@available(iOS 17.0, *)
+extension CapturedRoom {
+    /// Returns the canonical-world room offset that `toRoomPlanPayloadEnvelope()`
+    /// applies to shell coordinates. Use this when serializing captured-frame
+    /// poses so they land in the same coordinate frame as the shell.
+    public func canonicalRoomOffset() -> simd_float3 {
+        let inputs = RoomPlanMapperInputs(capturedRoom: self)
+        let canonicalWalls = inputs.walls.map { CanonicalWall($0) }
+        return roomOffset(walls: canonicalWalls, floors: inputs.floors)
+    }
+}
 #endif
 
 // MARK: - Public input model
@@ -324,11 +336,17 @@ func roomOffset(
         pts.append(c - halfW * wall.uAxis)
         pts.append(c - 0.5 * Float(wall.height) * wall.vAxis)
     }
-    for floor in floors {
-        for corner in floor.polygonCorners {
-            pts.append(canonicalize(point: corner))
-        }
-    }
+    // NOTE: floor.polygonCorners from RoomPlan is documented as surface-LOCAL
+    // coordinates, not world-space, but in practice the values have been
+    // observed to be inconsistent — sometimes world-ish, sometimes local,
+    // and on a bad scan (002025 bedroom) they came back all collapsed to the
+    // same Y value. Feeding those into offset calculation pushes the shell
+    // meters away from where poses live, breaking splat alignment.
+    //
+    // Wall bottom corners (three points appended above per wall) define the
+    // floor Z unambiguously, and the floor polygon 2D extent comes from
+    // floorPolygon() which has its own fallback to wall endpoints. So we
+    // drop polygonCorners from the offset calculation entirely.
     guard !pts.isEmpty else { return .zero }
     let minX = pts.map(\.x).min() ?? 0
     let minY = pts.map(\.y).min() ?? 0

@@ -336,8 +336,15 @@ final class CaptureController: NSObject, ObservableObject {
             // to RANSAC-fit walls when finalizing.
             if !samples.isEmpty, let videoUploadToken = captureResponse.videoUploadToken {
                 uploadStage = .frames
+                // Compute the same canonical-world room offset that
+                // CapturedRoomMapping applies to the shell. Applying it to
+                // every frame pose puts cameras + splats in the same frame
+                // as the walls/floor, so the splat pipeline lands gaussians
+                // inside the actual room geometry instead of floating 2-5m
+                // away in ARKit world coords.
+                let canonicalOffset = capturedRoom.canonicalRoomOffset()
                 let frameInputs = samples.map { sample in
-                    FrameInputBuilder.build(sample: sample)
+                    FrameInputBuilder.build(sample: sample, canonicalOffset: canonicalOffset)
                 }
                 let framesRequest = CaptureFramesRequestEnvelope(
                     videoUploadToken: videoUploadToken,

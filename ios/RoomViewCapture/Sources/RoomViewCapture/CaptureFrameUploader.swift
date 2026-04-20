@@ -127,13 +127,26 @@ public enum FrameInputBuilder {
     /// Builds a `CaptureFrameInputEnvelope` from a sampled ARKit frame. Depth
     /// and confidence are serialized as NumPy .npy so the render bench can
     /// consume the same files.
-    public static func build(sample: FrameCaptureRecorder.Sample, isoFormatter: ISO8601DateFormatter? = nil) -> CaptureFrameInputEnvelope {
+    ///
+    /// `canonicalOffset` is the room origin offset computed by
+    /// `RoomPlanMapperInputs` — pass it so frame poses land in the same
+    /// canonical-post-offset coordinate frame as the shell surfaces.
+    /// Default `.zero` preserves the pre-alignment behavior for callers that
+    /// haven't yet threaded the offset through.
+    public static func build(
+        sample: FrameCaptureRecorder.Sample,
+        canonicalOffset: simd_float3 = .zero,
+        isoFormatter: ISO8601DateFormatter? = nil
+    ) -> CaptureFrameInputEnvelope {
         let formatter = isoFormatter ?? {
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             return formatter
         }()
-        let poseRecord = CaptureBundleWriter.poseRecord(for: sample.cameraTransform)
+        let poseRecord = CaptureBundleWriter.poseRecord(
+            for: sample.cameraTransform,
+            canonicalOffset: canonicalOffset
+        )
         let intrinsics = CaptureBundleWriter.intrinsicsEnvelope(matrix: sample.intrinsics, imageResolution: sample.imageResolution)
         let depthNpy = NumpyEncoder.encodeFloat32(
             bytes: sample.depthFloat32LEBytes,
