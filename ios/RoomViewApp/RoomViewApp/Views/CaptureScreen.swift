@@ -156,9 +156,13 @@ final class CaptureController: NSObject, ObservableObject {
     private var capturedRoom: CapturedRoom?
     private var captureStartedAt: Date?
 
+    // Ring-buffer cap. 256 × 0.5s = ~2 min of scan before we start dropping
+    // the oldest samples. Covers every realistic room-walk duration. Each
+    // sample is ~500KB (RGB+depth+confidence) → ~125MB peak RAM, well within
+    // an iPhone Pro's budget.
     private let frameRecorder: FrameCaptureRecorder = FrameCaptureRecorder(
         minimumInterval: 0.5,
-        maxSampleCount: 64,
+        maxSampleCount: 256,
         jpegQuality: 0.85
     )
     private let sessionProxy = RoomCaptureSessionDelegateProxy()
@@ -289,7 +293,11 @@ final class CaptureController: NSObject, ObservableObject {
         phase = .uploading
         uploadStage = .roomplan
 
-        let samples = frameRecorder.finalize(targetFrameCount: 48)
+        // Upload 128 evenly-spaced frames max. At ~500KB each, that's ~64MB
+        // of JSON-base64 over LAN — ~5-10 seconds on Wi-Fi. More frames give
+        // the splat generator and texture baker better coverage at the cost
+        // of upload time.
+        let samples = frameRecorder.finalize(targetFrameCount: 128)
         let videoExpected = !samples.isEmpty
         let capturedAt = ISO8601DateFormatter().string(from: captureStartedAt ?? Date())
         let requestId = "req-ios-\(UUID().uuidString.prefix(8))"
