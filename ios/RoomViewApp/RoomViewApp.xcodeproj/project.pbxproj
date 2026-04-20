@@ -1,0 +1,368 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0730E262A38DA87C76E8E49E /* RoomViewApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09BB15C323456B8229A99821 /* RoomViewApp.swift */; };
+		36CE8FE35280A6C1EF130438 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FA9672A30E020C3D548C840E /* Assets.xcassets */; };
+		6D8CB584550753DA2114CFB5 /* CaptureScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56317A58E9F51440A1B2BDEB /* CaptureScreen.swift */; };
+		731054CDC320D797126117B9 /* ResultScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE1B300D08CC25D1085DDEC0 /* ResultScreen.swift */; };
+		AE02E56BC55ABCAC29195FC4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A229907B166877FBE516BC95 /* ContentView.swift */; };
+		F87B6EC4340C6F3A2EB9C4B3 /* RoomViewCapture in Frameworks */ = {isa = PBXBuildFile; productRef = 2E36E106104BE9C10AF0F31D /* RoomViewCapture */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		09BB15C323456B8229A99821 /* RoomViewApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomViewApp.swift; sourceTree = "<group>"; };
+		56317A58E9F51440A1B2BDEB /* CaptureScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureScreen.swift; sourceTree = "<group>"; };
+		7C06E45F45D71AE6F1237B19 /* RoomViewApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = RoomViewApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A229907B166877FBE516BC95 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		B0466547F4612117EAB52588 /* RoomViewCapture */ = {isa = PBXFileReference; lastKnownFileType = folder; name = RoomViewCapture; path = ../RoomViewCapture; sourceTree = SOURCE_ROOT; };
+		CE1B300D08CC25D1085DDEC0 /* ResultScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultScreen.swift; sourceTree = "<group>"; };
+		FA9672A30E020C3D548C840E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		63851BEBB1AE5006707AEA50 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F87B6EC4340C6F3A2EB9C4B3 /* RoomViewCapture in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		38329B1DA5633D0C33E022A8 /* RoomViewApp */ = {
+			isa = PBXGroup;
+			children = (
+				FA9672A30E020C3D548C840E /* Assets.xcassets */,
+				A229907B166877FBE516BC95 /* ContentView.swift */,
+				09BB15C323456B8229A99821 /* RoomViewApp.swift */,
+				3E6DE3063BC31FEB9C48D35D /* Views */,
+			);
+			path = RoomViewApp;
+			sourceTree = "<group>";
+		};
+		3E6DE3063BC31FEB9C48D35D /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				56317A58E9F51440A1B2BDEB /* CaptureScreen.swift */,
+				CE1B300D08CC25D1085DDEC0 /* ResultScreen.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		57A72A19E313381EA1EF056B = {
+			isa = PBXGroup;
+			children = (
+				F7059A869FAF7285747AD4CB /* Packages */,
+				38329B1DA5633D0C33E022A8 /* RoomViewApp */,
+				71E63B6258BC62ADCE093B7D /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		71E63B6258BC62ADCE093B7D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				7C06E45F45D71AE6F1237B19 /* RoomViewApp.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		F7059A869FAF7285747AD4CB /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				B0466547F4612117EAB52588 /* RoomViewCapture */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		ED34E69D1E4F8764630D5BA5 /* RoomViewApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8C25F87AB3FDC723FB2D59CF /* Build configuration list for PBXNativeTarget "RoomViewApp" */;
+			buildPhases = (
+				6CAB6361749B38C5F6D1BE23 /* Sources */,
+				75B879CEAC7AB9F608B2C9C4 /* Resources */,
+				63851BEBB1AE5006707AEA50 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RoomViewApp;
+			packageProductDependencies = (
+				2E36E106104BE9C10AF0F31D /* RoomViewCapture */,
+			);
+			productName = RoomViewApp;
+			productReference = 7C06E45F45D71AE6F1237B19 /* RoomViewApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		32A474A7F4F48CDD563F4AAA /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					ED34E69D1E4F8764630D5BA5 = {
+						DevelopmentTeam = ZYDZ2387Y4;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 7A01AC51652121EA0DFAAEC9 /* Build configuration list for PBXProject "RoomViewApp" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 57A72A19E313381EA1EF056B;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				89DEA5FF13A6D23292389B41 /* XCLocalSwiftPackageReference "../RoomViewCapture" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 71E63B6258BC62ADCE093B7D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				ED34E69D1E4F8764630D5BA5 /* RoomViewApp */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		75B879CEAC7AB9F608B2C9C4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				36CE8FE35280A6C1EF130438 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		6CAB6361749B38C5F6D1BE23 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6D8CB584550753DA2114CFB5 /* CaptureScreen.swift in Sources */,
+				AE02E56BC55ABCAC29195FC4 /* ContentView.swift in Sources */,
+				731054CDC320D797126117B9 /* ResultScreen.swift in Sources */,
+				0730E262A38DA87C76E8E49E /* RoomViewApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		8CCEB4554EAB5BC98090AC23 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = ZYDZ2387Y4;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = RoomViewApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = roomview.RoomViewApp;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A111BC9EEFDA53E173E93394 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		AED8F9EF0182A7F25F05AFE0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		D7BC518071495B25C82E2ACA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = ZYDZ2387Y4;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = RoomViewApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = roomview.RoomViewApp;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		7A01AC51652121EA0DFAAEC9 /* Build configuration list for PBXProject "RoomViewApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AED8F9EF0182A7F25F05AFE0 /* Debug */,
+				A111BC9EEFDA53E173E93394 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		8C25F87AB3FDC723FB2D59CF /* Build configuration list for PBXNativeTarget "RoomViewApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8CCEB4554EAB5BC98090AC23 /* Debug */,
+				D7BC518071495B25C82E2ACA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		89DEA5FF13A6D23292389B41 /* XCLocalSwiftPackageReference "../RoomViewCapture" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../RoomViewCapture;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		2E36E106104BE9C10AF0F31D /* RoomViewCapture */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RoomViewCapture;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 32A474A7F4F48CDD563F4AAA /* Project object */;
+}

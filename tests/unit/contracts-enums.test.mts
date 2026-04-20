@@ -30,6 +30,7 @@ import {
   SCENE_SOURCE_VALUES,
   SPLAT_STATUS_VALUES,
   SUPPORT_KIND_VALUES,
+  SURFACE_MASK_GENERATOR_KIND_VALUES,
   SURFACE_TYPE_VALUES,
   UNITS_VALUES,
   VIDEO_UPLOAD_TOKEN_STATUS_VALUES,
@@ -116,6 +117,13 @@ describe("Contract enum constants", () => {
     assert.deepEqual([...SPLAT_STATUS_VALUES].sort(), ["failed", "processing", "queued", "ready"]);
   });
 
+  test("SURFACE_MASK_GENERATOR_KIND_VALUES covers the Showcase mask routes", () => {
+    assert.deepEqual(
+      [...SURFACE_MASK_GENERATOR_KIND_VALUES].sort(),
+      ["click_sam2", "deterministic_stub", "geometric_projection", "sam2_refined"],
+    );
+  });
+
   test("EDITABLE_OBJECT_CLASS_VALUES has exactly the 12 MVP classes (add-on via stretch)", () => {
     assert.equal(EDITABLE_OBJECT_CLASS_VALUES.length, 12);
     for (const expected of ["bed", "desk", "chair", "sofa", "rug", "lamp"]) {
@@ -128,7 +136,7 @@ describe("Contract enum constants", () => {
   });
 
   test("JOB_KIND_VALUES", () => {
-    assert.deepEqual([...JOB_KIND_VALUES].sort(), ["photoreal", "splat"]);
+    assert.deepEqual([...JOB_KIND_VALUES].sort(), ["capture_pipeline", "photoreal", "splat"]);
   });
 
   test("JOB_STATUS_VALUES", () => {

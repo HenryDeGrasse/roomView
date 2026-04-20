@@ -75,6 +75,24 @@ function mountThreeView(container, opts) {
   roomsRoot.userData = { kind: 'rooms' };
   scene.add(roomsRoot);
 
+  // Scan-native object proxies. The scan pane enables LAYER_SPLAT; dropping
+  // THREE.Points under this root at that layer makes the point clouds the
+  // primary visible content in the scan pane (shell stays too, at LAYER_SHELL).
+  const scanProxiesRoot = new THREE.Group();
+  scanProxiesRoot.userData = { kind: 'scan_proxies' };
+  scanProxiesRoot.layers.set(LAYER_SPLAT);
+  scene.add(scanProxiesRoot);
+
+  // Per-object OBB wireframes — drawn on top of the scan content so every
+  // object (including the ones with no mesh/splat coverage) has a visible
+  // presence and selection has something to highlight. Populated by
+  // setObjectOutlines; cleared by the same call with null.
+  const scanObjectOutlines = new THREE.Group();
+  scanObjectOutlines.name = 'scan_object_outlines_root';
+  scanObjectOutlines.renderOrder = 5;
+  scanObjectOutlines.layers.set(LAYER_SPLAT);
+  scene.add(scanObjectOutlines);
+
   const resize = () => {
     const width = container.clientWidth;
     const height = container.clientHeight;
@@ -87,12 +105,17 @@ function mountThreeView(container, opts) {
   resizeObserver.observe(container);
   window.addEventListener('resize', resize);
 
-  let rafHandle = 0;
+  // Dollhouse mode used to hide the splat when the camera left the room
+  // polygon (splats looked noisy from outside). Now that cleanup carves
+  // the splat to a thin shell on the scene mesh, exterior views read
+  // fine — we keep the splat visible in all orbits.
+  let dollhouseState = { inside: true, splatViewerGetter: null };
   const tick = () => {
     controls.update();
     renderer.render(scene, camera);
     rafHandle = requestAnimationFrame(tick);
   };
+  let rafHandle = 0;
   rafHandle = requestAnimationFrame(tick);
 
   let currentRoomId = null;
@@ -129,10 +152,29 @@ function mountThreeView(container, opts) {
         candidates.push(child);
       }
     });
+    // Scan pane pickables — TSDF proxy meshes (real surfaces, easy to hit)
+    // + OBB wireframes (LineSegments) for empty-mesh objects. Users expect
+    // clicking any part of the scan-rendered object (or its visible box)
+    // to select it, not just entries in the Objects panel.
+    scanProxiesRoot.traverse((child) => {
+      if (!child.isMesh) return;
+      if (!child.userData?.object_id) return;
+      candidates.push(child);
+    });
+    scanObjectOutlines.traverse((child) => {
+      if (!child.isLineSegments) return;
+      if (!child.userData?.object_id) return;
+      candidates.push(child);
+    });
+    // Increase line-picking tolerance so clicking near (not exactly on) an
+    // OBB wireframe edge still registers.
+    raycaster.params.Line = raycaster.params.Line || {};
+    raycaster.params.Line.threshold = 0.05;
     const hits = raycaster.intersectObjects(candidates, false);
     const firstVisible = hits.find((hit) => camera.layers.test(hit.object.layers));
     if (firstVisible) {
-      const id = firstVisible.object.userData?.canonical_id;
+      const id = firstVisible.object.userData?.canonical_id
+        || firstVisible.object.userData?.object_id;
       if (id) {
         onSelect(id);
         return;
@@ -173,6 +215,426 @@ function mountThreeView(container, opts) {
     assetUriResolver = typeof fn === 'function' ? fn : () => null;
   }
 
+  // Showcase Track B — Gaussian Splatting loader (scaffold).
+  //
+  // When a SplatAssetRecord transitions to `status: "ready"` and carries a
+  // resolvable URI, the scan pane calls `setSplat({ uri, gaussian_count })`.
+  // A real splat renderer gets dropped in below the `splatLoader` hook —
+  // candidates: @mkkellogg/gaussian-splats-3d, gsplat.js, or a vendored
+  // minimal renderer. Until the renderer is wired, we still surface the
+  // splat metadata for debugging and emit a console note so the scan pane
+  // UX can decorate itself ("Splat ready · 304k gaussians · renderer pending").
+  //
+  // setSplat is idempotent per URI — repeated calls with the same uri skip
+  // reload. Passing null disposes any active splat. Graceful fallback: the
+  // RoomPlan shell at LAYER_SHELL stays visible whether or not splats render,
+  // so this scaffold never degrades the editor.
+  let currentSplatUri = null;
+  const splatMeta = { uri: null, gaussian_count: null, status: 'absent' };
+  let splatLoader = null; // Week 4 follow-up: drop in gsplat.js or similar.
+  // Optional accessor for the live DropInViewer — splat-loader.js wires
+  // this up via setSplatViewerGetter so the dollhouse visibility toggle
+  // can .visible it without chasing scene children every tick.
+  let splatViewerGetter = null;
+
+  function setSplatLoader(fn) {
+    splatLoader = typeof fn === 'function' ? fn : null;
+  }
+
+  function setSplatViewerGetter(fn) {
+    splatViewerGetter = typeof fn === 'function' ? fn : null;
+    dollhouseState.splatViewerGetter = splatViewerGetter;
+  }
+
+  async function setSplat(descriptor) {
+    if (!descriptor || !descriptor.uri) {
+      splatMeta.uri = null;
+      splatMeta.gaussian_count = null;
+      splatMeta.status = 'absent';
+      currentSplatUri = null;
+      return { status: 'absent' };
+    }
+    if (currentSplatUri === descriptor.uri) {
+      return { status: splatMeta.status };
+    }
+    currentSplatUri = descriptor.uri;
+    splatMeta.uri = descriptor.uri;
+    splatMeta.gaussian_count = typeof descriptor.gaussian_count === 'number'
+      ? descriptor.gaussian_count
+      : null;
+    if (typeof splatLoader !== 'function') {
+      splatMeta.status = 'metadata_only';
+      return { status: 'metadata_only' };
+    }
+    try {
+      const result = await splatLoader({
+        uri: descriptor.uri,
+        splitManifestUri: descriptor.split_manifest_uri || descriptor.splitManifestUri || null,
+        scene,
+        camera,
+        layer: LAYER_SPLAT,
+        THREE,
+      });
+      splatMeta.status = result?.status ?? 'ready';
+      return { status: splatMeta.status };
+    } catch (err) {
+      console.error('splat loader failed', err);
+      splatMeta.status = 'failed';
+      return { status: 'failed', error: err };
+    }
+  }
+
+  function getSplatMeta() {
+    return { ...splatMeta };
+  }
+
+  // Scan proxies — scan-native per-object content, produced by
+  // apps/web/src/scan-proxies.js from captured_frames. Each map entry may be
+  //   { points: THREE.Points }       (Tier 1: raw / symmetry-filled splat cloud)
+  //   { mesh: THREE.Mesh }            (Tier 2: TSDF / Poisson reconstructed mesh)
+  //   { object3d: THREE.Object3D }    (generic escape hatch)
+  // Idempotent — calling with a new map disposes the previous attachments.
+  // Passing null clears. After adding children, re-frames the camera to the
+  // proxy bounds so the default scan-pane view lands on the actual scan
+  // content rather than an empty shell interior.
+  function setScanProxies(proxiesMap) {
+    disposeScanProxies();
+    if (!proxiesMap || typeof proxiesMap.forEach !== 'function') return;
+    let added = 0;
+    proxiesMap.forEach((entry) => {
+      const child = entry?.mesh || entry?.points || entry?.object3d;
+      if (!child) return;
+      child.traverse((node) => node.layers.set(LAYER_SPLAT));
+      scanProxiesRoot.add(child);
+      added += 1;
+    });
+    if (added > 0) {
+      fitCameraToScanProxies();
+    }
+  }
+
+  function fitCameraToScanProxies() {
+    if (scanProxiesRoot.children.length === 0) return;
+    const bbox = new THREE.Box3();
+    for (const child of scanProxiesRoot.children) {
+      if (typeof child.geometry?.computeBoundingBox === 'function') {
+        child.geometry.computeBoundingBox();
+      }
+      const childBox = new THREE.Box3().setFromObject(child);
+      if (Number.isFinite(childBox.min.x) && Number.isFinite(childBox.max.x)) {
+        bbox.union(childBox);
+      }
+    }
+    if (bbox.isEmpty()) return;
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    bbox.getCenter(center);
+    bbox.getSize(size);
+    const radius = Math.max(size.x, size.y, size.z) || 1;
+    // 45° FOV perspective: camera at ~2.4× radius frames with a bit of margin.
+    const distance = Math.max(2.5, radius * 2.4);
+    // Offset along +X,-Y,+Z so we get a 3/4 overhead angle that reads both
+    // footprint and height.
+    camera.position.set(
+      center.x - distance * 0.6,
+      center.y - distance * 0.9,
+      center.z + distance * 0.75,
+    );
+    controls.target.copy(center);
+    controls.update();
+  }
+
+  /**
+   * Attach per-object OBB wireframes. `outlineGroup` is a THREE.Group whose
+   * children carry userData.scan_obb + userData.object_id (produced by
+   * scan-proxies.js buildObjectOutlines). Pass null to clear.
+   */
+  function setObjectOutlines(outlineGroup) {
+    for (const prev of [...scanObjectOutlines.children]) {
+      scanObjectOutlines.remove(prev);
+      prev.traverse((n) => {
+        if (n.geometry?.dispose) n.geometry.dispose();
+        if (n.material?.dispose) n.material.dispose();
+      });
+    }
+    if (!outlineGroup) return;
+    outlineGroup.traverse((node) => node.layers.set(LAYER_SPLAT));
+    scanObjectOutlines.add(outlineGroup);
+  }
+
+  /**
+   * Highlight the selected object's OBB wireframe. Scoped to the scan pane
+   * — the layout pane / main viewer have their own selection visuals.
+   */
+  function setScanSelection(objectId) {
+    for (const outlineGroup of scanObjectOutlines.children) {
+      for (const child of outlineGroup.children ?? []) {
+        if (!child.userData?.scan_obb) continue;
+        const isSelected = !!objectId && child.userData.object_id === objectId;
+        if (child.material) {
+          // Unselected: 0.35 opacity so the scene isn't cluttered, but
+          // still visible. Selected: full opacity + tint pop.
+          child.material.opacity = isSelected ? 1.0 : (objectId ? 0.22 : 0.55);
+          child.material.needsUpdate = true;
+        }
+      }
+    }
+  }
+
+  // Object-move handle — a single small sphere the user grabs to drag
+  // the selected object in the floor plane. Replaces the older
+  // TransformControls gizmo, which was too visually heavy for a quick
+  // drag. Dragging translates every three.js node whose userData's
+  // object_id/canonical_id matches the target so the TSDF mesh, the OBB
+  // wireframe, and any editable proxies move as a unit. The baked splat
+  // gaussians stay put in v1 — see the v2 plan for per-object splat
+  // segmentation.
+  const dragHandleMaterial = new THREE.MeshBasicMaterial({
+    color: 0xfbbf24,
+    depthTest: false,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.95,
+  });
+  const dragHandle = new THREE.Mesh(new THREE.SphereGeometry(0.06, 20, 14), dragHandleMaterial);
+  dragHandle.renderOrder = 999;
+  dragHandle.visible = false;
+  dragHandle.userData.is_drag_handle = true;
+  scene.add(dragHandle);
+
+  let moveTargetId = null;
+  let moveStartPosition = new THREE.Vector3();
+  let moveLastPosition = new THREE.Vector3();
+  let onObjectMoved = () => {};
+  let onObjectMoveDragging = () => {};
+  // Wall snap context for the active move target — walls (each a line
+  // segment with inward normal, derived from the floor polygon) + the
+  // object's OBB half-extents + current yaw. Used to pull the object
+  // flush with a wall when its edge crosses into the SNAP band.
+  const SNAP_DISTANCE_M = 0.1;
+  let moveTargetWalls = [];
+  let moveTargetObb = null;
+
+  const dragRaycaster = new THREE.Raycaster();
+  const dragPointer = new THREE.Vector2();
+  const dragPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+  const dragHitPoint = new THREE.Vector3();
+  let isDraggingHandle = false;
+  // Rotation mode: shift+drag on the handle rotates the object in the
+  // floor plane around the object's OBB center. Horizontal pointer
+  // motion maps to yaw — 150 px ≈ 90°.
+  const ROT_DEGREES_PER_PIXEL = 0.6;
+  let isRotatingHandle = false;
+  let rotationStartPointerX = 0;
+  let rotationLastYawDeg = 0;
+  let rotationPivot = new THREE.Vector3();
+
+  function ndcFromEvent(event) {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    dragPointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    dragPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    return dragPointer;
+  }
+
+  canvas.addEventListener('pointerdown', (event) => {
+    if (!dragHandle.visible || !moveTargetId) return;
+    const ndc = ndcFromEvent(event);
+    if (!ndc) return;
+    dragRaycaster.setFromCamera(ndc, camera);
+    const hits = dragRaycaster.intersectObject(dragHandle, false);
+    if (hits.length === 0) return;
+    if (event.shiftKey) {
+      isRotatingHandle = true;
+      rotationStartPointerX = event.clientX;
+      rotationLastYawDeg = 0;
+      rotationPivot.copy(dragHandle.position);
+    } else {
+      isDraggingHandle = true;
+      moveStartPosition.copy(dragHandle.position);
+      moveLastPosition.copy(dragHandle.position);
+      dragPlane.set(new THREE.Vector3(0, 0, 1), -dragHandle.position.z);
+    }
+    controls.enabled = false;
+    canvas.setPointerCapture(event.pointerId);
+    event.stopPropagation();
+    event.preventDefault();
+  });
+
+  const matchesTarget = (node) =>
+    node !== dragHandle &&
+    (node.userData?.canonical_id === moveTargetId ||
+      node.userData?.object_id === moveTargetId);
+
+  canvas.addEventListener('pointermove', (event) => {
+    if (!moveTargetId) return;
+    if (isRotatingHandle) {
+      const newYawDeg = (event.clientX - rotationStartPointerX) * ROT_DEGREES_PER_PIXEL;
+      const deltaYawDeg = newYawDeg - rotationLastYawDeg;
+      rotationLastYawDeg = newYawDeg;
+      if (Math.abs(deltaYawDeg) < 1e-4) return;
+      const deltaRad = (deltaYawDeg * Math.PI) / 180;
+      const deltaRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), deltaRad);
+      scene.traverse((node) => {
+        if (!matchesTarget(node)) return;
+        node.quaternion.premultiply(deltaRot);
+        node.position.sub(rotationPivot).applyQuaternion(deltaRot).add(rotationPivot);
+      });
+      onObjectMoveDragging(moveTargetId, { x: 0, y: 0, z: 0, yaw_degrees: newYawDeg });
+      return;
+    }
+    if (!isDraggingHandle) return;
+    const ndc = ndcFromEvent(event);
+    if (!ndc) return;
+    dragRaycaster.setFromCamera(ndc, camera);
+    if (!dragRaycaster.ray.intersectPlane(dragPlane, dragHitPoint)) return;
+    dragHitPoint.z = moveLastPosition.z;
+    // Snap the raw cursor hit to any wall within the snap band before
+    // computing the incremental delta. This keeps the drag "sticky" —
+    // once you enter the band the object glues to the wall until you
+    // pull away decisively.
+    const snapped = applyWallSnap({ x: dragHitPoint.x, y: dragHitPoint.y, z: dragHitPoint.z });
+    dragHitPoint.set(snapped.x, snapped.y, snapped.z);
+    const delta = dragHitPoint.clone().sub(moveLastPosition);
+    if (delta.lengthSq() < 1e-12) return;
+    dragHandle.position.copy(dragHitPoint);
+    // Traverse the whole scene so per-object splat sub-viewers (added by
+    // splat-loader.js under their own root) pick up the same delta as
+    // the mesh. We used to loop over just [roomsRoot, scanProxiesRoot,
+    // scanObjectOutlines]; with per-object splats, the gaussian wrappers
+    // live in a separate splat_sub_viewers root and need to move too.
+    scene.traverse((node) => {
+      if (matchesTarget(node)) node.position.add(delta);
+    });
+    moveLastPosition.copy(dragHitPoint);
+    onObjectMoveDragging(moveTargetId, {
+      x: dragHitPoint.x - moveStartPosition.x,
+      y: dragHitPoint.y - moveStartPosition.y,
+      z: 0,
+    });
+  });
+
+  function finishDrag(event) {
+    if (!isDraggingHandle && !isRotatingHandle) return;
+    if (event && typeof event.pointerId === 'number' && canvas.hasPointerCapture(event.pointerId)) {
+      canvas.releasePointerCapture(event.pointerId);
+    }
+    if (isRotatingHandle) {
+      isRotatingHandle = false;
+      controls.enabled = true;
+      if (moveTargetId && Math.abs(rotationLastYawDeg) > 1e-4) {
+        onObjectMoved(moveTargetId, {
+          x: 0, y: 0, z: 0,
+          yaw_degrees: rotationLastYawDeg,
+        });
+      }
+      return;
+    }
+    isDraggingHandle = false;
+    controls.enabled = true;
+    const totalDelta = dragHandle.position.clone().sub(moveStartPosition);
+    if (moveTargetId && totalDelta.lengthSq() > 1e-8) {
+      onObjectMoved(moveTargetId, {
+        x: totalDelta.x,
+        y: totalDelta.y,
+        z: totalDelta.z,
+      });
+    }
+  }
+  canvas.addEventListener('pointerup', finishDrag);
+  canvas.addEventListener('pointercancel', finishDrag);
+
+  /**
+   * Position the drag handle at `centerPosition` and enable it for the
+   * object identified by `objectId`. Pass `null` to hide the handle.
+   * `context` optionally carries `{ obb, walls }` — OBB half-extents and
+   * an array of wall records (`{ ax, ay, bx, by, nx, ny }`, inward
+   * normal). Used for snap-to-wall while translating.
+   */
+  function setMoveTarget(objectId, centerPosition, context = {}) {
+    moveTargetId = objectId || null;
+    if (!moveTargetId) {
+      dragHandle.visible = false;
+      moveTargetWalls = [];
+      moveTargetObb = null;
+      return;
+    }
+    if (centerPosition && typeof centerPosition.x === 'number') {
+      dragHandle.position.set(
+        centerPosition.x,
+        centerPosition.y,
+        typeof centerPosition.z === 'number' ? centerPosition.z : 0,
+      );
+    }
+    moveTargetWalls = Array.isArray(context.walls) ? context.walls : [];
+    moveTargetObb = context.obb || null;
+    dragHandle.visible = true;
+  }
+
+  // Project the OBB half-extents onto a wall normal in world XY, giving
+  // the object's "reach" toward that wall. For yaw≠0 the axis-aligned
+  // box is rotated; this uses the |projection| trick to find the maximal
+  // extent along n without iterating every corner.
+  function obbExtentAlongNormal(obb, nx, ny) {
+    if (!obb) return 0;
+    const halfX = (obb.size_x || 0) / 2;
+    const halfY = (obb.size_y || 0) / 2;
+    const yaw = ((obb.yaw_degrees || 0) * Math.PI) / 180;
+    const ux = Math.cos(yaw), uy = Math.sin(yaw);
+    const vx = -Math.sin(yaw), vy = Math.cos(yaw);
+    return Math.abs(halfX * (ux * nx + uy * ny)) + Math.abs(halfY * (vx * nx + vy * ny));
+  }
+
+  // Apply wall-snap correction to a proposed center point. Walks each
+  // wall, computes the gap between the OBB edge-toward-wall and the
+  // wall plane; if the gap falls in [0, SNAP_DISTANCE_M], pull the
+  // center so the edge touches the wall. Returns the snapped point.
+  function applyWallSnap(center) {
+    if (!moveTargetObb || moveTargetWalls.length === 0) return center;
+    let best = null;
+    for (const wall of moveTargetWalls) {
+      const signed = (center.x - wall.ax) * wall.nx + (center.y - wall.ay) * wall.ny;
+      const extent = obbExtentAlongNormal(moveTargetObb, wall.nx, wall.ny);
+      const gap = signed - extent;
+      if (gap < 0 || gap >= SNAP_DISTANCE_M) continue;
+      // Only snap if the projected point on the wall line falls inside the
+      // wall segment — avoids snapping to the extension of a short wall.
+      const ex = wall.bx - wall.ax;
+      const ey = wall.by - wall.ay;
+      const lenSq = ex * ex + ey * ey;
+      if (lenSq < 1e-9) continue;
+      const t = ((center.x - wall.ax) * ex + (center.y - wall.ay) * ey) / lenSq;
+      if (t < -0.05 || t > 1.05) continue;
+      if (!best || gap < best.gap) best = { gap, nx: wall.nx, ny: wall.ny };
+    }
+    if (!best) return center;
+    return {
+      x: center.x - best.gap * best.nx,
+      y: center.y - best.gap * best.ny,
+      z: center.z,
+    };
+  }
+
+  function setOnObjectMoved(fn) {
+    onObjectMoved = typeof fn === 'function' ? fn : () => {};
+  }
+
+  function setOnObjectMoveDragging(fn) {
+    onObjectMoveDragging = typeof fn === 'function' ? fn : () => {};
+  }
+
+  function disposeScanProxies() {
+    for (const child of [...scanProxiesRoot.children]) {
+      scanProxiesRoot.remove(child);
+      if (child.geometry && typeof child.geometry.dispose === 'function') {
+        child.geometry.dispose();
+      }
+      if (child.material && typeof child.material.dispose === 'function') {
+        child.material.dispose();
+      }
+    }
+  }
+
   function setRoom(room, options) {
     if (!room) return;
     setRoomVersion += 1;
@@ -193,6 +655,13 @@ function mountThreeView(container, opts) {
       gltfCache,
       gltfLoader,
       resolveAssetUri: assetUriResolver,
+      captureInpaintTextureManifest: options?.captureInpaintTextureManifest ?? null,
+      captureInpaintTextureBaseUri: options?.captureInpaintTextureBaseUri ?? null,
+      // Median RGB sampled from culled mesh-bleed verts — used to tint
+      // the floor ShapeGeometry so that areas revealed when an object
+      // is moved match the captured floor colour instead of the default
+      // brown fallback.
+      capturedFloorColor: options?.captured_floor_color ?? null,
       versionToken,
       getVersion: () => setRoomVersion,
     };
@@ -214,6 +683,7 @@ function mountThreeView(container, opts) {
   }
 
   function dispose() {
+    disposeScanProxies();
     cancelAnimationFrame(rafHandle);
     resizeObserver.disconnect();
     window.removeEventListener('resize', resize);
@@ -274,7 +744,145 @@ function mountThreeView(container, opts) {
     };
   }
 
-  const api = { setRoom, setSelection, setOnSelect, setAssetUriResolver, captureConditioning, getCurrentCameraView, dispose };
+  // Showcase Track C — cinematic camera navigation.
+  //
+  // flyToPose animates the camera from its current position/orientation to a
+  // target Pose3D (the same shape stored on CameraBookmark and CapturedFrame).
+  // ease-in-out cubic over `duration_ms` so bookmark flights feel cinematic
+  // rather than teleport-snappy. Any in-flight flight is cancelled when a new
+  // one starts. Respects prefers-reduced-motion by clamping the duration to
+  // zero (instant snap).
+  //
+  // Pose3D yaw_degrees is measured as atan2(look_dir.y, look_dir.x), matching
+  // the projection used by getCurrentCameraView above. We translate the yaw
+  // back into a forward vector on the horizontal plane and synthesize a
+  // controls.target ~2.5m ahead so OrbitControls stays well-behaved after
+  // the flight finishes.
+  let currentFlightToken = 0;
+  const prefersReducedMotion = typeof window !== 'undefined'
+    && window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
+  function targetFromPose(pose) {
+    const yawRadians = ((pose?.yaw_degrees ?? 0) * Math.PI) / 180;
+    const forwardDistance = 2.5;
+    const px = pose?.position?.x ?? 0;
+    const py = pose?.position?.y ?? 0;
+    const pz = pose?.position?.z ?? 0;
+    return new THREE.Vector3(
+      px + Math.cos(yawRadians) * forwardDistance,
+      py + Math.sin(yawRadians) * forwardDistance,
+      pz,
+    );
+  }
+
+  function flyToPose(pose, options) {
+    const durationMs = prefersReducedMotion
+      ? 0
+      : Math.max(0, options?.duration_ms ?? 900);
+    const targetFov = typeof options?.fov === 'number' && Number.isFinite(options.fov) ? options.fov : null;
+    const endPosition = new THREE.Vector3(
+      pose?.position?.x ?? camera.position.x,
+      pose?.position?.y ?? camera.position.y,
+      pose?.position?.z ?? camera.position.z,
+    );
+    const endTarget = targetFromPose(pose);
+
+    const token = ++currentFlightToken;
+    if (durationMs === 0) {
+      camera.position.copy(endPosition);
+      controls.target.copy(endTarget);
+      if (targetFov !== null) {
+        camera.fov = targetFov;
+        camera.updateProjectionMatrix();
+      }
+      controls.update();
+      return Promise.resolve({ cancelled: false });
+    }
+
+    const startPosition = camera.position.clone();
+    const startTarget = controls.target.clone();
+    const startFov = camera.fov;
+    const startedAt = performance.now();
+
+    return new Promise((resolve) => {
+      const step = (now) => {
+        if (token !== currentFlightToken) {
+          resolve({ cancelled: true });
+          return;
+        }
+        const elapsed = now - startedAt;
+        const raw = Math.min(1, elapsed / durationMs);
+        const t = easeInOutCubic(raw);
+        camera.position.lerpVectors(startPosition, endPosition, t);
+        controls.target.lerpVectors(startTarget, endTarget, t);
+        if (targetFov !== null) {
+          camera.fov = startFov + (targetFov - startFov) * t;
+          camera.updateProjectionMatrix();
+        }
+        controls.update();
+        if (raw < 1) {
+          requestAnimationFrame(step);
+        } else {
+          resolve({ cancelled: false });
+        }
+      };
+      requestAnimationFrame(step);
+    });
+  }
+
+  // Chains flyToPose across a sequence of poses with a dwell between each.
+  // Resolves when the last pose completes, or early-resolves if another
+  // flight interrupts it.
+  async function flyThroughPoses(poses, options) {
+    if (!Array.isArray(poses) || poses.length === 0) {
+      return { cancelled: false, visited: 0 };
+    }
+    const dwellMs = Math.max(0, options?.dwell_ms ?? 500);
+    const durationMs = Math.max(0, options?.duration_ms ?? 900);
+    let visited = 0;
+    for (const pose of poses) {
+      const result = await flyToPose(pose, { duration_ms: durationMs });
+      if (result?.cancelled) {
+        return { cancelled: true, visited };
+      }
+      visited += 1;
+      if (dwellMs > 0) {
+        const waitToken = currentFlightToken;
+        await new Promise((resolve) => setTimeout(resolve, dwellMs));
+        if (waitToken !== currentFlightToken) {
+          return { cancelled: true, visited };
+        }
+      }
+    }
+    return { cancelled: false, visited };
+  }
+
+  const api = {
+    setRoom,
+    setSelection,
+    setOnSelect,
+    setAssetUriResolver,
+    setSplat,
+    setSplatLoader,
+    setSplatViewerGetter,
+    getSplatMeta,
+    setScanProxies,
+    setObjectOutlines,
+    setScanSelection,
+    setMoveTarget,
+    setOnObjectMoved,
+    setOnObjectMoveDragging,
+    captureConditioning,
+    getCurrentCameraView,
+    flyToPose,
+    flyThroughPoses,
+    dispose,
+  };
   // Dev/demo hook: lets the browser console (and later E2E harnesses) inspect
   // the scene graph, camera, and controls without re-plumbing through the UI.
   if (typeof window !== 'undefined') {
@@ -286,13 +894,26 @@ function mountThreeView(container, opts) {
 
 function buildRoomGroup(room, ctx) {
   const group = new THREE.Group();
-  group.userData = { kind: 'room', canonical_id: room.room_id };
+  // Stash the room payload so tick-time helpers (e.g. the dollhouse
+  // visibility toggle) can read floor_polygon + ceiling_height without
+  // threading state through the mount closure.
+  group.userData = { kind: 'room', canonical_id: room.room_id, roomData: room };
 
   const shell = new THREE.Group();
   shell.userData = { kind: 'shell' };
   buildFloor(room, shell, ctx);
   buildWalls(room, shell, ctx);
   buildFixedElements(room, shell, ctx);
+  // Scan pane only: solid inward-facing planes on every shell surface.
+  // Fills in the walls/floor/ceiling that the splat never covered (e.g.
+  // the 3 of 6 walls the ARKitScenes clip never imaged), while still
+  // letting outside orbits see straight through via FrontSide culling.
+  if (ctx?.appearanceMode === 'capture') {
+    buildCaptureInpaintShell(room, shell, {
+      textureManifest: ctx?.captureInpaintTextureManifest ?? null,
+      textureBaseUri: ctx?.captureInpaintTextureBaseUri ?? null,
+    });
+  }
   setLayerDeep(shell, LAYER_SHELL);
   group.add(shell);
 
@@ -323,10 +944,23 @@ function buildFloor(room, parent, ctx) {
   if (shoelaceSignedArea(points) < 0) points.reverse();
   const shape = new THREE.Shape(points);
   const geom = new THREE.ShapeGeometry(shape);
-  const color = ctx?.appearanceMode === 'capture'
+  const isCapture = ctx?.appearanceMode === 'capture';
+  // Prefer the mesh-bleed-sampled floor colour when the scan proxies
+  // have loaded — makes moved-object reveals match the captured floor
+  // instead of a default brown.
+  const captured = ctx?.capturedFloorColor;
+  const color = isCapture
     ? CAPTURE_SHELL_COLORS.floor
-    : materialColor(floorSurface?.material_state, 0x6b5a3e);
-    const mat = new THREE.MeshStandardMaterial({ color, side: THREE.DoubleSide, roughness: 0.92 });
+    : (captured
+        ? new THREE.Color(captured.r, captured.g, captured.b).getHex()
+        : materialColor(floorSurface?.material_state, 0x6b5a3e));
+  const mat = new THREE.MeshStandardMaterial({
+    color,
+    side: THREE.DoubleSide,
+    roughness: 0.92,
+    transparent: isCapture,
+    opacity: isCapture ? 0.35 : 1.0,
+  });
   const mesh = new THREE.Mesh(geom, mat);
   mesh.userData = { canonical_id: floorSurface?.surface_id, kind: 'floor' };
   parent.add(mesh);
@@ -359,8 +993,21 @@ function buildWalls(room, parent, ctx) {
     const color = ctx?.appearanceMode === 'capture'
       ? CAPTURE_SHELL_COLORS.wall
       : materialColor(wall.material_state, 0xd8d2c0);
-    const mat = new THREE.MeshStandardMaterial({ color, side: THREE.FrontSide, roughness: 0.85 });
-    const mesh = new THREE.Mesh(geom, mat);
+    // In the scan pane the walls are spatial *context*, not a surface to
+    // render. Solid walls box in the camera and hide the scan-native
+    // proxies behind them. Draw just the wall outline (LineSegments from
+    // the shape edges) so the room footprint reads, but the meshes and
+    // point clouds stay unobstructed.
+    const isCapture = ctx?.appearanceMode === 'capture';
+    let mesh;
+    if (isCapture) {
+      const edges = new THREE.EdgesGeometry(geom);
+      const lineMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55 });
+      mesh = new THREE.LineSegments(edges, lineMat);
+    } else {
+      const mat = new THREE.MeshStandardMaterial({ color, side: THREE.FrontSide, roughness: 0.85 });
+      mesh = new THREE.Mesh(geom, mat);
+    }
 
     const { origin, u_axis, v_axis, normal } = wall.surface_frame;
     const basis = new THREE.Matrix4().makeBasis(
@@ -375,6 +1022,252 @@ function buildWalls(room, parent, ctx) {
     parent.add(mesh);
   }
 }
+
+/**
+ * Toggle scan-pane splat + mesh content visibility based on whether
+ * the camera is inside the room polygon. FrontSide culling hides the
+ * inpaint walls from outside orbits, but gaussian splats render from
+ * every angle — so we hide them explicitly when the camera is outside
+ * the shell. The result is a clean dollhouse from exterior angles, and
+ * full-content view from interior angles.
+ *
+ * Uses the ray-crossings point-in-polygon test against floor_polygon
+ * vertices (handles the rotated rectangle produced by scan-to-shell.py
+ * as well as any non-rectangular shape). Adds a 30cm horizontal margin
+ * + a small Z band around the room so edge orbits aren't twitchy.
+ */
+function updateDollhouseVisibility(camera, roomsRoot, scanProxiesRoot, state) {
+  // Find the first room's floor polygon and ceiling height.
+  let shell = null;
+  roomsRoot.traverse((node) => {
+    if (shell) return;
+    const room = node.userData?.roomData;
+    if (room && room.shell) shell = room.shell;
+  });
+  if (!shell) return;
+  const polygon = shell.floor_polygon?.vertices;
+  if (!polygon || polygon.length < 3) return;
+  const margin = 0.3;
+  const ceilH = Number(shell.ceiling_height) || 2.4;
+  const cx = camera.position.x;
+  const cy = camera.position.y;
+  const cz = camera.position.z;
+  const insideZ = cz > -margin && cz < ceilH + margin;
+  const insideXY = insideZ && pointInPolygonWithMargin(cx, cy, polygon, margin);
+  if (insideXY !== state.inside) {
+    state.inside = insideXY;
+    // Toggle the .visible on the splat viewer (if installed) and on
+    // the scan-native proxies root. We set .visible directly instead
+    // of relying on camera.layers because the mkkellogg gaussian-splat
+    // library renders through its own internal draw pass and doesn't
+    // always honour the outer camera's layer mask.
+    if (state.splatViewerGetter) {
+      const viewer = state.splatViewerGetter();
+      if (viewer) viewer.visible = insideXY;
+    }
+    // scanProxiesRoot (TSDF meshes: chair, desk, etc.) stays visible from
+    // both sides — dollhouse view hides splats (noisy from outside) but
+    // keeps the rigid scan geometry so the room reads as a real space.
+  }
+}
+
+function encodePathSegment(s) {
+  return encodeURIComponent(String(s ?? ''));
+}
+
+
+function buildSurfaceUVs(geometry, texture) {
+  if (!texture) return null;
+  const positions = geometry.getAttribute('position').array;
+  const { u_min, u_max, v_min, v_max } = texture;
+  const u_span = Math.max(1e-6, u_max - u_min);
+  const v_span = Math.max(1e-6, v_max - v_min);
+  const uvs = new Float32Array((positions.length / 3) * 2);
+  for (let i = 0, j = 0; i < positions.length; i += 3, j += 2) {
+    uvs[j] = (positions[i] - u_min) / u_span;            // local x → u
+    uvs[j + 1] = (positions[i + 1] - v_min) / v_span;    // local y → v
+  }
+  return uvs;
+}
+
+
+function pointInPolygonWithMargin(px, py, vertices, margin) {
+  // Expand polygon by `margin` along each edge's inward normal. Rather
+  // than computing a Minkowski sum exactly, approximate by inflating
+  // the point-in-polygon test: a point is "inside with margin" if it's
+  // inside OR within `margin` of any edge.
+  let inside = false;
+  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+    const xi = vertices[i].x, yi = vertices[i].y;
+    const xj = vertices[j].x, yj = vertices[j].y;
+    const intersect = ((yi > py) !== (yj > py)) &&
+      (px < ((xj - xi) * (py - yi)) / ((yj - yi) || 1e-9) + xi);
+    if (intersect) inside = !inside;
+  }
+  if (inside) return true;
+  // Distance-to-edge fallback for the margin band.
+  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+    const xi = vertices[i].x, yi = vertices[i].y;
+    const xj = vertices[j].x, yj = vertices[j].y;
+    const dx = xj - xi, dy = yj - yi;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1e-9) continue;
+    const t = Math.max(0, Math.min(1, ((px - xi) * dx + (py - yi) * dy) / len2));
+    const ex = xi + t * dx, ey = yi + t * dy;
+    const d2 = (px - ex) * (px - ex) + (py - ey) * (py - ey);
+    if (d2 <= margin * margin) return true;
+  }
+  return false;
+}
+
+
+/**
+ * Scan-pane inpaint: one inward-facing plane per shell surface (floor,
+ * ceiling, every wall). Uses THREE.FrontSide culling so the plane only
+ * renders when the camera is on the inside — orbits from outside see
+ * straight through to the captured splat/mesh content. The color is a
+ * neutral class default; at capture time 60%+ of the lattice-color-borrow
+ * walls fell back to these defaults anyway, so skipping the lattice
+ * approach costs little and frees 34k gaussians for the observed tiers.
+ */
+function buildCaptureInpaintShell(room, parent, opts = {}) {
+  const shell = room?.shell;
+  if (!shell) return;
+  const ceilingHeight = Number(shell.ceiling_height) || 2.4;
+  // Optional texture manifest from scripts/bake-wall-textures.py —
+  // each texture lives at `{textureBaseUri}/{surface_id}.png` and
+  // replaces the flat CAPTURE_INPAINT_COLORS swatch with a gradient
+  // sampled from nearby splat points.
+  const textureManifest = opts.textureManifest ?? null;
+  const textureBaseUri = opts.textureBaseUri ?? null;
+  // Keep loaded THREE.Texture objects around by URI so repeat loads
+  // reuse one GPU upload.
+  const textureCache = new Map();
+  const textureLoader = new THREE.TextureLoader();
+
+  const resolveTexture = (surfaceId) => {
+    if (!textureManifest || !textureBaseUri || !surfaceId) return null;
+    const entry = textureManifest.textures?.[surfaceId];
+    if (!entry) return null;
+    const uri = `${textureBaseUri}/${encodePathSegment(entry.path.split('/').pop())}`;
+    return {
+      ...entry,
+      loader: () => {
+        const cached = textureCache.get(uri);
+        if (cached) return cached;
+        const tex = textureLoader.load(uri);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = 4;
+        textureCache.set(uri, tex);
+        return tex;
+      },
+    };
+  };
+
+  const surfaceTextureFor = resolveTexture;
+  // Find the scene's floor surface_id, since the floor polygon isn't
+  // tagged with a surface_id directly.
+  const floorSurface = (shell.surfaces || []).find((s) => s.type === 'floor');
+  const ceilingSurface = (shell.surfaces || []).find((s) => s.type === 'ceiling');
+
+  // Floor polygon → inward-facing +Z plane at z=0.
+  const floorVertices = shell.floor_polygon?.vertices;
+  if (floorVertices && floorVertices.length >= 3) {
+    const points = floorVertices.map((v) => new THREE.Vector2(v.x, v.y));
+    if (shoelaceSignedArea(points) < 0) points.reverse();
+    const shape = new THREE.Shape(points);
+    addInpaintSurface(parent, shape, 'floor',
+      { x: 0, y: 0, z: 0 },
+      { x: 1, y: 0, z: 0 },
+      { x: 0, y: 1, z: 0 },
+      { x: 0, y: 0, z: 1 },
+      { texture: surfaceTextureFor(floorSurface?.surface_id) });
+    // Ceiling: lift the SAME polygon (in its natural +Y orientation)
+    // to z=ceiling_height. We keep v_axis=+Y so (x, y) polygon vertices
+    // land at (x, y, ceiling_h) — otherwise flipping v_axis to get a
+    // -Z face normal mirrors the ceiling polygon through the Y axis
+    // and the ceiling ends up rotated 180° off its walls. Instead
+    // we keep the frame identical to the floor (face normal +Z) and
+    // render with BackSide so it's only visible from BELOW — which is
+    // the same dollhouse behavior we wanted from -Z + FrontSide.
+    const ceilShape = new THREE.Shape(points);
+    addInpaintSurface(parent, ceilShape, 'ceiling',
+      { x: 0, y: 0, z: ceilingHeight },
+      { x: 1, y: 0, z: 0 },
+      { x: 0, y: 1, z: 0 },
+      { x: 0, y: 0, z: 1 },
+      { side: THREE.BackSide, texture: surfaceTextureFor(ceilingSurface?.surface_id) });
+  }
+
+  // Walls — each one has its own `surface_frame` pointing inward.
+  const walls = (shell.surfaces || []).filter((s) => s.type === 'wall');
+  // Map openings to their host wall so we can punch holes in the
+  // inpaint mesh (detected doors/windows should not be rendered as
+  // solid shell — the viewer is supposed to see *through* them).
+  const openingsBySurface = groupOpeningsBySurface(shell.openings || []);
+  for (const wall of walls) {
+    const frame = wall.surface_frame;
+    const boundary = wall.boundary?.vertices;
+    if (!frame || !boundary || boundary.length < 3) continue;
+    const points = boundary.map((v) => new THREE.Vector2(v.x, v.y));
+    if (shoelaceSignedArea(points) < 0) points.reverse();
+    const shape = new THREE.Shape(points);
+    for (const opening of openingsBySurface.get(wall.surface_id) ?? []) {
+      const { min_u, min_v, width, height } = opening.rect ?? {};
+      if (!Number.isFinite(min_u) || !Number.isFinite(min_v) ||
+          !Number.isFinite(width) || !Number.isFinite(height) ||
+          width <= 0 || height <= 0) continue;
+      const hole = new THREE.Path();
+      hole.moveTo(min_u, min_v);
+      hole.lineTo(min_u + width, min_v);
+      hole.lineTo(min_u + width, min_v + height);
+      hole.lineTo(min_u, min_v + height);
+      hole.closePath();
+      shape.holes.push(hole);
+    }
+    addInpaintSurface(parent, shape, 'wall',
+      frame.origin, frame.u_axis, frame.v_axis, frame.normal,
+      { texture: surfaceTextureFor(wall.surface_id) });
+  }
+}
+
+function addInpaintSurface(parent, shape, category, origin, uAxis, vAxis, normal, opts = {}) {
+  const geom = new THREE.ShapeGeometry(shape);
+  // Compute UVs from the shape's XY vertices so a baked texture tiles
+  // into the polygon correctly (ShapeGeometry uses raw XY as positions;
+  // we normalise those into [0, 1] UV space covering the boundary's
+  // axis-aligned extent).
+  const uvs = buildSurfaceUVs(geom, opts.texture);
+  if (uvs) geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  const matConfig = {
+    // FrontSide by default → auto-transparent from outside. Ceiling
+    // passes side:BackSide because its shape is emitted with a +Z face
+    // normal (to avoid a Y-flip) but we want it visible from below.
+    side: opts.side ?? THREE.FrontSide,
+    transparent: false,
+    depthWrite: true,
+  };
+  if (opts.texture?.loader) {
+    const tex = opts.texture.loader();
+    matConfig.map = tex;
+    matConfig.color = 0xffffff; // unfiltered — let the texture pixels speak
+  } else {
+    matConfig.color = CAPTURE_INPAINT_COLORS[category] ?? 0xbbbbbb;
+  }
+  const mat = new THREE.MeshBasicMaterial(matConfig);
+  const mesh = new THREE.Mesh(geom, mat);
+  const basis = new THREE.Matrix4().makeBasis(
+    new THREE.Vector3(uAxis.x, uAxis.y, uAxis.z),
+    new THREE.Vector3(vAxis.x, vAxis.y, vAxis.z),
+    new THREE.Vector3(normal.x, normal.y, normal.z),
+  );
+  basis.setPosition(origin.x, origin.y, origin.z);
+  mesh.applyMatrix4(basis);
+  mesh.renderOrder = -1;         // draw before splats so their alpha composes correctly
+  mesh.userData = { kind: 'capture_inpaint', category };
+  parent.add(mesh);
+}
+
 
 function buildFixedElements(room, parent, ctx) {
   const elements = room.shell.fixed_elements ?? [];
@@ -598,6 +1491,17 @@ const CLASS_PALETTE = {
 const CAPTURE_SHELL_COLORS = {
   floor: 0x384152,
   wall: 0xcfd7e3,
+};
+
+// Colors for the inpainted fallback shell surfaces rendered in capture mode
+// when a splat lands without coverage on the room's walls/floor/ceiling.
+// Neutral warm palette so the synthesized fill doesn't dominate the captured
+// content — these appear only as the inward face, so outside orbits see
+// straight through to the observed RGBD/mesh tiers.
+const CAPTURE_INPAINT_COLORS = {
+  floor:   0xa38560,   // medium oak
+  ceiling: 0xeae6e0,   // warm off-white
+  wall:    0xd8d1c4,   // soft beige
 };
 
 function objectColor(object) {

@@ -48,6 +48,7 @@ export function mountLayoutView(container) {
     'openings',
     'fixed',
     'objects',
+    'graph',
     'labels',
     'selection',
   ]) {
@@ -60,6 +61,9 @@ export function mountLayoutView(container) {
 
   let currentRoom = null;
   let currentDerived = null;
+  let currentGraph = null;
+  let graphVisible = false;
+  let graphKindFilter = new Set(['ADJACENT_TO', 'COLLIDES', 'FACES', 'HOSTED_ON', 'NEAR_OPENING', 'OBSTRUCTS', 'FLANKS', 'PARALLEL_TO']);
   let currentSelectionId = null;
   let onSelect = () => {};
   let onDragStart = () => {};
@@ -294,18 +298,38 @@ export function mountLayoutView(container) {
     drawOpenings(room, layers.openings);
     drawFixedElements(room, layers.fixed);
     drawObjects(room, layers.objects, objectNodesById);
-    drawZones(currentDerived, currentSelectionId, layers.zones);
-    drawClearancePaths(currentDerived, layers.paths);
+    // Note: drawClearancePaths + drawZones were stale — they depended on
+    // keepout polygons RoomPlan produces unreliably. They're retired in
+    // favour of the graph overlay (GRAPH edge kinds NEAR_OPENING /
+    // OBSTRUCTS carry the same signal, gated through the new constraint
+    // engine). Leave the `paths` / `zones` SVG layers in place so other
+    // code can toggle them on if needed, but don't populate them here.
     drawViolations(currentDerived, room, layers.violations);
     drawLabels(room, layers.labels, box);
+    drawGraph(currentGraph, graphVisible, graphKindFilter, currentSelectionId, layers.graph);
     applySelectionHighlight(currentSelectionId);
   }
 
   function setSelection(id) {
     currentSelectionId = id || null;
     clearLayer(layers.zones);
-    drawZones(currentDerived, currentSelectionId, layers.zones);
+    drawGraph(currentGraph, graphVisible, graphKindFilter, currentSelectionId, layers.graph);
     applySelectionHighlight(currentSelectionId);
+  }
+
+  function setGraph(graph) {
+    currentGraph = graph || null;
+    drawGraph(currentGraph, graphVisible, graphKindFilter, currentSelectionId, layers.graph);
+  }
+
+  function setGraphVisible(visible) {
+    graphVisible = Boolean(visible);
+    drawGraph(currentGraph, graphVisible, graphKindFilter, currentSelectionId, layers.graph);
+  }
+
+  function setGraphKindFilter(kinds) {
+    graphKindFilter = new Set(Array.isArray(kinds) ? kinds : Array.from(kinds || []));
+    drawGraph(currentGraph, graphVisible, graphKindFilter, currentSelectionId, layers.graph);
   }
 
   function setOnSelect(fn) {
@@ -394,6 +418,9 @@ export function mountLayoutView(container) {
     setOnDragEnd,
     setDragEnabled,
     clearDragPreview,
+    setGraph,
+    setGraphVisible,
+    setGraphKindFilter,
     dispose,
   };
 }
@@ -503,23 +530,82 @@ function drawObjects(room, layer, objectNodesById) {
   for (const obj of room.objects) {
     if (!obj.obb) continue;
     const fill = objectFill(obj);
-    const group = obbRectNode(obj.obb, {
+    const style = {
       fill,
       fillOpacity: obj.class === 'generic_obstacle' ? 0.4 : 0.78,
       stroke: '#e2e8f0',
       strokeWidth: 0.025,
-    });
+    };
+    // Prefer the tight mesh-derived footprint when present — renders the
+    // actual object shape (chair-shaped, sofa-shaped) instead of a loose
+    // OBB rectangle. Falls back to the OBB rect when no footprint yet.
+    //
+    // For footprint polygons we bake the world-coordinate vertices into
+    // OBB-local coordinates (subtracting the canonical center + inverse
+    // rotation) so the wrapping group's translate(center) rotate(yaw)
+    // transform — which `syncObjectNodeToObb` updates during drag —
+    // places the polygon identically to the OBB rect path. Without this
+    // the translate/rotate would DOUBLE-transform the polygon.
+    const fpVerts = obj.footprint_polygon?.vertices;
+    const useFootprint = Array.isArray(fpVerts) && fpVerts.length >= 3;
+    let group;
+    let shape = null;
+    let shapeKind = 'rect';
+    if (useFootprint) {
+      const localVerts = worldToObjectLocal(fpVerts, obj.obb);
+      shape = polygonNode(localVerts, style);
+      shapeKind = 'polygon';
+      shape.setAttribute('data-local-points', shape.getAttribute('points'));
+      const g = document.createElementNS(SVG_NS, 'g');
+      g.setAttribute('transform', objectTransformForObb(obj.obb));
+      g.appendChild(shape);
+      group = g;
+    } else {
+      group = obbRectNode(obj.obb, style);
+      shape = group.firstChild;
+    }
     group.setAttribute('data-entity-id', obj.object_id);
     group.setAttribute('data-object-id', obj.object_id);
     group.setAttribute('data-object-class', obj.class);
     if (objectNodesById) {
       objectNodesById.set(obj.object_id, {
         group,
-        rect: group.firstChild,
+        rect: shape,
+        kind: shapeKind,
       });
     }
     layer.appendChild(group);
   }
+}
+
+function worldToObjectLocal(vertices, obb) {
+  // Inverse of the SVG placement `scale(1,-1) translate(cx,cy) rotate(-yaw)`
+  // applied to a local polygon vertex. Working through the matrices (SVG
+  // is y-down; the outer scale(1,-1) flips the vertical handedness, so
+  // rotate(-yaw) there effectively *adds* a +yaw rotation in y-up terms),
+  // the local vertex (px, py) that renders at world (wx, wy) is
+  // (px, py) = R_ccw(yaw) · (wx - cx, wy - cy). A earlier revision used
+  // R_ccw(-yaw) here, which compounds with the SVG rotate to a double
+  // rotation of 2·yaw — that's the "orientations all look wrong" bug.
+  const cx = obb.center?.x ?? 0;
+  const cy = obb.center?.y ?? 0;
+  const rad = ((obb.yaw_degrees || 0) * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return vertices.map((v) => {
+    const dx = v.x - cx;
+    const dy = v.y - cy;
+    return { x: dx * cos - dy * sin, y: dx * sin + dy * cos };
+  });
+}
+
+function wrapInGroup(child) {
+  // Polygon footprints are already in world coordinates, so the wrapping
+  // <g> needs no transform — but we keep one around for parity with
+  // obbRectNode's group (selection/drag helpers expect a group node).
+  const g = document.createElementNS(SVG_NS, 'g');
+  g.appendChild(child);
+  return g;
 }
 
 function drawZones(derived, selectionId, layer) {
@@ -661,6 +747,15 @@ function findEntityOutline(id, room) {
   for (const obj of room.objects || []) {
     if (obj.object_id === id && obj.obb) {
       const previewCenter = previewCenterForObject(id);
+      // Prefer the tight footprint polygon when present so selection +
+      // violation outlines trace the same shape as the object body.
+      // Without this the overlay draws the loose OBB rectangle which
+      // "ghosts" beside the footprint polygon — looks like two copies
+      // of the same object.
+      const fpVerts = obj.footprint_polygon?.vertices;
+      if (Array.isArray(fpVerts) && fpVerts.length >= 3 && !previewCenter) {
+        return { kind: 'polygon', vertices: fpVerts };
+      }
       return previewCenter
         ? { kind: 'obb', obb: { ...obj.obb, center: previewCenter } }
         : { kind: 'obb', obb: obj.obb };
@@ -755,8 +850,12 @@ function applyPreviewTransforms(room, objectNodesById, previewObbsByObjectId) {
 }
 
 function syncObjectNodeToObb(node, obb) {
-  if (!node?.group || !node?.rect || !obb) return;
+  if (!node?.group || !obb) return;
   node.group.setAttribute('transform', objectTransformForObb(obb));
+  // Footprint polygons are baked in OBB-local coords; the group's
+  // translate+rotate above places them correctly, no per-vertex update.
+  if (node.kind === 'polygon') return;
+  if (!node.rect) return;
   node.rect.setAttribute('x', -obb.size_x / 2);
   node.rect.setAttribute('y', -obb.size_y / 2);
   node.rect.setAttribute('width', obb.size_x);
@@ -873,6 +972,12 @@ function roundCoord(value) {
 
 function shapeFromOutline(outline, style) {
   if (outline.kind === 'obb') return obbRectNode(outline.obb, style);
+  if (outline.kind === 'polygon') {
+    // World-coord polygon vertices render straight under the root's
+    // scale(1,-1). No wrapping transform — unlike drawObjects, which
+    // bakes them into OBB-local so drag can reuse the group transform.
+    return polygonNode(outline.vertices, style);
+  }
   if (outline.kind === 'segment') {
     const line = document.createElementNS(SVG_NS, 'line');
     line.setAttribute('x1', outline.a.x);
@@ -939,4 +1044,105 @@ function objectFill(obj) {
   const key = obj.material_state?.color ? String(obj.material_state.color).toLowerCase() : null;
   if (key && NAMED_COLORS[key]) return NAMED_COLORS[key];
   return CLASS_PALETTE[obj.class] || '#7f7f7f';
+}
+
+// ---------------- scene-graph overlay ----------------
+
+const GRAPH_EDGE_STYLE = {
+  COLLIDES:     { color: '#ef4444', width: 0.05, dash: null,         priority: 10 },
+  HOSTED_ON:    { color: '#f59e0b', width: 0.03, dash: null,         priority: 8  },
+  ADJACENT_TO:  { color: '#2dd4bf', width: 0.025, dash: null,        priority: 7  },
+  FLANKS:       { color: '#34d399', width: 0.035, dash: null,        priority: 9  },
+  FACES:        { color: '#818cf8', width: 0.02,  dash: '0.08 0.08', priority: 5  },
+  NEAR_OPENING: { color: '#c084fc', width: 0.02,  dash: '0.05 0.05', priority: 4  },
+  OBSTRUCTS:    { color: '#fb923c', width: 0.035, dash: '0.1 0.05',  priority: 6  },
+  PARALLEL_TO:  { color: '#60a5fa', width: 0.015, dash: '0.03 0.05', priority: 3  },
+  SUPPORTS:     { color: '#64748b', width: 0.015, dash: '0.04 0.08', priority: 1  },
+  CONTAINS:     { color: '#94a3b8', width: 0.015, dash: '0.04 0.08', priority: 2  },
+};
+
+function drawGraph(graph, visible, kindFilter, selectionId, layer) {
+  while (layer.firstChild) layer.removeChild(layer.firstChild);
+  if (!graph || !visible) return;
+
+  const nodeById = new Map();
+  for (const node of graph.nodes) nodeById.set(node.node_id, node);
+
+  const edges = graph.edges.filter((e) => kindFilter && kindFilter.has(e.kind));
+  // When a selection is active, pull its edges to the top and dim others.
+  const selectedNodeId = selectionId ? findGraphNodeIdForEntity(graph, selectionId) : null;
+
+  // Sort by priority so strongly meaningful edges draw on top of noisy ones.
+  const ordered = [...edges].sort((a, b) => {
+    const pa = (GRAPH_EDGE_STYLE[a.kind] || {}).priority || 0;
+    const pb = (GRAPH_EDGE_STYLE[b.kind] || {}).priority || 0;
+    return pa - pb;
+  });
+
+  for (const edge of ordered) {
+    const from = nodeById.get(edge.from_node_id);
+    const to = nodeById.get(edge.to_node_id);
+    const a = centroidForGraphNode(from);
+    const b = centroidForGraphNode(to);
+    if (!a || !b) continue;
+    if (Math.hypot(b.x - a.x, b.y - a.y) < 0.01) continue;
+    const style = GRAPH_EDGE_STYLE[edge.kind] || GRAPH_EDGE_STYLE.SUPPORTS;
+    const line = document.createElementNS(SVG_NS, 'line');
+    line.setAttribute('x1', a.x);
+    line.setAttribute('y1', a.y);
+    line.setAttribute('x2', b.x);
+    line.setAttribute('y2', b.y);
+    line.setAttribute('stroke', style.color);
+    line.setAttribute('stroke-width', style.width);
+    line.setAttribute('stroke-linecap', 'round');
+    if (style.dash) line.setAttribute('stroke-dasharray', style.dash);
+    const involvesSelection = selectedNodeId && (edge.from_node_id === selectedNodeId || edge.to_node_id === selectedNodeId);
+    line.setAttribute('stroke-opacity', selectedNodeId ? (involvesSelection ? 0.95 : 0.12) : 0.75);
+    line.setAttribute('pointer-events', 'none');
+    line.setAttribute('data-graph-edge-kind', edge.kind);
+    layer.appendChild(line);
+
+    // Arrow head for directional edges.
+    if (!edge.symmetric && !style.dash) {
+      const arrow = buildArrowHead(a, b, style.color, style.width * 2.5);
+      arrow.setAttribute('pointer-events', 'none');
+      arrow.setAttribute('opacity', selectedNodeId && !involvesSelection ? 0.12 : 0.9);
+      layer.appendChild(arrow);
+    }
+  }
+}
+
+function buildArrowHead(from, to, color, size) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  // Place head slightly before target to avoid crashing into the footprint.
+  const tipX = to.x - ux * size * 0.8;
+  const tipY = to.y - uy * size * 0.8;
+  const leftX = tipX - ux * size + -uy * size * 0.5;
+  const leftY = tipY - uy * size + ux * size * 0.5;
+  const rightX = tipX - ux * size + uy * size * 0.5;
+  const rightY = tipY - uy * size + -ux * size * 0.5;
+  const poly = document.createElementNS(SVG_NS, 'polygon');
+  poly.setAttribute('points', `${tipX},${tipY} ${leftX},${leftY} ${rightX},${rightY}`);
+  poly.setAttribute('fill', color);
+  return poly;
+}
+
+function centroidForGraphNode(node) {
+  if (!node) return null;
+  if (node.kind === 'object' || node.kind === 'wall' || node.kind === 'floor') {
+    return node.centroid || null;
+  }
+  if (node.kind === 'opening') return node.centroid || null;
+  return null;
+}
+
+function findGraphNodeIdForEntity(graph, entityId) {
+  for (const node of graph.nodes) {
+    if (node.source_entity_id === entityId) return node.node_id;
+  }
+  return null;
 }

@@ -8,14 +8,31 @@ import {
   buildDeterministicQuickRender,
   CURATED_ASSET_MANIFEST,
 } from "../../../packages/contracts/src/index.ts";
+import { buildSceneGraph } from "../../api/src/scene-graph.ts";
+import { createDefaultConstraintEngine } from "../../api/src/constraint-engine.ts";
+import { GraphAgent } from "../../api/src/graph-agent.ts";
+
+const constraintEngine = createDefaultConstraintEngine();
+// Instantiated lazily so `loadDotEnv()` runs *before* the GraphAgent
+// reads `process.env.OPENROUTER_API_KEY`. Without this the agent cached
+// `apiKey: null` at module-eval time and never picked up .env values.
+let graphAgentSingleton: GraphAgent | null = null;
+function getGraphAgent(): GraphAgent {
+  if (!graphAgentSingleton) graphAgentSingleton = new GraphAgent();
+  return graphAgentSingleton;
+}
 
 const serverDir = dirname(fileURLToPath(import.meta.url));
 const webAppRoot = resolve(serverDir, "..");
 const repoRoot = resolve(serverDir, "..", "..", "..");
 const viewerModulePath = resolve(serverDir, "viewer.js");
 const layoutViewModulePath = resolve(serverDir, "layout-view.js");
+const scanProxiesModulePath = resolve(serverDir, "scan-proxies.js");
+const splatLoaderModulePath = resolve(serverDir, "splat-loader.js");
+const designTokensPath = resolve(serverDir, "design-tokens.css");
 const vendorThreeRoot = resolve(webAppRoot, "public", "vendor", "three");
 const vendorModelsRoot = resolve(webAppRoot, "public", "vendor", "models");
+const vendorGaussianSplatsRoot = resolve(webAppRoot, "public", "vendor", "gaussian-splats-3d");
 const DEFAULT_FIXTURE_SCENE_ID = "fixture-bedroom-primary";
 const DEFAULT_FIXTURE_MANIFEST_PATH = "fixtures/manifest.json";
 export const DEFAULT_WEB_EDITOR_PORT = 4173;
@@ -35,15 +52,116 @@ export interface RoomViewEditorServerOptions {
 }
 
 export function createRoomViewEditorServer(options: RoomViewEditorServerOptions = {}): Server {
-  const fixtures = loadFixtureScenes();
-  const fixtureSources: EditorFixtureSource[] = fixtures.map(({ fixture_id, notes }) => ({ fixture_id, notes }));
+  // Fixtures are hot-reloaded: we stat() manifest.json on each access and reload
+  // when the mtime changes. This lets a just-finalized iOS capture show up in the
+  // editor's fixture picker without restarting the web server.
+  let cachedFixtures: EditorFixtureRecord[] = loadFixtureScenes();
+  let cachedManifestMtimeMs: number = safeManifestMtimeMs(cachedFixtures);
+  const getFixtures = (): EditorFixtureRecord[] => {
+    const manifestPath = resolve(repoRoot, DEFAULT_FIXTURE_MANIFEST_PATH);
+    let currentMtimeMs = cachedManifestMtimeMs;
+    try {
+      currentMtimeMs = statSync(manifestPath).mtimeMs;
+    } catch {
+      // manifest missing — treat as no-change and return cache
+      return cachedFixtures;
+    }
+    if (currentMtimeMs !== cachedManifestMtimeMs) {
+      try {
+        cachedFixtures = loadFixtureScenes();
+        cachedManifestMtimeMs = currentMtimeMs;
+      } catch (err) {
+        // malformed manifest or missing fixture files — keep the last-good cache
+        // eslint-disable-next-line no-console
+        console.warn("[roomview-web] fixture manifest reload failed", err);
+      }
+    }
+    return cachedFixtures;
+  };
+  const getFixtureSources = (): EditorFixtureSource[] =>
+    getFixtures().map(({ fixture_id, notes }) => ({ fixture_id, notes }));
   const defaultApiBaseUrl = options.default_api_base_url ?? "http://127.0.0.1:3000";
 
   return createServer((request, response) => {
     const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
 
     if (request.method === "GET" && requestUrl.pathname === "/") {
-      sendHtml(response, renderEditorShellHtml({ defaultApiBaseUrl, fixtureSources }));
+      sendHtml(response, renderEditorShellHtml({ defaultApiBaseUrl, fixtureSources: getFixtureSources() }));
+      return;
+    }
+
+    // Dev-only: let fixture users hit the graph agent without the API
+    // server running. Mirrors /scenes/:id/graph-agent on the real API
+    // but loads the fixture scene from disk instead of the session store.
+    const graphAgentFixtureMatch = requestUrl.pathname.match(/^\/dev\/fixtures\/([^/]+)\/graph-agent$/);
+    if (request.method === "POST" && graphAgentFixtureMatch) {
+      (async () => {
+        try {
+          const fixtureId = decodeURIComponent(graphAgentFixtureMatch[1]!);
+          const fixture = getFixtures().find((f) => f.fixture_id === fixtureId);
+          if (!fixture) {
+            sendJson(response, 404, { message: `Fixture ${fixtureId} was not found.` });
+            return;
+          }
+          const body = await readJsonRequestBody(request);
+          const agentResponse = await getGraphAgent().run(fixture.scene_response.scene, body as any);
+          sendJson(response, 200, { agent: agentResponse });
+        } catch (err) {
+          sendJson(response, 500, { message: String((err as Error)?.message || err) });
+        }
+      })();
+      return;
+    }
+
+    // POST /dev/feedback — telemetry sink for Phase 4 feedback loop.
+    if (request.method === "POST" && requestUrl.pathname === "/dev/feedback") {
+      (async () => {
+        try {
+          const body = await readJsonRequestBody(request);
+          const { feedbackLog } = await import("../../api/src/feedback-log.ts");
+          const event = feedbackLog.append(body as Record<string, unknown>);
+          sendJson(response, 200, { event_id: event.event_id });
+        } catch (err) {
+          sendJson(response, 500, { message: String((err as Error)?.message || err) });
+        }
+      })();
+      return;
+    }
+
+    // Stateless graph+constraints compute for an arbitrary scene posted in
+    // the body. Used by the UI after a local edit (drag / applied agent
+    // plan) to get fresh relations + evaluations without persisting the
+    // change — the canonical fixture file stays untouched.
+    if (request.method === "POST" && requestUrl.pathname === "/dev/graph") {
+      (async () => {
+        try {
+          const body = await readJsonRequestBody(request) as { scene?: unknown };
+          if (!body?.scene) {
+            sendJson(response, 400, { message: "Missing scene in body." });
+            return;
+          }
+          const graph = buildSceneGraph(body.scene as Parameters<typeof buildSceneGraph>[0]);
+          const constraints = constraintEngine.evaluate(graph);
+          sendJson(response, 200, { graph, constraints });
+        } catch (err) {
+          sendJson(response, 500, { message: String((err as Error)?.message || err) });
+        }
+      })();
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/dev/feedback") {
+      (async () => {
+        try {
+          const { feedbackLog } = await import("../../api/src/feedback-log.ts");
+          sendJson(response, 200, {
+            events: feedbackLog.recent(50),
+            preferences: feedbackLog.derivePreferences(),
+          });
+        } catch (err) {
+          sendJson(response, 500, { message: String((err as Error)?.message || err) });
+        }
+      })();
       return;
     }
 
@@ -54,6 +172,32 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
 
     if (request.method === "GET" && requestUrl.pathname === "/layout-view.js") {
       sendStaticFile(response, layoutViewModulePath, "application/javascript; charset=utf-8");
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/scan-proxies.js") {
+      sendStaticFile(response, scanProxiesModulePath, "application/javascript; charset=utf-8");
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/splat-loader.js") {
+      sendStaticFile(response, splatLoaderModulePath, "application/javascript; charset=utf-8");
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname.startsWith("/vendor/gaussian-splats-3d/")) {
+      const rel = requestUrl.pathname.slice("/vendor/gaussian-splats-3d/".length);
+      const resolved = resolve(vendorGaussianSplatsRoot, rel);
+      if (!resolved.startsWith(vendorGaussianSplatsRoot + sep) && resolved !== vendorGaussianSplatsRoot) {
+        sendJson(response, 400, { message: "Invalid vendor path." });
+        return;
+      }
+      sendStaticFile(response, resolved, "application/javascript; charset=utf-8");
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/design-tokens.css") {
+      sendStaticFile(response, designTokensPath, "text/css; charset=utf-8");
       return;
     }
 
@@ -81,19 +225,118 @@ export function createRoomViewEditorServer(options: RoomViewEditorServerOptions 
     }
 
     if (request.method === "GET" && requestUrl.pathname === "/dev/fixtures") {
-      sendJson(response, 200, { fixtures: fixtureSources });
+      sendJson(response, 200, { fixtures: getFixtureSources() });
       return;
+    }
+
+    if (request.method === "GET") {
+      const frameRequest = extractFixtureFrameRequest(requestUrl.pathname);
+      if (frameRequest) {
+        const fixture = getFixtures().find((candidate) => candidate.fixture_id === frameRequest.fixture_id);
+        if (!fixture) {
+          sendJson(response, 404, { message: `Fixture ${frameRequest.fixture_id} was not found.` });
+          return;
+        }
+        const fixtureDir = resolve(repoRoot, "fixtures", "roomplan", frameRequest.fixture_id, "frames");
+        const resolved = resolve(fixtureDir, frameRequest.file);
+        if (!resolved.startsWith(fixtureDir + sep) && resolved !== fixtureDir) {
+          sendJson(response, 400, { message: "Invalid frame path." });
+          return;
+        }
+        sendStaticFile(response, resolved, fixtureFrameContentType(frameRequest.file));
+        return;
+      }
+
+      const meshRequest = extractFixtureMeshRequest(requestUrl.pathname);
+      if (meshRequest) {
+        const fixture = getFixtures().find((candidate) => candidate.fixture_id === meshRequest.fixture_id);
+        if (!fixture) {
+          sendJson(response, 404, { message: `Fixture ${meshRequest.fixture_id} was not found.` });
+          return;
+        }
+        const fixtureDir = resolve(repoRoot, "fixtures", "roomplan", meshRequest.fixture_id, "meshes");
+        const resolved = resolve(fixtureDir, meshRequest.file);
+        if (!resolved.startsWith(fixtureDir + sep) && resolved !== fixtureDir) {
+          sendJson(response, 400, { message: "Invalid mesh path." });
+          return;
+        }
+        sendStaticFile(response, resolved, fixtureMeshContentType(meshRequest.file));
+        return;
+      }
+
+      const splatRequest = extractFixtureSplatRequest(requestUrl.pathname);
+      if (splatRequest) {
+        const fixture = getFixtures().find((candidate) => candidate.fixture_id === splatRequest.fixture_id);
+        if (!fixture) {
+          sendJson(response, 404, { message: `Fixture ${splatRequest.fixture_id} was not found.` });
+          return;
+        }
+        const fixtureDir = resolve(repoRoot, "fixtures", "roomplan", splatRequest.fixture_id, "splats");
+        const resolved = resolve(fixtureDir, splatRequest.file);
+        if (!resolved.startsWith(fixtureDir + sep) && resolved !== fixtureDir) {
+          sendJson(response, 400, { message: "Invalid splat path." });
+          return;
+        }
+        sendStaticFile(response, resolved, fixtureSplatContentType(splatRequest.file));
+        return;
+      }
+
+      const textureRequest = extractFixtureTextureRequest(requestUrl.pathname);
+      if (textureRequest) {
+        const fixture = getFixtures().find((candidate) => candidate.fixture_id === textureRequest.fixture_id);
+        if (!fixture) {
+          sendJson(response, 404, { message: `Fixture ${textureRequest.fixture_id} was not found.` });
+          return;
+        }
+        const fixtureDir = resolve(repoRoot, "fixtures", "roomplan", textureRequest.fixture_id, "textures");
+        const resolved = resolve(fixtureDir, textureRequest.file);
+        if (!resolved.startsWith(fixtureDir + sep) && resolved !== fixtureDir) {
+          sendJson(response, 400, { message: "Invalid texture path." });
+          return;
+        }
+        sendStaticFile(response, resolved, fixtureTextureContentType(textureRequest.file));
+        return;
+      }
+
+      const candidateRequest = extractFixtureCandidateRequest(requestUrl.pathname);
+      if (candidateRequest) {
+        const fixture = getFixtures().find((c) => c.fixture_id === candidateRequest.fixture_id);
+        if (!fixture) {
+          sendJson(response, 404, { message: `Fixture ${candidateRequest.fixture_id} was not found.` });
+          return;
+        }
+        const fixtureDir = resolve(repoRoot, "fixtures", "roomplan", candidateRequest.fixture_id, "candidates");
+        const resolved = resolve(fixtureDir, candidateRequest.file);
+        if (!resolved.startsWith(fixtureDir + sep) && resolved !== fixtureDir) {
+          sendJson(response, 400, { message: "Invalid candidate path." });
+          return;
+        }
+        sendStaticFile(response, resolved, "application/json; charset=utf-8");
+        return;
+      }
     }
 
     const fixtureId = extractFixtureId(requestUrl.pathname);
     if (request.method === "GET" && fixtureId) {
-      const fixture = fixtures.find((candidate) => candidate.fixture_id === fixtureId);
+      const fixture = getFixtures().find((candidate) => candidate.fixture_id === fixtureId);
       if (!fixture) {
         sendJson(response, 404, { message: `Fixture ${fixtureId} was not found.` });
         return;
       }
       if (requestUrl.pathname.endsWith("/quick-render")) {
         sendJson(response, 200, fixture.quick_render_response);
+        return;
+      }
+      if (requestUrl.pathname.endsWith("/graph")) {
+        const graph = buildSceneGraph(fixture.scene_response.scene);
+        const constraints = constraintEngine.evaluate(graph);
+        sendJson(response, 200, { graph, constraints });
+        return;
+      }
+      if (requestUrl.pathname.endsWith("/constraints")) {
+        const graph = buildSceneGraph(fixture.scene_response.scene);
+        const constraints = constraintEngine.evaluate(graph);
+        sendJson(response, 200, { constraints });
         return;
       }
       sendJson(response, 200, fixture.scene_response);
@@ -110,7 +353,79 @@ function extractFixtureId(pathname: string): string | null {
     return decodeURIComponent(exactMatch[1]);
   }
   const quickRenderMatch = pathname.match(/^\/dev\/fixtures\/([^/]+)\/quick-render$/);
-  return quickRenderMatch ? decodeURIComponent(quickRenderMatch[1]) : null;
+  if (quickRenderMatch) {
+    return decodeURIComponent(quickRenderMatch[1]);
+  }
+  const graphMatch = pathname.match(/^\/dev\/fixtures\/([^/]+)\/graph$/);
+  if (graphMatch) return decodeURIComponent(graphMatch[1]);
+  const constraintsMatch = pathname.match(/^\/dev\/fixtures\/([^/]+)\/constraints$/);
+  return constraintsMatch ? decodeURIComponent(constraintsMatch[1]) : null;
+}
+
+function extractFixtureFrameRequest(pathname: string): { fixture_id: string; file: string } | null {
+  const match = pathname.match(/^\/dev\/fixtures\/([^/]+)\/frames\/([^/]+)$/);
+  if (!match) return null;
+  return { fixture_id: decodeURIComponent(match[1]), file: decodeURIComponent(match[2]) };
+}
+
+function extractFixtureMeshRequest(pathname: string): { fixture_id: string; file: string } | null {
+  const match = pathname.match(/^\/dev\/fixtures\/([^/]+)\/meshes\/([^/]+)$/);
+  if (!match) return null;
+  return { fixture_id: decodeURIComponent(match[1]), file: decodeURIComponent(match[2]) };
+}
+
+function extractFixtureSplatRequest(pathname: string): { fixture_id: string; file: string } | null {
+  // `file` may span arbitrary subdirectory depth — HQ trained splats
+  // (scripts/brush-train.py) live under brush-train/… and per-object
+  // split outputs (cleanup-brush-ply.py --split-by-object) live under
+  // brush-train-v2/<stem>_split/. Path-traversal protection still lives
+  // in the handler via resolve() + startsWith().
+  const match = pathname.match(/^\/dev\/fixtures\/([^/]+)\/splats\/(.+)$/);
+  if (!match) return null;
+  return { fixture_id: decodeURIComponent(match[1]), file: decodeURIComponent(match[2]) };
+}
+
+function extractFixtureTextureRequest(pathname: string): { fixture_id: string; file: string } | null {
+  const match = pathname.match(/^\/dev\/fixtures\/([^/]+)\/textures\/([^/]+)$/);
+  if (!match) return null;
+  return { fixture_id: decodeURIComponent(match[1]), file: decodeURIComponent(match[2]) };
+}
+
+function extractFixtureCandidateRequest(pathname: string): { fixture_id: string; file: string } | null {
+  const match = pathname.match(/^\/dev\/fixtures\/([^/]+)\/candidates\/([^/]+)$/);
+  if (!match) return null;
+  return { fixture_id: decodeURIComponent(match[1]), file: decodeURIComponent(match[2]) };
+}
+
+function fixtureTextureContentType(file: string): string {
+  const lower = file.toLowerCase();
+  if (lower.endsWith(".json")) return "application/json; charset=utf-8";
+  if (lower.endsWith(".png")) return "image/png";
+  return "application/octet-stream";
+}
+
+function fixtureFrameContentType(file: string): string {
+  const lower = file.toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".npy")) return "application/x-numpy";
+  return "application/octet-stream";
+}
+
+function fixtureMeshContentType(file: string): string {
+  const lower = file.toLowerCase();
+  if (lower.endsWith(".json")) return "application/json; charset=utf-8";
+  if (lower.endsWith(".ply")) return "text/plain; charset=utf-8";
+  return "application/octet-stream";
+}
+
+function fixtureSplatContentType(file: string): string {
+  const lower = file.toLowerCase();
+  if (lower.endsWith(".json")) return "application/json; charset=utf-8";
+  // .splat (antimatter15) and .ply (Brush / INRIA 3DGS) are both binary.
+  // Serving .ply as text/plain was corrupting bytes in transit.
+  if (lower.endsWith(".splat") || lower.endsWith(".ply")) return "application/octet-stream";
+  return "application/octet-stream";
 }
 
 function loadFixtureScenes(): EditorFixtureRecord[] {
@@ -132,6 +447,15 @@ function loadFixtureScenes(): EditorFixtureRecord[] {
   });
 }
 
+function safeManifestMtimeMs(_fixtures: EditorFixtureRecord[]): number {
+  const manifestPath = resolve(repoRoot, DEFAULT_FIXTURE_MANIFEST_PATH);
+  try {
+    return statSync(manifestPath).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
 function readFixtureScene(fixture: FixtureDescriptor): SceneReadResponse["scene"] {
   return JSON.parse(readFileSync(resolve(repoRoot, fixture.scene_path), "utf8")) as SceneReadResponse["scene"];
 }
@@ -144,6 +468,7 @@ function renderEditorShellHtml(input: {
     defaultApiBaseUrl: input.defaultApiBaseUrl,
     defaultFixtureId: DEFAULT_FIXTURE_SCENE_ID,
     fixtureSources: input.fixtureSources,
+    curatedAssetManifest: CURATED_ASSET_MANIFEST,
   });
 
   return `<!doctype html>
@@ -156,335 +481,185 @@ function renderEditorShellHtml(input: {
       {
         "imports": {
           "three": "/vendor/three/three.module.js",
-          "three/addons/": "/vendor/three/addons/"
+          "three/addons/": "/vendor/three/addons/",
+          "@mkkellogg/gaussian-splats-3d": "/vendor/gaussian-splats-3d/gaussian-splats-3d.module.js"
         }
       }
     </script>
-    <style>
-      :root {
-        color-scheme: dark;
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-        background: #0b1020;
-        color: #e5e7eb;
-      }
-      * { box-sizing: border-box; }
-      body { margin: 0; background: #0b1020; color: #e5e7eb; }
-      header {
-        padding: 16px 20px;
-        border-bottom: 1px solid #1f2937;
-        background: #111827;
-      }
-      h1 { margin: 0 0 6px; font-size: 20px; }
-      p { margin: 0; color: #9ca3af; }
-      .toolbar {
-        display: grid;
-        gap: 12px;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-        margin-top: 16px;
-      }
-      .card {
-        background: #0f172a;
-        border: 1px solid #1f2937;
-        border-radius: 12px;
-        padding: 14px;
-      }
-      .card h2 { margin: 0 0 10px; font-size: 15px; }
-      label { display: block; font-size: 12px; color: #93c5fd; margin-bottom: 6px; }
-      input, select, button, textarea {
-        width: 100%;
-        border-radius: 8px;
-        border: 1px solid #374151;
-        background: #111827;
-        color: #f9fafb;
-        padding: 10px 12px;
-        font: inherit;
-      }
-      textarea { min-height: 82px; resize: vertical; }
-      button {
-        cursor: pointer;
-        background: #2563eb;
-        border-color: #2563eb;
-        font-weight: 600;
-      }
-      button.secondary {
-        background: #1f2937;
-        border-color: #374151;
-      }
-      .actions { display: flex; gap: 10px; margin-top: 10px; }
-      .actions > * { flex: 1; }
-      #status {
-        margin: 16px 20px 0;
-        padding: 12px 14px;
-        border-radius: 10px;
-        border: 1px solid #1f2937;
-        background: #0f172a;
-        color: #cbd5e1;
-      }
-      main {
-        display: grid;
-        gap: 16px;
-        padding: 16px 20px 24px;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-      .pane {
-        min-height: 520px;
-        background: #0f172a;
-        border: 1px solid #1f2937;
-        border-radius: 14px;
-        overflow: hidden;
-      }
-      .pane header {
-        margin: 0;
-        padding: 14px 16px;
-        border: 0;
-        border-bottom: 1px solid #1f2937;
-        background: #111827;
-      }
-      .pane header h2 { margin: 0; font-size: 15px; }
-      .pane header p { margin-top: 4px; font-size: 12px; }
-      .pane-body { padding: 16px; }
-      .badge {
-        display: inline-block;
-        margin-bottom: 10px;
-        padding: 4px 8px;
-        border-radius: 999px;
-        background: rgba(59, 130, 246, 0.15);
-        color: #93c5fd;
-        font-size: 12px;
-        font-weight: 600;
-      }
-      .list { display: grid; gap: 8px; margin-top: 12px; }
-      .list button {
-        text-align: left;
-        background: #111827;
-        border-color: #374151;
-      }
-      .list button[data-selected="true"] {
-        border-color: #60a5fa;
-        box-shadow: 0 0 0 1px #60a5fa inset;
-      }
-      pre {
-        margin: 0;
-        overflow: auto;
-        white-space: pre-wrap;
-        word-break: break-word;
-        font-size: 12px;
-        line-height: 1.5;
-        color: #bfdbfe;
-      }
-      dl { margin: 0; display: grid; gap: 8px; }
-      dt { font-size: 12px; color: #93c5fd; }
-      dd { margin: 2px 0 0; color: #e5e7eb; }
-      .muted { color: #9ca3af; }
-      .chat-selection {
-        margin-bottom: 10px;
-        padding: 10px 12px;
-        border-radius: 8px;
-        border: 1px solid #374151;
-        background: #111827;
-        font-size: 12px;
-        color: #cbd5e1;
-      }
-      .chat-thread {
-        display: grid;
-        gap: 10px;
-        margin-top: 12px;
-      }
-      .chat-entry {
-        border: 1px solid #1f2937;
-        border-radius: 10px;
-        padding: 10px 12px;
-        background: #111827;
-      }
-      .chat-entry strong {
-        display: block;
-        margin-bottom: 6px;
-        color: #93c5fd;
-        font-size: 12px;
-      }
-      .chat-entry.error {
-        border-color: #7f1d1d;
-        background: rgba(127, 29, 29, 0.2);
-      }
-      .chat-entry.success {
-        border-color: #14532d;
-        background: rgba(20, 83, 45, 0.22);
-      }
-      .render-section { margin-top: 14px; }
-      .gallery-grid {
-        display: grid;
-        gap: 10px;
-        margin-top: 10px;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-      }
-      .gallery-item {
-        border: 1px solid #374151;
-        border-radius: 10px;
-        padding: 10px 12px;
-        background: #111827;
-      }
-      .gallery-item strong {
-        display: block;
-        margin-bottom: 6px;
-        color: #93c5fd;
-        font-size: 12px;
-      }
-      .hidden { display: none; }
-      .render-viewer {
-        height: 380px;
-        width: 100%;
-        border-radius: 12px;
-        overflow: hidden;
-        background: #07090f;
-        margin-bottom: 14px;
-        position: relative;
-      }
-      .render-viewer canvas { display: block; width: 100%; height: 100%; }
-      .scan-viewer {
-        height: 240px;
-        width: 100%;
-        border-radius: 10px;
-        overflow: hidden;
-        background: #07090f;
-        margin-bottom: 12px;
-        position: relative;
-      }
-      .scan-viewer canvas { display: block; width: 100%; height: 100%; }
-      .scan-mode-badge {
-        position: absolute;
-        top: 8px;
-        left: 8px;
-        padding: 3px 8px;
-        border-radius: 999px;
-        font-size: 11px;
-        font-weight: 600;
-        background: rgba(59, 130, 246, 0.15);
-        color: #93c5fd;
-        border: 1px solid rgba(59, 130, 246, 0.4);
-        pointer-events: none;
-      }
-      .scan-mode-badge.splat {
-        background: rgba(34, 197, 94, 0.15);
-        color: #86efac;
-        border-color: rgba(34, 197, 94, 0.4);
-      }
-      .layout-svg-mount {
-        width: 100%;
-        aspect-ratio: 4 / 3;
-        max-height: 300px;
-        border-radius: 10px;
-        overflow: hidden;
-        background: #0a0e1a;
-        margin-bottom: 12px;
-      }
-      .layout-svg-mount svg [data-entity-id]:hover {
-        filter: brightness(1.25);
-        cursor: pointer;
-      }
-      .layout-svg-mount svg [data-object-id]:hover {
-        cursor: grab;
-      }
-      .layout-svg-mount svg [data-transform-handle="rotate"] {
-        cursor: crosshair;
-      }
-      .layout-svg-mount svg [data-transform-handle="resize"] {
-        cursor: nwse-resize;
-      }
-      .layout-svg-mount svg .rv-selected {
-        stroke: #fbbf24 !important;
-        stroke-width: 0.08 !important;
-      }
-      .layout-violations-summary {
-        margin: 8px 0 12px;
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: 1px solid #7f1d1d;
-        background: rgba(127, 29, 29, 0.18);
-        color: #fecaca;
-        font-size: 12px;
-      }
-      .layout-violations-summary ul { margin: 6px 0 0; padding-left: 18px; }
-      .layout-scores {
-        margin: 4px 0 12px;
-        font-size: 12px;
-        color: #a7f3d0;
-      }
-      .pane-body:focus-visible {
-        outline: 2px solid #60a5fa;
-        outline-offset: -2px;
-      }
-      @media (max-width: 1100px) {
-        main { grid-template-columns: 1fr; }
-        .pane { min-height: 0; }
-      }
-    </style>
+    <link rel="stylesheet" href="/design-tokens.css" />
   </head>
-  <body>
-    <header>
-      <h1>RoomView MVP Editor</h1>
-      <p>Redeem a one-time handoff or load a golden fixture. All pane content comes from server-supplied canonical scene JSON.</p>
-      <div class="toolbar">
-        <section class="card">
-          <h2>Live API handoff</h2>
-          <label for="api-base-url">API base URL</label>
-          <input id="api-base-url" type="url" placeholder="http://127.0.0.1:3000" />
-          <label for="handoff-input">Handoff token / handoff URL / QR payload JSON</label>
-          <textarea id="handoff-input" placeholder="Paste a handoff token, https://.../handoff_token, or the qr_payload JSON"></textarea>
-          <div class="actions">
-            <button id="redeem-button" type="button">Redeem and load scene</button>
-          </div>
-        </section>
-        <section class="card">
-          <h2>Fixture-backed local load</h2>
-          <label for="fixture-select">Fixture</label>
-          <select id="fixture-select"></select>
-          <div class="actions">
-            <button id="fixture-button" class="secondary" type="button">Load local fixture</button>
-          </div>
-        </section>
-        <section class="card">
-          <h2>Chat planner</h2>
-          <p class="muted">Use layout selection as context for prompts like “this wall” or “that chair.” Live API sessions auto-apply validated edits and keep Undo one click away.</p>
-          <label for="chat-selection">Current selection</label>
-          <div id="chat-selection" class="chat-selection">No scene loaded.</div>
-          <label for="chat-input">Prompt</label>
-          <textarea id="chat-input" placeholder="Try: move the desk under the window"></textarea>
-          <div class="actions">
-            <button id="chat-send-button" type="button">Plan from chat</button>
-            <button id="undo-button" class="secondary" type="button">Undo last change</button>
-            <button id="chat-clear-button" class="secondary" type="button">Clear thread</button>
-          </div>
-          <div id="chat-options" class="list"></div>
-          <div id="chat-thread" class="chat-thread"></div>
-        </section>
+  <body class="app-shell">
+    <!--
+      Splat-first editor shell. The scan/splat canvas is the main event,
+      everything else lives in collapsible drawers or on-demand overlays so
+      nothing competes with the 3D scene.
+
+      Drawer contents are mount points for JS — the inline script below
+      still reads #scan-pane, #layout-pane, #render-pane, #chat-*,
+      #api-base-url, #handoff-input, #fixture-*, #redeem-button,
+      #undo-button, #toast-region. Those IDs are preserved; only their
+      parent DOM containers moved.
+    -->
+    <header class="topbar">
+      <div class="topbar__brand">
+        <span class="brand-mark" aria-hidden="true">◉</span>
+        <span class="brand-title">RoomView</span>
+        <span id="topbar-scene-label" class="topbar__scene">No scene loaded</span>
+      </div>
+      <div class="topbar__actions">
+        <button id="topbar-toggle-layout" class="iconbtn" type="button" title="Toggle 2D layout overlay (L)">
+          <span aria-hidden="true">▦</span><span class="iconbtn__label">Layout</span>
+        </button>
+        <button id="topbar-toggle-render" class="iconbtn" type="button" title="Toggle render panel (R)">
+          <span aria-hidden="true">✦</span><span class="iconbtn__label">Render</span>
+        </button>
+        <button id="undo-button" class="iconbtn iconbtn--ghost" type="button" title="Undo last change (⌘Z)">
+          <span aria-hidden="true">⎌</span><span class="iconbtn__label">Undo</span>
+        </button>
+        <button id="topbar-toggle-settings" class="iconbtn iconbtn--ghost" type="button" title="Load scene / Live handoff">
+          <span aria-hidden="true">⚙</span><span class="iconbtn__label">Load</span>
+        </button>
       </div>
     </header>
 
-    <section id="status">Choose a live handoff or a development fixture scene.</section>
+    <div class="workbench">
+      <aside id="left-drawer" class="drawer drawer--left" data-open="true" aria-label="Scene navigator">
+        <div class="drawer__inner">
+          <section class="drawer__section" id="drawer-objects-section">
+            <h3 class="drawer__heading">Objects</h3>
+            <div id="drawer-objects" class="drawer__scroll drawer__scroll--compact">
+              <p class="drawer__empty">No scene loaded yet.</p>
+            </div>
+          </section>
+          <section class="drawer__section" id="drawer-views-section">
+            <h3 class="drawer__heading">Captured views</h3>
+            <div id="drawer-views" class="drawer__scroll drawer__views">
+              <p class="drawer__empty">Load a fixture with captured_frames to see thumbnails.</p>
+            </div>
+          </section>
+        </div>
+      </aside>
 
-    <main>
-      <section class="pane">
-        <header>
-          <h2>Scan pane</h2>
-          <p>Read-only capture preview (RoomPlan shell or splat sidecar) and scan summary.</p>
+      <main id="stage" class="stage">
+        <div id="scan-pane" class="stage__canvas"></div>
+
+        <div id="stage-floating" class="stage__overlay">
+          <div id="viewmode-pill" class="viewmode-pill" role="tablist" aria-label="View mode">
+            <button class="viewmode-pill__btn is-active" data-viewmode="combined" role="tab" aria-selected="true">Splat + Meshes</button>
+            <button class="viewmode-pill__btn" data-viewmode="splat" role="tab" aria-selected="false">Splat</button>
+            <button class="viewmode-pill__btn" data-viewmode="meshes" role="tab" aria-selected="false">Meshes</button>
+            <button class="viewmode-pill__btn" data-viewmode="wireframe" role="tab" aria-selected="false">Wireframe</button>
+          </div>
+          <div id="stage-empty" class="stage__empty">
+            <div class="stage__empty-inner">
+              <div class="stage__empty-mark" aria-hidden="true">◉</div>
+              <h2>Your actual room, in the browser.</h2>
+              <p>Load an ARKitScenes fixture to see a Gaussian-Splat scan, or paste a handoff token from the iOS capture app.</p>
+              <button id="stage-empty-load" class="stage__empty-cta" type="button">Load ARKitScenes bedroom</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="toast-region" aria-live="polite" aria-atomic="true" class="stage__toasts"></div>
+      </main>
+
+      <aside id="right-drawer" class="drawer drawer--right" data-open="true" aria-label="Selection + chat">
+        <div class="drawer__inner">
+          <section class="drawer__section drawer__section--selection">
+            <h3 class="drawer__heading">Selection</h3>
+            <div id="chat-selection" class="chat-selection">No scene loaded.</div>
+          </section>
+          <section class="drawer__section drawer__section--chat">
+            <h3 class="drawer__heading">Chat</h3>
+            <div id="chat-thread" class="chat-thread"></div>
+            <div id="chat-options" class="list"></div>
+            <div class="composer">
+              <textarea id="chat-input" placeholder="Describe a change, e.g. 'repaint this wall warm white'"></textarea>
+              <div class="composer__actions">
+                <button id="chat-send-button" type="button">Plan from chat</button>
+                <button id="graph-agent-button" type="button" class="secondary" title="Ask the graph agent (uses OpenRouter, graph + constraint tools)">Ask agent</button>
+                <button id="chat-clear-button" class="secondary" type="button">Clear thread</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="statusbar">
+      <div class="statusbar__left">
+        <span id="statusbar-sceneid" class="statusbar__item statusbar__item--mono">—</span>
+        <span id="statusbar-scan-mode" class="statusbar__item">
+          <span id="scan-mode-badge" class="scan-mode-badge">RoomPlan preview</span>
+        </span>
+      </div>
+      <div class="statusbar__right">
+        <span id="statusbar-counts" class="statusbar__item">—</span>
+        <span id="statusbar-version" class="statusbar__item">—</span>
+      </div>
+    </footer>
+
+    <!-- Settings sheet: scene loading controls live here, pulled from the old toolbar cards. -->
+    <div id="settings-sheet" class="sheet" aria-hidden="true">
+      <div class="sheet__backdrop" data-sheet-dismiss></div>
+      <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="settings-sheet-title">
+        <header class="sheet__head">
+          <h2 id="settings-sheet-title">Load a scene</h2>
+          <button class="iconbtn iconbtn--ghost" type="button" data-sheet-dismiss aria-label="Close">✕</button>
         </header>
-        <div id="scan-pane" class="pane-body"></div>
-      </section>
-      <section class="pane">
-        <header>
-          <h2>Layout pane</h2>
-          <p>Server-authored surfaces, openings, and objects with selection state.</p>
+        <div class="sheet__body">
+          <section class="sheet__card">
+            <h3>Fixture-backed local load</h3>
+            <label for="fixture-select">Fixture</label>
+            <select id="fixture-select"></select>
+            <div class="actions">
+              <button id="fixture-button" class="secondary" type="button">Load local fixture</button>
+            </div>
+          </section>
+          <section class="sheet__card">
+            <h3>Live API handoff</h3>
+            <label for="api-base-url">API base URL</label>
+            <input id="api-base-url" type="url" placeholder="http://127.0.0.1:3000" />
+            <label for="handoff-input">Handoff token / handoff URL / QR payload JSON</label>
+            <textarea id="handoff-input" placeholder="Paste a handoff token, https://.../handoff_token, or the qr_payload JSON"></textarea>
+            <div class="actions">
+              <button id="redeem-button" type="button">Redeem and load scene</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2D layout overlay: full-screen modal housing the layout pane. -->
+    <div id="layout-overlay" class="overlay" aria-hidden="true">
+      <div class="overlay__backdrop" data-overlay-dismiss></div>
+      <div class="overlay__panel" role="dialog" aria-modal="true" aria-labelledby="layout-overlay-title">
+        <header class="overlay__head">
+          <h2 id="layout-overlay-title">2D layout</h2>
+          <p class="overlay__sub">Server-authored surfaces, openings, and objects. Click any object to select it in the chat context.</p>
+          <div class="overlay__head-actions">
+            <button id="graph-toggle" class="iconbtn iconbtn--ghost" type="button" title="Toggle spatial graph overlay (G)" aria-pressed="false">
+              <span aria-hidden="true">⇌</span><span class="iconbtn__label">Graph</span>
+            </button>
+            <button class="iconbtn iconbtn--ghost" type="button" data-overlay-dismiss aria-label="Close">✕</button>
+          </div>
         </header>
-        <div id="layout-pane" class="pane-body"></div>
-      </section>
-      <section class="pane">
-        <header>
-          <h2>Render pane</h2>
-          <p>Derived cache, bookmarks, asset refs, and quick-render inputs.</p>
+        <div id="layout-pane" class="overlay__body"></div>
+      </div>
+    </div>
+
+    <!-- Render drawer: side-panel for quick-render inputs, bookmarks, asset refs. -->
+    <div id="render-overlay" class="overlay overlay--side" aria-hidden="true">
+      <div class="overlay__backdrop" data-overlay-dismiss></div>
+      <aside class="overlay__panel overlay__panel--side" role="dialog" aria-modal="true" aria-labelledby="render-overlay-title">
+        <header class="overlay__head">
+          <h2 id="render-overlay-title">Render</h2>
+          <p class="overlay__sub">Derived cache, bookmarks, asset refs, and quick-render inputs.</p>
+          <button class="iconbtn iconbtn--ghost" type="button" data-overlay-dismiss aria-label="Close">✕</button>
         </header>
-        <div id="render-pane" class="pane-body"></div>
-      </section>
-    </main>
+        <div id="render-pane" class="overlay__body overlay__body--scroll"></div>
+      </aside>
+    </div>
 
     <script id="roomview-bootstrap" type="application/json">${bootstrapJson}</script>
     <script>
@@ -499,6 +674,10 @@ function renderEditorShellHtml(input: {
         apiBaseUrl: bootstrap.defaultApiBaseUrl,
         scene: null,
         quickRender: null,
+        graph: null,
+        constraints: null,
+        graphVisible: false,
+        graphKindFilter: new Set(['ADJACENT_TO', 'COLLIDES', 'FACES', 'HOSTED_ON', 'NEAR_OPENING', 'OBSTRUCTS', 'FLANKS', 'PARALLEL_TO']),
         sceneId: null,
         sessionId: null,
         selectionId: null,
@@ -520,9 +699,11 @@ function renderEditorShellHtml(input: {
         layoutViewLoading: null,
         scanView: null,
         scanViewLoading: null,
+        scanProxiesSnapshotId: null,
+        scanProxiesLoading: null,
       };
 
-      const statusNode = document.getElementById("status");
+      const toastRegion = document.getElementById("toast-region");
       const scanPane = document.getElementById("scan-pane");
       const layoutPane = document.getElementById("layout-pane");
       const renderPane = document.getElementById("render-pane");
@@ -534,10 +715,21 @@ function renderEditorShellHtml(input: {
       const chatSelection = document.getElementById("chat-selection");
       const chatInput = document.getElementById("chat-input");
       const chatSendButton = document.getElementById("chat-send-button");
+      const graphAgentButton = document.getElementById("graph-agent-button");
       const undoButton = document.getElementById("undo-button");
       const chatClearButton = document.getElementById("chat-clear-button");
       const chatOptions = document.getElementById("chat-options");
       const chatThread = document.getElementById("chat-thread");
+
+      // Clicks on Relations + Constraints entries jump to the target entity.
+      chatSelection?.parentElement?.addEventListener('click', (event) => {
+        const target = event.target instanceof Element
+          ? event.target.closest('.relations-card__entry, .constraints-card__entry')
+          : null;
+        if (!target) return;
+        const id = target.getAttribute('data-entity-id');
+        if (id) setSelection(id);
+      });
 
       apiBaseUrlInput.value = state.apiBaseUrl;
       for (const fixture of bootstrap.fixtureSources) {
@@ -588,14 +780,68 @@ function renderEditorShellHtml(input: {
           state.activeBookmarkId = state.scene.bookmarks[0]?.bookmark_id || null;
           state.loadedFrom = "fixture";
           state.quickRender = await loadFixtureQuickRender(fixtureSelect.value);
+          state.graph = await loadFixtureGraph(fixtureSelect.value);
           clearSplatPolling();
           resetChatState();
           renderScene();
           setStatus("Loaded fixture " + fixtureSelect.value + ".");
+          // If the fixture's splat is still the fast RGBD init (not a
+          // Brush-trained PLY), start polling for a trained upgrade.
+          const splatAssetId = state.scene?.splat?.asset_id || null;
+          if (typeof splatAssetId === 'string' && !splatAssetId.startsWith('splat:brush-')) {
+            startBrushTrainPoll(fixtureSelect.value, splatAssetId);
+          }
         } catch (error) {
           setStatus(error.message || "Failed to load fixture.", true);
         }
       });
+
+      scanPane.addEventListener("click", (event) => {
+        const target = event.target instanceof HTMLElement ? event.target : null;
+        if (!target) return;
+        const viewpointCard = target.closest("button.viewpoint-card");
+        if (viewpointCard) {
+          event.preventDefault();
+          handleViewpointClick(viewpointCard);
+          return;
+        }
+        const flythroughButton = target.closest("#scan-flythrough");
+        if (flythroughButton) {
+          event.preventDefault();
+          handleFlythroughClick();
+        }
+      });
+
+      function handleViewpointClick(buttonElement) {
+        if (!state.scanView || typeof state.scanView.flyToPose !== "function") return;
+        const poseRaw = buttonElement.getAttribute("data-viewpoint-pose");
+        if (!poseRaw) return;
+        let pose;
+        try { pose = JSON.parse(poseRaw); } catch { pose = null; }
+        if (!pose || typeof pose !== "object") return;
+        const fovAttr = buttonElement.getAttribute("data-viewpoint-fov");
+        const fov = fovAttr ? Number.parseFloat(fovAttr) : null;
+        const options = fov && Number.isFinite(fov) ? { duration_ms: 900, fov } : { duration_ms: 900 };
+        state.scanView.flyToPose(pose, options).catch((err) => console.error("flyToPose failed", err));
+      }
+
+      async function handleFlythroughClick() {
+        if (!state.scanView || typeof state.scanView.flyThroughPoses !== "function") return;
+        const frames = Array.isArray(state.scene?.captured_frames) ? state.scene.captured_frames : [];
+        if (frames.length === 0) return;
+        const button = document.getElementById("scan-flythrough");
+        if (button) button.setAttribute("disabled", "disabled");
+        try {
+          await state.scanView.flyThroughPoses(
+            frames.map((frame) => frame.camera_pose).filter((pose) => pose && typeof pose === "object"),
+            { duration_ms: 900, dwell_ms: 600 },
+          );
+        } catch (err) {
+          console.error("flyThroughPoses failed", err);
+        } finally {
+          if (button) button.removeAttribute("disabled");
+        }
+      }
 
       layoutPane.tabIndex = 0;
       layoutPane.addEventListener("pointerdown", () => {
@@ -692,6 +938,36 @@ function renderEditorShellHtml(input: {
         void rotateSelectedObject(event.deltaY < 0 ? 15 : -15);
       }, { passive: false });
 
+      renderPane.addEventListener("input", (event) => {
+        const target = event.target instanceof HTMLInputElement ? event.target : null;
+        if (!target || !target.classList.contains("before-after__range")) return;
+        const container = target.closest(".before-after");
+        if (!container) return;
+        const value = Math.max(0, Math.min(100, Number(target.value) || 0));
+        container.style.setProperty("--reveal", value + "%");
+      });
+
+      // Track C — live OBB preview on material-card hover.
+      // Hovering a material card paints a preview outline on every OBB of the
+      // same object_class in the layout pane, so the user can see *what* would
+      // change before committing to the prompt. Pure CSS highlight, toggled by
+      // a data-preview-class attribute on the layout-svg-mount element.
+      renderPane.addEventListener("mouseenter", (event) => {
+        const target = event.target instanceof HTMLElement ? event.target.closest("button.material-card") : null;
+        if (!target) return;
+        const cls = target.getAttribute("data-material-class");
+        const layoutMount = document.getElementById("layout-svg-mount");
+        if (cls && layoutMount) {
+          layoutMount.setAttribute("data-preview-class", cls);
+        }
+      }, true);
+      renderPane.addEventListener("mouseleave", (event) => {
+        const target = event.target instanceof HTMLElement ? event.target.closest("button.material-card") : null;
+        if (!target) return;
+        const layoutMount = document.getElementById("layout-svg-mount");
+        if (layoutMount) layoutMount.removeAttribute("data-preview-class");
+      }, true);
+
       renderPane.addEventListener("click", (event) => {
         const actionButton = event.target instanceof HTMLElement ? event.target.closest("button[data-render-action]") : null;
         if (actionButton) {
@@ -713,11 +989,31 @@ function renderEditorShellHtml(input: {
         if (bookmarkButton) {
           state.activeBookmarkId = bookmarkButton.getAttribute("data-bookmark-id");
           renderScene();
+          return;
+        }
+        const materialCard = event.target instanceof HTMLElement ? event.target.closest("button.material-card") : null;
+        if (materialCard) {
+          event.preventDefault();
+          const prompt = materialCard.getAttribute("data-material-prompt") || "";
+          if (prompt && chatInput) {
+            const existing = chatInput.value.trim();
+            chatInput.value = existing ? existing + "\\n" + prompt : prompt;
+            chatInput.focus();
+            showToast({
+              message: "Added '" + prompt + "' to the chat prompt.",
+              level: "success",
+              duration_ms: 3200,
+            });
+          }
         }
       });
 
       chatSendButton.addEventListener("click", () => {
         void submitChatPrompt(chatInput.value);
+      });
+
+      graphAgentButton?.addEventListener("click", () => {
+        void submitGraphAgent(chatInput.value);
       });
 
       chatClearButton.addEventListener("click", () => {
@@ -736,6 +1032,19 @@ function renderEditorShellHtml(input: {
         }
         chatInput.value = button.getAttribute("data-chat-option") || "";
         void submitChatPrompt(chatInput.value);
+      });
+
+      // Delegated click handler for the Proposed Plan card's Apply button.
+      // We route through applyLocalObjectMove so the drag / graph / constraint
+      // refresh pipeline fires identically to a manual drag — the user
+      // sees the scene update, violations recompute, and the Relations
+      // card rebinds to the moved object.
+      chatThread.addEventListener("click", (event) => {
+        const btn = event.target instanceof HTMLElement ? event.target.closest('[data-plan-apply]') : null;
+        if (!btn) return;
+        const planId = btn.getAttribute('data-plan-apply');
+        if (!planId) return;
+        applyProposedPlan(planId);
       });
 
       const params = new URLSearchParams(window.location.search);
@@ -764,6 +1073,7 @@ function renderEditorShellHtml(input: {
           ? state.activeBookmarkId
           : state.scene.bookmarks[0]?.bookmark_id || null;
         state.quickRender = await loadLiveQuickRender();
+        state.graph = await loadLiveGraph();
         renderScene();
         setStatus("Loaded live scene " + state.scene.head.scene_id + " via authenticated read.");
       }
@@ -816,6 +1126,54 @@ function renderEditorShellHtml(input: {
           throw new Error(payload.message || "Fixture quick render failed.");
         }
         return payload.render_scene;
+      }
+
+      function setGraphVisibility(visible) {
+        state.graphVisible = Boolean(visible);
+        if (state.layoutView && typeof state.layoutView.setGraphVisible === 'function') {
+          try { state.layoutView.setGraphVisible(state.graphVisible); }
+          catch (err) { console.error('setGraphVisible failed', err); }
+        }
+        const btn = document.getElementById('graph-toggle');
+        if (btn) {
+          btn.classList.toggle('is-active', state.graphVisible);
+          btn.setAttribute('aria-pressed', state.graphVisible ? 'true' : 'false');
+        }
+        renderRelationsCard();
+      }
+
+      window.toggleGraphOverlay = function toggleGraphOverlay() {
+        setGraphVisibility(!state.graphVisible);
+      };
+
+      async function loadFixtureGraph(fixtureId) {
+        try {
+          const response = await fetch("/dev/fixtures/" + encodeURIComponent(fixtureId) + "/graph");
+          if (!response.ok) return null;
+          const payload = await response.json();
+          state.constraints = payload.constraints || null;
+          return payload.graph || null;
+        } catch (err) {
+          console.error("loadFixtureGraph failed", err);
+          return null;
+        }
+      }
+
+      async function loadLiveGraph() {
+        if (!state.sceneId || !state.sessionId) return null;
+        try {
+          const response = await fetch(
+            new URL("/scenes/" + encodeURIComponent(state.sceneId) + "/graph", state.apiBaseUrl).toString(),
+            { headers: { Authorization: "Bearer " + state.sessionId } },
+          );
+          if (!response.ok) return null;
+          const payload = await response.json();
+          state.constraints = payload.constraints || null;
+          return payload.graph || null;
+        } catch (err) {
+          console.error("loadLiveGraph failed", err);
+          return null;
+        }
       }
 
       async function postJson(url, body, headers = {}) {
@@ -908,6 +1266,120 @@ function renderEditorShellHtml(input: {
         return null;
       }
 
+      // Showcase Track C — gallery entry renderer.
+      // When a photoreal entry carries captured_frame_id (Showcase flux_inpaint_stack
+      // path) we pair it with the reference RGB from the captured frame and render a
+      // before/after slider. Legacy synthetic-conditioning entries fall back to the
+      // single-image layout.
+      function renderGalleryEntry(entry, scene) {
+        const providerUri = entry.provider_metadata?.uri || '<none>';
+        const imageUrl = resolveGalleryImageUrl(entry.provider_metadata?.uri || null);
+        const providerStatus = entry.provider_metadata?.status || 'ready';
+        const styleTag = Array.isArray(entry.prompt_modifiers) && entry.prompt_modifiers.length > 0
+          ? entry.prompt_modifiers.join(', ')
+          : null;
+        const styleBadge = styleTag
+          ? '<div class="badge warm">' + escapeHtml(styleTag) + '</div>'
+          : '';
+        const capturedFrame = entry.captured_frame_id
+          ? (scene.captured_frames || []).find((frame) => frame.frame_id === entry.captured_frame_id) || null
+          : null;
+        const referenceUrl = capturedFrame ? resolveGalleryImageUrl(capturedFrame.rgb?.uri || null) : null;
+
+        const visualHtml = imageUrl && referenceUrl
+          ? renderBeforeAfter(imageUrl, referenceUrl, entry.entry_id)
+          : imageUrl
+            ? '<img class="gallery-item__image" src="' + escapeHtml(imageUrl) + '" alt="Photoreal render ' + escapeHtml(entry.entry_id) + '" />'
+            : '';
+
+        const metadataPre = '<pre>' + escapeHtml(JSON.stringify({
+          scene_version: entry.scene_version,
+          scene_snapshot_id: entry.scene_snapshot_id,
+          bookmark_id: entry.bookmark_id,
+          asset_id: entry.asset_id,
+          provider_uri: providerUri,
+          created_at: entry.created_at,
+          render_group_id: entry.render_group_id || undefined,
+          captured_frame_id: entry.captured_frame_id || undefined,
+        }, null, 2)) + '</pre>';
+
+        const materialsHtml = renderPinnedMaterialsList(entry, scene);
+        const statusBadge = '<div class="badge">' + escapeHtml(String(providerStatus)) + '</div>';
+        const headerBadges = [styleBadge, statusBadge].filter(Boolean).join('');
+        return '<div class="gallery-item">'
+          + '<div class="gallery-item__badges">' + headerBadges + '</div>'
+          + visualHtml
+          + '<strong>' + escapeHtml(entry.entry_id) + '</strong>'
+          + metadataPre
+          + materialsHtml
+          + '</div>';
+      }
+
+      // Showcase Track C — materials list pinned to each gallery render.
+      // Walks the snapshot's editing_asset_refs (or scene.snapshot.state.room
+      // objects) and emits a small row per material with the BOM catalog's
+      // retailer link when available. This is where Track 3 ("professional
+      // outputs") pays rent inside every rendered image.
+      function renderPinnedMaterialsList(entry, scene) {
+        const refs = Array.isArray(scene.snapshot?.editing_asset_refs) ? scene.snapshot.editing_asset_refs : [];
+        if (refs.length === 0) return '';
+        const manifest = bootstrap.curatedAssetManifest;
+        const assetsById = new Map();
+        if (manifest && Array.isArray(manifest.assets)) {
+          for (const asset of manifest.assets) assetsById.set(asset.asset_id, asset);
+        }
+        const roomObjects = scene.snapshot?.state?.room?.objects || [];
+        const objectsById = new Map();
+        for (const obj of roomObjects) objectsById.set(obj.object_id, obj);
+        // Cap at 5 so the card stays compact — gallery thumbnails shouldn't
+        // scroll. A "+N more" hint replaces the overflow.
+        const rows = refs.slice(0, 5).map((ref) => {
+          const asset = assetsById.get(ref.asset_id) || null;
+          const obj = objectsById.get(ref.bound_to) || null;
+          const className = obj?.class ? obj.class.replace(/_/g, " ") : (asset?.object_class || "asset");
+          const material = asset?.material_state || obj?.material_state || null;
+          const swatch = swatchColorFor(material);
+          const materialBits = [material?.color, material?.finish].filter(Boolean).join(" · ");
+          const retailer = ref.retailer_url || asset?.uri;
+          const retailerName = ref.retailer_name || null;
+          const linkText = retailerName || (retailer ? "spec" : null);
+          const priceBits = typeof ref.price_cents === "number"
+            ? [(ref.price_cents / 100).toFixed(2), (ref.currency || "USD").toUpperCase()].join(" ")
+            : null;
+          const metaParts = [];
+          if (materialBits) metaParts.push(escapeHtml(materialBits));
+          if (priceBits) metaParts.push(escapeHtml(priceBits));
+          if (retailer && linkText) {
+            metaParts.push('<a href="' + escapeHtml(retailer) + '" target="_blank" rel="noopener">' + escapeHtml(linkText) + '</a>');
+          }
+          const metaHtml = metaParts.length ? '<span class="gallery-item__material-meta">' + metaParts.join(" · ") + '</span>' : '';
+          return '<div class="gallery-item__material-row">'
+            + '<span class="gallery-item__material-swatch" style="background:' + swatch + '"></span>'
+            + '<span class="gallery-item__material-label">' + escapeHtml(className) + '</span>'
+            + metaHtml
+            + '</div>';
+        }).join("");
+        const overflow = refs.length > 5
+          ? '<span class="muted" style="font-size:var(--font-size-xs)">+ ' + (refs.length - 5) + ' more</span>'
+          : '';
+        return '<div class="gallery-item__materials">'
+          + '<div class="gallery-item__materials-heading">Materials in this render</div>'
+          + rows
+          + overflow
+          + '</div>';
+      }
+
+      function renderBeforeAfter(renderedUrl, referenceUrl, entryId) {
+        const safeEntry = escapeHtml(entryId);
+        return '<div class="before-after" data-before-after style="--reveal:50%">'
+          + '<img class="before-after__before" src="' + escapeHtml(referenceUrl) + '" alt="Reference capture for ' + safeEntry + '" />'
+          + '<img class="before-after__after" src="' + escapeHtml(renderedUrl) + '" alt="Photoreal render ' + safeEntry + '" />'
+          + '<div class="before-after__handle" aria-hidden="true"></div>'
+          + '<div class="before-after__labels"><span>Before</span><span>After</span></div>'
+          + '<input type="range" class="before-after__range" min="0" max="100" value="50" step="1" aria-label="Reveal after render" />'
+          + '</div>';
+      }
+
       function cloneValue(value) {
         if (typeof structuredClone === "function") {
           return structuredClone(value);
@@ -962,6 +1434,51 @@ function renderEditorShellHtml(input: {
             console.error("viewer.setSelection failed", err);
           }
         }
+        if (state.scanView && typeof state.scanView.setScanSelection === 'function') {
+          try {
+            state.scanView.setScanSelection(state.selectionId);
+          } catch (err) {
+            console.error("scanView.setScanSelection failed", err);
+          }
+        }
+        // Move gizmo follows selection in both panes. We lift the
+        // object's OBB center out of canonical scene state + derive
+        // wall segments from the floor polygon for snap-to-wall, then
+        // hand both to each viewer's setMoveTarget.
+        const room = state.scene?.snapshot?.state?.room;
+        const selectedObject = state.selectionId && room
+          ? (room.objects || []).find((candidate) => candidate.object_id === state.selectionId)
+          : null;
+        const gizmoCenter = selectedObject?.obb?.center || selectedObject?.pose?.position || null;
+        const gizmoTargetId = selectedObject ? state.selectionId : null;
+        // Floor polygon edges → inward-normal wall segments. The polygon
+        // is typically CCW so interior is on the LEFT of each edge
+        // direction (inward normal = rotate edge by +90° = (-dy, dx)).
+        const walls = [];
+        const floorVerts = room?.shell?.floor_polygon?.vertices;
+        if (Array.isArray(floorVerts) && floorVerts.length >= 3) {
+          for (let i = 0; i < floorVerts.length; i += 1) {
+            const a = floorVerts[i];
+            const b = floorVerts[(i + 1) % floorVerts.length];
+            const ex = b.x - a.x;
+            const ey = b.y - a.y;
+            const len = Math.hypot(ex, ey);
+            if (len < 1e-6) continue;
+            walls.push({
+              ax: a.x, ay: a.y, bx: b.x, by: b.y,
+              nx: -ey / len, ny: ex / len,
+            });
+          }
+        }
+        const moveContext = selectedObject
+          ? { obb: selectedObject.obb, walls }
+          : {};
+        for (const view of [state.scanView, state.viewer]) {
+          if (view && typeof view.setMoveTarget === 'function') {
+            try { view.setMoveTarget(gizmoTargetId, gizmoCenter || null, moveContext); }
+            catch (err) { console.error('setMoveTarget failed', err); }
+          }
+        }
         if (state.scene && document.getElementById("layout-info-mount")) {
           document.getElementById("layout-info-mount").innerHTML = renderLayoutPaneInfo(state.scene, state.selectionId, Boolean(state.sessionId));
         }
@@ -977,6 +1494,7 @@ function renderEditorShellHtml(input: {
         }
         state.viewer.setRoom(room, {
           editing_asset_refs: state.scene.snapshot.editing_asset_refs || [],
+          captured_floor_color: state.capturedFloorColor || null,
         });
         state.viewer.setSelection(state.selectionId);
       }
@@ -1611,6 +2129,86 @@ function renderEditorShellHtml(input: {
         }
       }
 
+      async function submitGraphAgent(rawPrompt) {
+        const prompt = rawPrompt.trim();
+        if (!prompt) {
+          setStatus("Type a question before asking the agent.", true);
+          return;
+        }
+        if (!state.scene) {
+          setStatus("Load a scene before using the graph agent.", true);
+          return;
+        }
+        appendChatMessage("user", "You", prompt);
+        chatInput.value = "";
+        renderChatPanel();
+        const history = state.chatMessages
+          .filter((m) => m.role === "user" || m.role === "assistant")
+          .slice(-6)
+          .map((m) => ({ role: m.role, content: m.body }));
+        const body = {
+          question: prompt,
+          conversation_history: history,
+          selection_entity_id: state.selectionId || null,
+          max_steps: 10,
+        };
+        try {
+          let url;
+          let headers = { 'Content-Type': 'application/json' };
+          if (state.sessionId && state.sceneId) {
+            url = new URL('/scenes/' + encodeURIComponent(state.sceneId) + '/graph-agent', state.apiBaseUrl).toString();
+            headers['Authorization'] = 'Bearer ' + state.sessionId;
+          } else {
+            url = '/dev/fixtures/' + encodeURIComponent(fixtureSelect.value) + '/graph-agent';
+          }
+          const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+          const payload = await res.json();
+          if (!res.ok) {
+            appendChatMessage("assistant", "Graph Agent", payload.message || payload.reason_code || 'Agent failed.', 'error');
+            renderChatPanel();
+            return;
+          }
+          const agent = payload.agent;
+          const citation = [];
+          if (agent.cited_edge_ids?.length) citation.push('edges: ' + agent.cited_edge_ids.join(', '));
+          if (agent.cited_evaluation_ids?.length) citation.push('evals: ' + agent.cited_evaluation_ids.join(', '));
+          const steps = (agent.steps || []).map((s, i) => '  [' + (i + 1) + '] ' + s.tool + ' — ' + s.summary).join('\\n');
+          const bodyText = agent.answer + (steps ? '\\n\\nSteps:\\n' + steps : '') + (citation.length ? '\\n\\n(' + citation.join(' · ') + ')' : '');
+          appendChatMessage("assistant", "Graph Agent", bodyText);
+          if (agent.proposed_plan) {
+            // Structured plan card (rendered via renderChatPlanEntry) so the
+            // user can one-click "Apply this plan" and watch it land.
+            state.chatMessages.push({
+              role: 'assistant',
+              kind: 'plan',
+              title: 'Proposed plan',
+              plan: agent.proposed_plan,
+              plan_id: 'plan-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+              applied: false,
+            });
+          }
+          renderChatPanel();
+        } catch (err) {
+          appendChatMessage("assistant", "Graph Agent", String(err?.message || err), 'error');
+          renderChatPanel();
+        }
+      }
+
+      function postFeedbackEvent(event) {
+        try {
+          const url = state.sessionId && state.sceneId
+            ? new URL('/dev/feedback', window.location.origin).toString()
+            : '/dev/feedback';
+          fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(event),
+          }).catch((err) => console.error('feedback post failed', err));
+        } catch (err) {
+          console.error('postFeedbackEvent failed', err);
+        }
+      }
+
       async function submitChatPrompt(rawPrompt) {
         const prompt = rawPrompt.trim();
         if (!prompt) {
@@ -1732,6 +2330,96 @@ function renderEditorShellHtml(input: {
         state.chatMessages.push({ role, title, body, tone });
       }
 
+      function renderChatPlanEntry(entry) {
+        const plan = entry.plan || {};
+        const from = plan.from || {};
+        const to = plan.to || {};
+        const delta = plan.delta || {};
+        const cd = plan.expected_constraint_delta || {};
+        const applied = !!entry.applied;
+        const objectName = humanNameForObjectId(plan.object_id);
+        const hardBefore = cd.hard_fail_before ?? '?';
+        const hardAfter = cd.hard_fail_after ?? '?';
+        const hardDelta = (typeof cd.hard_fail_after === 'number' && typeof cd.hard_fail_before === 'number')
+          ? (cd.hard_fail_after - cd.hard_fail_before)
+          : null;
+        const deltaTag = hardDelta === null
+          ? ''
+          : hardDelta < 0
+            ? '<span class="plan-card__gain">improves ' + (-hardDelta) + ' hard</span>'
+            : hardDelta === 0
+              ? '<span class="plan-card__neutral">no change</span>'
+              : '<span class="plan-card__regress">regresses ' + hardDelta + ' hard</span>';
+        const btnText = applied ? 'Applied ✓' : 'Apply this plan';
+        const btnAttr = applied ? ' disabled aria-disabled="true"' : '';
+        const planKind = plan.kind === 'rotate' ? 'Rotate' : 'Move';
+        return [
+          '<div class="chat-entry plan-card' + (applied ? ' plan-card--applied' : '') + '">',
+            '<strong>' + planKind + ' · ' + escapeHtml(objectName) + '</strong>',
+            '<div class="plan-card__meta">',
+              '<div>from (' + fmt(from.x) + ', ' + fmt(from.y) + ') → (' + fmt(to.x) + ', ' + fmt(to.y) + ')</div>',
+              (typeof to.yaw_degrees === 'number' && typeof from.yaw_degrees === 'number' && Math.abs((to.yaw_degrees - from.yaw_degrees) % 360) > 0.5
+                ? '<div>yaw ' + fmt(from.yaw_degrees) + '° → ' + fmt(to.yaw_degrees) + '°</div>'
+                : ''),
+              '<div>hard violations ' + hardBefore + ' → ' + hardAfter + ' ' + deltaTag + '</div>',
+            '</div>',
+            '<button class="plan-card__apply" type="button" data-plan-apply="' + escapeHtml(entry.plan_id) + '"' + btnAttr + '>' + btnText + '</button>',
+          '</div>',
+        ].join('');
+      }
+
+      function fmt(n) {
+        return typeof n === 'number' && Number.isFinite(n) ? n.toFixed(2) : String(n ?? '?');
+      }
+
+      function humanNameForObjectId(id) {
+        if (!id) return 'object';
+        const raw = typeof id === 'string' && id.startsWith('object:') ? id.slice('object:'.length) : id;
+        const room = state.scene?.snapshot?.state?.room;
+        const obj = room?.objects?.find((o) => o.object_id === raw);
+        return obj ? (obj.class + ' · ' + raw.slice(-8)) : raw;
+      }
+
+      function applyProposedPlan(planId) {
+        const entry = state.chatMessages.find((m) => m.kind === 'plan' && m.plan_id === planId);
+        if (!entry || entry.applied) return;
+        const plan = entry.plan;
+        const rawId = plan.object_id;
+        const objectId = typeof rawId === 'string' && rawId.startsWith('object:') ? rawId.slice('object:'.length) : rawId;
+        const delta = {
+          x: (plan.delta && typeof plan.delta.x === 'number') ? plan.delta.x
+             : (typeof plan.to?.x === 'number' && typeof plan.from?.x === 'number' ? plan.to.x - plan.from.x : 0),
+          y: (plan.delta && typeof plan.delta.y === 'number') ? plan.delta.y
+             : (typeof plan.to?.y === 'number' && typeof plan.from?.y === 'number' ? plan.to.y - plan.from.y : 0),
+          z: 0,
+          yaw_degrees: (plan.delta && typeof plan.delta.yaw_degrees === 'number') ? plan.delta.yaw_degrees
+             : (typeof plan.to?.yaw_degrees === 'number' && typeof plan.from?.yaw_degrees === 'number' ? plan.to.yaw_degrees - plan.from.yaw_degrees : 0),
+        };
+        if (!objectId) {
+          setStatus('Plan has no object id; cannot apply.', true);
+          return;
+        }
+        try {
+          applyLocalObjectMove(objectId, delta);
+          entry.applied = true;
+          const room = state.scene?.snapshot?.state?.room;
+          const violations = state.scene?.derived_state_cache?.hard_violations?.length ?? '?';
+          appendChatMessage('assistant', 'Plan applied', 'Moved ' + humanNameForObjectId(objectId) + ' locally. Hard violations now ' + violations + '.', 'success');
+          postFeedbackEvent({
+            kind: 'propose_accepted',
+            scene_id: state.sceneId,
+            object_id: objectId,
+            object_class: room?.objects?.find((o) => o.object_id === objectId)?.class,
+            details: { plan },
+          });
+          showToast({ message: 'Plan applied · ' + humanNameForObjectId(objectId) + ' moved locally.', level: 'success', duration_ms: 3200 });
+          renderChatPanel();
+        } catch (err) {
+          console.error('applyProposedPlan failed', err);
+          setStatus('Failed to apply plan: ' + (err?.message || err), true);
+        }
+      }
+
       function buildConversationHistory() {
         return state.chatMessages.slice(-12).map((entry) => ({
           role: entry.role === 'user' ? 'user' : 'assistant',
@@ -1790,12 +2478,48 @@ function renderEditorShellHtml(input: {
         scanPane.innerHTML = '<div class="scan-viewer"><div id="scan-viewer-mount" style="width:100%;height:100%"></div><span class="scan-mode-badge" id="scan-mode-badge">RoomPlan preview</span></div><div id="scan-info-mount"></div>';
       }
 
+      // Fetch a fixture's texture manifest (baked by bake-wall-textures.py).
+      // Returns { manifest, baseUri } or null if the fixture has no textures.
+      async function loadCaptureInpaintTextures() {
+        const sceneId = state.scene?.scene_id;
+        // Only committed fixtures carry /dev/fixtures/... texture routes.
+        const fixtureId = (state.scene?.derived_state_cache?.fixture_id)
+          || (sceneId && sceneId.startsWith('scene-fixture-') ? sceneId.replace('scene-fixture-', 'fixture-').replace(/-[a-z0-9]{8}$/, '') : null)
+          || null;
+        if (!fixtureId) {
+          const activeSelect = document.getElementById('fixture-select');
+          const selectValue = activeSelect instanceof HTMLSelectElement ? activeSelect.value : null;
+          if (!selectValue) return null;
+          try {
+            const base = '/dev/fixtures/' + encodeURIComponent(selectValue) + '/textures/manifest.json';
+            const res = await fetch(base);
+            if (!res.ok) return null;
+            const manifest = await res.json();
+            return { manifest, baseUri: '/dev/fixtures/' + encodeURIComponent(selectValue) + '/textures' };
+          } catch (err) {
+            console.warn('texture manifest fetch failed', err);
+            return null;
+          }
+        }
+        try {
+          const base = '/dev/fixtures/' + encodeURIComponent(fixtureId) + '/textures/manifest.json';
+          const res = await fetch(base);
+          if (!res.ok) return null;
+          const manifest = await res.json();
+          return { manifest, baseUri: '/dev/fixtures/' + encodeURIComponent(fixtureId) + '/textures' };
+        } catch (err) {
+          console.warn('texture manifest fetch failed', err);
+          return null;
+        }
+      }
+
       function syncScanView() {
         const room = state.scene && state.scene.snapshot && state.scene.snapshot.state && state.scene.snapshot.state.room;
         if (!room) return;
         updateScanModeBadge();
         if (state.scanView) {
-          try { state.scanView.setRoom(room); } catch (err) { console.error('scanView.setRoom failed', err); }
+          try { state.scanView.setRoom(room, { captureInpaintTextureManifest: state.captureInpaintTextureManifest ?? null, captureInpaintTextureBaseUri: state.captureInpaintTextureBaseUri ?? null }); } catch (err) { console.error('scanView.setRoom failed', err); }
+          void installSplatOnScanView();
           return;
         }
         if (state.scanViewLoading) return;
@@ -1806,9 +2530,53 @@ function renderEditorShellHtml(input: {
             if (!mount) return null;
             const view = mod.mountScanView(mount);
             state.scanView = view;
-            if (state.scene && state.scene.snapshot) {
-              view.setRoom(state.scene.snapshot.state.room);
+            // Hook scan-pane clicks into the shared selection state so
+            // clicking a TSDF-mesh object or an OBB wireframe in the 3D
+            // view selects the object (previously selection only worked
+            // via the Objects panel).
+            if (typeof view.setOnSelect === 'function') {
+              view.setOnSelect((id) => {
+                if (id && state.selectionId !== id) setSelection(id);
+              });
             }
+            // Wire the object-move gizmo's drag-end callback. On release,
+            // translate the selected object's OBB center + footprint
+            // polygon + pose position by the drag delta, then surface a
+            // toast so the move is visible. Persistence / violation
+            // recompute lands in a follow-up change.
+            if (typeof view.setOnObjectMoved === 'function') {
+              view.setOnObjectMoved((objectId, delta) => {
+                try {
+                  applyLocalObjectMove(objectId, delta);
+                } catch (err) {
+                  console.error('applyLocalObjectMove failed', err);
+                }
+              });
+            }
+            // Register the Gaussian Splatting renderer (Track B). Guarded import so a
+            // failure in the renderer never breaks the scan pane — setSplat simply
+            // reports 'metadata_only' and the RoomPlan shell + scan proxies stay.
+            try {
+              const splatMod = await import('/splat-loader.js');
+              if (typeof splatMod.installSplatLoader === 'function') {
+                splatMod.installSplatLoader(view);
+              }
+            } catch (splatErr) {
+              console.warn('splat-loader unavailable; scan pane will fall back to meshes/shell', splatErr);
+            }
+            // Preload the baked wall-texture manifest in parallel with first setRoom.
+            const textures = await loadCaptureInpaintTextures();
+            if (textures) {
+              state.captureInpaintTextureManifest = textures.manifest;
+              state.captureInpaintTextureBaseUri = textures.baseUri;
+            }
+            if (state.scene && state.scene.snapshot) {
+              view.setRoom(state.scene.snapshot.state.room, {
+                captureInpaintTextureManifest: state.captureInpaintTextureManifest ?? null,
+                captureInpaintTextureBaseUri: state.captureInpaintTextureBaseUri ?? null,
+              });
+            }
+            await installSplatOnScanView();
             return view;
           } catch (err) {
             console.error('scan view failed to load', err);
@@ -1819,13 +2587,280 @@ function renderEditorShellHtml(input: {
         })();
       }
 
+      async function installSplatOnScanView() {
+        if (!state.scanView || typeof state.scanView.setSplat !== 'function') return;
+        const splat = state.scene?.splat;
+        if (splat && splat.status === 'ready' && splat.uri) {
+          try {
+            await state.scanView.setSplat({
+              uri: splat.uri,
+              gaussian_count: splat.gaussian_count ?? null,
+              split_manifest_uri: splat.split_manifest_uri ?? null,
+            });
+          } catch (err) {
+            console.error('setSplat failed', err);
+          }
+        } else {
+          try { await state.scanView.setSplat(null); } catch { /* noop */ }
+        }
+        updateScanModeBadge();
+        void installScanProxies();
+        void installScanOutlines();
+      }
+
+      // Per-object OBB wireframes on the scan view. Runs once per scene so
+      // every named object has a visible box — the 3 that have no captured
+      // coverage get presence here, and selection highlights the matching
+      // box in CLASS_ACCENTS color.
+      async function installScanOutlines() {
+        if (!state.scene || !state.scanView || typeof state.scanView.setObjectOutlines !== 'function') return;
+        try {
+          const mod = await import('/scan-proxies.js');
+          if (typeof mod.buildObjectOutlines !== 'function') return;
+          const outlineGroup = mod.buildObjectOutlines(state.scene);
+          // Experimental: splat-discovered candidate OBBs (amber) hidden
+          // by default. Validation showed ~8% recall on RoomPlan-known
+          // objects (most over-merged with neighbours) so surfacing them
+          // to users would be misleading. Opt in via ?show_candidates=1
+          // for pipeline debugging.
+          const params = new URLSearchParams(window.location.search);
+          const showCandidates = params.get('show_candidates') === '1';
+          const fixtureId = state.loadedFrom === 'fixture' ? fixtureSelect.value : null;
+          let candidateCount = 0;
+          if (showCandidates && fixtureId && typeof mod.loadCandidateOutlines === 'function') {
+            try {
+              const candGroup = await mod.loadCandidateOutlines(fixtureId);
+              if (candGroup) {
+                candidateCount = candGroup.children.length;
+                outlineGroup.add(candGroup);
+              }
+            } catch (candErr) {
+              console.warn('candidate outlines load failed', candErr);
+            }
+          }
+          state.scanView.setObjectOutlines(outlineGroup);
+          if (typeof state.scanView.setScanSelection === 'function') {
+            state.scanView.setScanSelection(state.selectionId);
+          }
+          if (candidateCount > 0) {
+            showToast({
+              message: candidateCount + ' splat-discovered candidate object'
+                + (candidateCount === 1 ? '' : 's') + ' shown in amber.',
+              level: 'info',
+              duration_ms: 4500,
+            });
+          }
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('scan outlines install failed', err);
+        }
+      }
+
+      // Build scan-native object proxies (per-object point clouds from
+      // captured_frames) and hand them to the scan view. Idempotent per
+      // scene snapshot. Prefers Tier 2 committed meshes when available
+      // (fixtures/roomplan/{id}/meshes/manifest.json), falls back to the
+      // Tier 1 point-cloud proxies for objects without a cached mesh.
+      async function installScanProxies() {
+        const scene = state.scene;
+        if (!scene || !state.scanView || typeof state.scanView.setScanProxies !== 'function') return;
+        const frames = Array.isArray(scene.captured_frames) ? scene.captured_frames : [];
+        if (frames.length === 0) {
+          try { state.scanView.setScanProxies(null); } catch { /* noop */ }
+          state.scanProxiesSnapshotId = null;
+          return;
+        }
+        const snapshotId = scene.snapshot?.snapshot_id || null;
+        if (snapshotId && state.scanProxiesSnapshotId === snapshotId) return;
+        if (state.scanProxiesLoading) return;
+        const fixtureId = state.loadedFrom === 'fixture' ? fixtureSelect.value : null;
+        state.scanProxiesLoading = (async () => {
+          try {
+            const mod = await import('/scan-proxies.js');
+            const t0 = performance.now();
+            const meshResult = fixtureId ? await mod.loadScanMeshes(fixtureId) : null;
+            const meshMap = meshResult?.meshes || new Map();
+            const meshMode = meshResult?.manifest?.mode || null;
+            const proxies = await mod.buildScanProxies(scene);
+            // Prefer meshes where available; keep point-cloud proxies for
+            // objects the Tier 2 pipeline couldn't reconstruct (sparse
+            // coverage). Compose into one map the viewer consumes.
+            const combined = new Map();
+            proxies.forEach((entry, objectId) => combined.set(objectId, entry));
+            meshMap.forEach((mesh, objectId) => {
+              combined.set(objectId, { mesh, stats: { vertex_count: mesh.userData?.vertex_count || 0, tier: 'mesh:' + (meshMode || 'tsdf') } });
+            });
+            const ms = Math.round(performance.now() - t0);
+            if (state.scene !== scene) return;
+            state.scanView.setScanProxies(combined);
+            state.scanProxiesSnapshotId = snapshotId;
+            // Use the median floor-bleed color (sampled while culling
+            // mesh undersides) to tint the floor ShapeGeometry in both
+            // viewers. Makes "move a bed, see floor beneath" look like
+            // the captured floor rather than the default brown.
+            if (meshResult?.floorColor) {
+              state.capturedFloorColor = meshResult.floorColor;
+              try { syncViewerRoom(state.scene.snapshot.state.room); } catch (err) { console.error('floor color viewer sync failed', err); }
+            }
+            const meshCount = meshMap.size;
+            const pointCount = proxies.size - meshCount >= 0 ? Math.max(0, proxies.size - meshCount) : 0;
+            const detail = meshCount > 0
+              ? meshCount + ' mesh' + (meshCount === 1 ? '' : 'es') + ' (' + (meshMode || 'tsdf') + ')' + (pointCount > 0 ? ' · ' + pointCount + ' point proxy' + (pointCount === 1 ? '' : 's') : '')
+              : proxies.size + ' object' + (proxies.size === 1 ? '' : 's');
+            showToast({
+              message: 'Scan proxies ready · ' + detail + ' · ' + ms + ' ms',
+              level: 'success',
+              duration_ms: 3600,
+            });
+            // If Tier 2 meshes weren't available yet, poll for them — the
+            // capture pipeline fires bundle-to-meshes as a background job
+            // after finalize, so the manifest appears 5-10 minutes later.
+            if (meshCount === 0 && fixtureId) {
+              startMeshManifestPoll(fixtureId, scene);
+            }
+          } catch (err) {
+            console.error('scan proxies failed', err);
+            showToast({ message: 'Scan proxies failed: ' + (err?.message || err), level: 'error' });
+          } finally {
+            state.scanProxiesLoading = null;
+          }
+        })();
+      }
+
+      // Polls for the Brush-trained HQ splat descriptor. When the fixture's
+      // scene.splat.asset_id flips to "splat:brush-*" (set by
+      // scripts/brush-train.py after training finishes), we know a higher-
+      // quality splat is ready. Show a toast that reloads the scene so the
+      // viewer picks up the new splat.uri on next fetch.
+      function startBrushTrainPoll(fixtureId, initialSplatAssetId) {
+        if (state.brushPollFixtureId === fixtureId) return;
+        state.brushPollFixtureId = fixtureId;
+        const intervalMs = 30_000;
+        const maxAttempts = 80; // ~40 minutes; Brush typically finishes in 15-30
+        let attempts = 0;
+        const tick = async () => {
+          attempts += 1;
+          if (state.loadedFrom !== 'fixture' || fixtureSelect.value !== fixtureId) {
+            state.brushPollFixtureId = null;
+            return;
+          }
+          try {
+            const response = await fetch(
+              '/dev/fixtures/' + encodeURIComponent(fixtureId) + '?_t=' + Date.now()
+            );
+            if (response.ok) {
+              const payload = await response.json();
+              const newAssetId = payload?.scene?.splat?.asset_id || null;
+              if (newAssetId && typeof newAssetId === 'string'
+                  && newAssetId.startsWith('splat:brush-')
+                  && newAssetId !== initialSplatAssetId) {
+                state.brushPollFixtureId = null;
+                showToast({
+                  message: 'High-quality splat finished training — click to upgrade.',
+                  level: 'info',
+                  duration_ms: 30_000,
+                  action: {
+                    label: 'Upgrade splat',
+                    onClick: () => {
+                      // Trigger the same path as the initial fixture load.
+                      fixtureSelect.value = fixtureId;
+                      fixtureButton.click();
+                    },
+                  },
+                });
+                return;
+              }
+            }
+          } catch {
+            // network hiccup; keep polling
+          }
+          if (attempts >= maxAttempts) {
+            state.brushPollFixtureId = null;
+            return;
+          }
+          setTimeout(tick, intervalMs);
+        };
+        setTimeout(tick, intervalMs);
+      }
+
+      // Polls for /dev/fixtures/{id}/meshes/manifest.json to appear, then
+      // shows a toast with a "Load meshes" action that re-runs
+      // installScanProxies(). Idempotent — refuses to start a second poll
+      // for the same fixture, and stops on scene change.
+      function startMeshManifestPoll(fixtureId, sceneAtStart) {
+        if (state.meshPollFixtureId === fixtureId) return;
+        state.meshPollFixtureId = fixtureId;
+        const intervalMs = 10_000;
+        const maxAttempts = 120; // ~20 minutes before giving up
+        let attempts = 0;
+        const tick = async () => {
+          attempts += 1;
+          // Bail if the user navigated to a different scene.
+          if (state.scene !== sceneAtStart) {
+            state.meshPollFixtureId = null;
+            return;
+          }
+          try {
+            // GET (server only routes GET for the mesh files route); the
+            // manifest is tiny (~3KB), so a full fetch is cheap enough.
+            const response = await fetch(
+              '/dev/fixtures/' + encodeURIComponent(fixtureId) + '/meshes/manifest.json?_t=' + Date.now()
+            );
+            if (response.ok) {
+              state.meshPollFixtureId = null;
+              showToast({
+                message: '3D object meshes are ready — click to load them.',
+                level: 'info',
+                duration_ms: 20_000,
+                action: {
+                  label: 'Load meshes',
+                  onClick: () => {
+                    // Clear the snapshot guard so installScanProxies actually re-runs.
+                    state.scanProxiesSnapshotId = null;
+                    installScanProxies();
+                  },
+                },
+              });
+              return;
+            }
+          } catch {
+            // network hiccup; keep polling
+          }
+          if (attempts >= maxAttempts) {
+            state.meshPollFixtureId = null;
+            return;
+          }
+          setTimeout(tick, intervalMs);
+        };
+        setTimeout(tick, intervalMs);
+      }
+
       function updateScanModeBadge() {
         const badge = document.getElementById('scan-mode-badge');
         if (!badge) return;
         const splat = state.scene?.splat;
         if (splat && splat.status === 'ready') {
-          badge.textContent = 'Splat ready';
+          // The splat loader is a Week 4 scaffold — metadata is plumbed through the
+          // viewer even though the real renderer (gsplat.js / GaussianSplats3D) isn't
+          // wired yet. The badge reflects what the viewer actually did: showed the
+          // splat ("Splat ready") vs. accepted the URI but is still drawing the
+          // RoomPlan shell because no loader is installed ("Splat metadata only").
+          const meta = state.scanView && typeof state.scanView.getSplatMeta === 'function'
+            ? state.scanView.getSplatMeta()
+            : null;
+          if (meta && meta.status === 'ready') {
+            badge.textContent = 'Splat live';
+          } else if (meta && meta.status === 'metadata_only') {
+            badge.textContent = 'Splat metadata only';
+          } else if (meta && meta.status === 'failed') {
+            badge.textContent = 'Splat load failed';
+          } else {
+            badge.textContent = 'Splat ready';
+          }
           badge.classList.add('splat');
+        } else if (splat && splat.status === 'processing') {
+          badge.textContent = 'Splat processing';
+          badge.classList.remove('splat');
         } else {
           badge.textContent = 'RoomPlan preview';
           badge.classList.remove('splat');
@@ -1874,6 +2909,252 @@ function renderEditorShellHtml(input: {
         layoutPane.innerHTML = '<div class="layout-svg-mount" id="layout-svg-mount"></div><div id="layout-info-mount"></div>';
       }
 
+      // ---- Live validation (port of apps/api/src/overlap-policy.ts).
+      // Two rules, physics-only, no class-based exemptions:
+      //   1. OBJECT_OVERLAP — two floor-supported objects whose
+      //      footprint polygons intersect by >0.05 m².
+      //   2. OUT_OF_BOUNDS — object footprint majority-outside floor
+      //      polygon (approximated client-side via vertex count; the
+      //      Python rederive uses true area).
+      const HARD_OVERLAP_AREA_THRESHOLD_M2 = 0.05;
+      const OUT_OF_BOUNDS_OUTSIDE_FRACTION = 0.5;
+
+      function polygonFromObbLive(obb) {
+        const halfX = (obb.size_x || 0) / 2;
+        const halfY = (obb.size_y || 0) / 2;
+        const rad = ((obb.yaw_degrees || 0) * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        const cx = obb.center?.x || 0;
+        const cy = obb.center?.y || 0;
+        return [
+          [cx + -halfX * cos - -halfY * sin, cy + -halfX * sin + -halfY * cos],
+          [cx +  halfX * cos - -halfY * sin, cy +  halfX * sin + -halfY * cos],
+          [cx +  halfX * cos -  halfY * sin, cy +  halfX * sin +  halfY * cos],
+          [cx + -halfX * cos -  halfY * sin, cy + -halfX * sin +  halfY * cos],
+        ];
+      }
+
+      function footprintPolyForObject(obj) {
+        const stored = obj.footprint_polygon && obj.footprint_polygon.vertices;
+        if (Array.isArray(stored) && stored.length >= 3) {
+          return stored.map((v) => [v.x, v.y]);
+        }
+        return polygonFromObbLive(obj.obb);
+      }
+
+      function polygonSignedArea(verts) {
+        if (verts.length < 3) return 0;
+        let s = 0;
+        for (let i = 0; i < verts.length; i += 1) {
+          const a = verts[i];
+          const b = verts[(i + 1) % verts.length];
+          s += a[0] * b[1] - b[0] * a[1];
+        }
+        return s / 2;
+      }
+
+      function polygonArea(verts) {
+        return Math.abs(polygonSignedArea(verts));
+      }
+
+      function ensureCcw(verts) {
+        return polygonSignedArea(verts) < 0 ? [...verts].reverse() : verts.slice();
+      }
+
+      function segmentIntersection(p1, p2, p3, p4) {
+        const d1x = p2[0] - p1[0], d1y = p2[1] - p1[1];
+        const d2x = p4[0] - p3[0], d2y = p4[1] - p3[1];
+        const denom = d1x * d2y - d1y * d2x;
+        if (Math.abs(denom) < 1e-12) return p2;
+        const t = ((p3[0] - p1[0]) * d2y - (p3[1] - p1[1]) * d2x) / denom;
+        return [p1[0] + t * d1x, p1[1] + t * d1y];
+      }
+
+      function clipConvex(subject, clip) {
+        let output = subject.slice();
+        for (let i = 0; i < clip.length; i += 1) {
+          if (output.length === 0) return [];
+          const a = clip[i];
+          const b = clip[(i + 1) % clip.length];
+          const ex = b[0] - a[0], ey = b[1] - a[1];
+          const input = output;
+          output = [];
+          const insideOf = (p) => ex * (p[1] - a[1]) - ey * (p[0] - a[0]) >= 0;
+          for (let j = 0; j < input.length; j += 1) {
+            const curr = input[j];
+            const prev = input[(j - 1 + input.length) % input.length];
+            const ci = insideOf(curr);
+            const pi = insideOf(prev);
+            if (ci) {
+              if (!pi) output.push(segmentIntersection(prev, curr, a, b));
+              output.push(curr);
+            } else if (pi) {
+              output.push(segmentIntersection(prev, curr, a, b));
+            }
+          }
+        }
+        return output;
+      }
+
+      function polygonIntersectionArea(a, b) {
+        if (a.length < 3 || b.length < 3) return 0;
+        const clipped = clipConvex(ensureCcw(a), ensureCcw(b));
+        if (clipped.length < 3) return 0;
+        return Math.abs(polygonSignedArea(clipped));
+      }
+
+      function pointInPolygon(x, y, verts) {
+        let inside = false;
+        for (let i = 0, j = verts.length - 1; i < verts.length; j = i, i += 1) {
+          const xi = verts[i][0], yi = verts[i][1];
+          const xj = verts[j][0], yj = verts[j][1];
+          const intersect = ((yi > y) !== (yj > y))
+            && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-12) + xi;
+          if (intersect) inside = !inside;
+        }
+        return inside;
+      }
+
+      function polygonContainsPolygon(outer, inner) {
+        for (const v of inner) {
+          if (!pointInPolygon(v[0], v[1], outer)) return false;
+        }
+        return true;
+      }
+
+      function isFloorSupported(obj) {
+        return obj?.support?.support_kind === 'floor';
+      }
+
+      function recomputeHardViolations(room) {
+        const objects = room.objects || [];
+        const floorVerts = room.shell?.floor_polygon?.vertices || [];
+        const floor = floorVerts.map((v) => [v.x, v.y]);
+        const polys = objects.map((o) => footprintPolyForObject(o));
+        const out = [];
+
+        // OUT_OF_BOUNDS — vertex-count approximation to majority-outside.
+        // (Client-side; Python rederive uses true area for canonical
+        // derivation. Vertex count is a reasonable proxy and fast.)
+        if (floor.length >= 3) {
+          for (let i = 0; i < objects.length; i += 1) {
+            const poly = polys[i];
+            let inside = 0;
+            for (const v of poly) if (pointInPolygon(v[0], v[1], floor)) inside += 1;
+            const outsideFrac = 1 - inside / poly.length;
+            if (outsideFrac > OUT_OF_BOUNDS_OUTSIDE_FRACTION) {
+              out.push({
+                entity_id: objects[i].object_id,
+                reason_code: 'OUT_OF_BOUNDS',
+                message: objects[i].class + ' extends outside the captured floor polygon.',
+                outside_fraction: Math.round(outsideFrac * 100) / 100,
+              });
+            }
+          }
+        }
+
+        // OBJECT_OVERLAP — real polygon intersection, no class exemptions.
+        for (let i = 0; i < objects.length; i += 1) {
+          if (!isFloorSupported(objects[i])) continue;
+          for (let j = i + 1; j < objects.length; j += 1) {
+            if (!isFloorSupported(objects[j])) continue;
+            const inter = polygonIntersectionArea(polys[i], polys[j]);
+            if (inter > HARD_OVERLAP_AREA_THRESHOLD_M2) {
+              out.push({
+                entity_ids: [objects[i].object_id, objects[j].object_id],
+                reason_code: 'OBJECT_OVERLAP',
+                message: objects[i].class + ' overlaps ' + objects[j].class + '.',
+                overlap_area_m2: Math.round(inter * 1000) / 1000,
+              });
+            }
+          }
+        }
+        return out;
+      }
+
+      // Apply a translate-and/or-rotate delta to the given scene object.
+      // Updates the in-memory canonical scene (OBB center + yaw, pose
+      // position + yaw, footprint polygon vertices). The scan pane's
+      // three.js objects already moved during drag via the pointer
+      // handlers; this keeps the layout pane and violation derivation
+      // consistent. Local-only; persistence lands in a follow-up.
+      function applyLocalObjectMove(objectId, delta) {
+        const room = state.scene
+          && state.scene.snapshot
+          && state.scene.snapshot.state
+          && state.scene.snapshot.state.room;
+        if (!room || !Array.isArray(room.objects)) return;
+        const obj = room.objects.find((candidate) => candidate.object_id === objectId);
+        if (!obj) return;
+        const dx = delta.x || 0;
+        const dy = delta.y || 0;
+        const dz = delta.z || 0;
+        const dyaw = delta.yaw_degrees || 0;
+        if (obj.obb && obj.obb.center) {
+          obj.obb.center.x += dx;
+          obj.obb.center.y += dy;
+          obj.obb.center.z += dz;
+          if (dyaw) obj.obb.yaw_degrees = ((obj.obb.yaw_degrees || 0) + dyaw) % 360;
+        }
+        if (obj.pose && obj.pose.position) {
+          obj.pose.position.x += dx;
+          obj.pose.position.y += dy;
+          obj.pose.position.z += dz;
+          if (dyaw) obj.pose.yaw_degrees = ((obj.pose.yaw_degrees || 0) + dyaw) % 360;
+        }
+        const verts = obj.footprint_polygon && obj.footprint_polygon.vertices;
+        if (Array.isArray(verts)) {
+          for (const v of verts) {
+            v.x += dx;
+            v.y += dy;
+          }
+          // Rotate polygon around the (new) OBB center after translation.
+          if (dyaw && obj.obb && obj.obb.center) {
+            const rad = (dyaw * Math.PI) / 180;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+            const cx = obj.obb.center.x;
+            const cy = obj.obb.center.y;
+            for (const v of verts) {
+              const vx = v.x - cx;
+              const vy = v.y - cy;
+              v.x = cx + vx * cos - vy * sin;
+              v.y = cy + vx * sin + vy * cos;
+            }
+          }
+        }
+        try {
+          const fresh = recomputeHardViolations(room);
+          if (state.scene.derived_state_cache) {
+            state.scene.derived_state_cache.hard_violations = fresh;
+          } else {
+            state.scene.derived_state_cache = { hard_violations: fresh };
+          }
+        } catch (err) { console.error('recomputeHardViolations failed', err); }
+        try { syncLayoutView(); } catch (err) { console.error(err); }
+        // Refresh the violation summary + chip colours in the layout pane.
+        try {
+          const mount = document.getElementById('layout-info-mount');
+          if (mount) {
+            mount.innerHTML = renderLayoutPaneInfo(state.scene, state.selectionId, Boolean(state.sessionId));
+          }
+        } catch (err) { console.error(err); }
+        // Re-derive graph + constraints so the right drawer stays in sync.
+        try { refreshConstraintsAfterLocalChange(); } catch (err) { console.error(err); }
+        // Fire-and-forget feedback event: user nudged an object.
+        try {
+          const movedObject = state.scene?.snapshot?.state?.room?.objects?.find((o) => o.object_id === objectId);
+          postFeedbackEvent({
+            kind: 'drag',
+            scene_id: state.sceneId,
+            object_id: objectId,
+            object_class: movedObject?.class,
+            details: { delta },
+          });
+        } catch (err) { console.error('feedback emit failed', err); }
+      }
+
       function syncLayoutView() {
         const room = state.scene && state.scene.snapshot && state.scene.snapshot.state && state.scene.snapshot.state.room;
         if (!room) return;
@@ -1883,6 +3164,11 @@ function renderEditorShellHtml(input: {
             state.layoutView.setRoom(room, derived);
             state.layoutView.setSelection(state.selectionId);
             state.layoutView.setDragEnabled(Boolean(state.sessionId));
+            if (typeof state.layoutView.setGraph === 'function') {
+              state.layoutView.setGraph(state.graph);
+              state.layoutView.setGraphVisible(state.graphVisible);
+              state.layoutView.setGraphKindFilter(Array.from(state.graphKindFilter));
+            }
           } catch (err) {
             console.error('layoutView.setRoom failed', err);
           }
@@ -1915,6 +3201,11 @@ function renderEditorShellHtml(input: {
               view.setRoom(liveScene.snapshot.state.room, liveScene.derived_state_cache || null);
               view.setSelection(state.selectionId);
               view.setDragEnabled(Boolean(state.sessionId));
+              if (typeof view.setGraph === 'function') {
+                view.setGraph(state.graph);
+                view.setGraphVisible(state.graphVisible);
+                view.setGraphKindFilter(Array.from(state.graphKindFilter));
+              }
             }
             return view;
           } catch (err) {
@@ -1948,7 +3239,10 @@ function renderEditorShellHtml(input: {
         const editingAssetRefs = state.scene.snapshot.editing_asset_refs || [];
         if (state.viewer) {
           try {
-            state.viewer.setRoom(room, { editing_asset_refs: editingAssetRefs });
+            state.viewer.setRoom(room, {
+              editing_asset_refs: editingAssetRefs,
+              captured_floor_color: state.capturedFloorColor || null,
+            });
             state.viewer.setSelection(state.selectionId);
           } catch (err) {
             console.error('viewer.setRoom failed', err);
@@ -1971,9 +3265,18 @@ function renderEditorShellHtml(input: {
             });
             installAssetUriResolver(api);
             state.viewer = api;
+            // Same move-gizmo callback the scan pane uses — the render
+            // pane writes into the same canonical scene state, so both
+            // panes agree after a drag.
+            if (typeof api.setOnObjectMoved === 'function') {
+              api.setOnObjectMoved((objectId, delta) => {
+                try { applyLocalObjectMove(objectId, delta); } catch (err) { console.error('applyLocalObjectMove failed', err); }
+              });
+            }
             if (state.scene && state.scene.snapshot) {
               api.setRoom(state.scene.snapshot.state.room, {
                 editing_asset_refs: state.scene.snapshot.editing_asset_refs || [],
+                captured_floor_color: state.capturedFloorColor || null,
               });
               api.setSelection(state.selectionId);
             }
@@ -2056,7 +3359,9 @@ function renderEditorShellHtml(input: {
       }
 
       function renderChatPanel() {
-        chatSelection.textContent = describeSelectionLabel(state.scene, state.selectionId);
+        chatSelection.innerHTML = renderChatSelectionHtml();
+        renderRelationsCard();
+        renderConstraintsCard();
         const isLive = Boolean(state.sessionId);
         chatSendButton.disabled = !state.scene || state.sceneActionInFlight;
         undoButton.disabled = !state.scene || !isLive || state.sceneActionInFlight;
@@ -2075,9 +3380,165 @@ function renderEditorShellHtml(input: {
         chatThread.innerHTML = state.chatMessages.length === 0
           ? '<p class="muted">Chat transcripts, auto-applied edits, clarifications, and reason-code messages appear here.</p>'
           : state.chatMessages.map((entry) => {
+              if (entry.kind === 'plan') return renderChatPlanEntry(entry);
               const tone = entry.tone ? ' ' + entry.tone : '';
               return '<div class="chat-entry' + tone + '"><strong>' + escapeHtml(entry.title) + '</strong><pre>' + escapeHtml(entry.body) + '</pre></div>';
             }).join('');
+      }
+
+      function renderChatSelectionHtml() {
+        const label = describeSelectionLabel(state.scene, state.selectionId);
+        const graphSummary = state.graph
+          ? '<div class="chat-selection__graph"><span class="chip chip--ghost">' +
+              (state.graph.nodes?.length || 0) + ' nodes · ' +
+              (state.graph.edges?.length || 0) + ' edges' +
+            '</span></div>'
+          : '';
+        return '<div class="chat-selection__label">' + escapeHtml(label) + '</div>' + graphSummary;
+      }
+
+      function renderRelationsCard() {
+        let panel = document.getElementById('relations-card');
+        if (!panel) {
+          // Mount below the chat-selection region, inside the same drawer section.
+          const parent = chatSelection?.parentElement;
+          if (!parent) return;
+          panel = document.createElement('div');
+          panel.id = 'relations-card';
+          panel.className = 'relations-card';
+          parent.appendChild(panel);
+        }
+        const graph = state.graph;
+        if (!graph || !graph.nodes) {
+          panel.innerHTML = '';
+          return;
+        }
+        const nodeId = state.selectionId ? findGraphNodeIdForEntity(graph, state.selectionId) : null;
+        if (!nodeId) {
+          panel.innerHTML = state.graphVisible
+            ? '<p class="relations-card__empty">Select an object to see its relations.</p>'
+            : '';
+          return;
+        }
+        const byKind = {};
+        const nodeById = new Map(graph.nodes.map((n) => [n.node_id, n]));
+        for (const edge of graph.edges) {
+          if (edge.from_node_id !== nodeId && edge.to_node_id !== nodeId) continue;
+          if (!byKind[edge.kind]) byKind[edge.kind] = [];
+          const otherId = edge.from_node_id === nodeId ? edge.to_node_id : edge.from_node_id;
+          const other = nodeById.get(otherId);
+          byKind[edge.kind].push({ otherId, otherLabel: other?.label || otherId, evidence: edge.evidence, directionOut: edge.from_node_id === nodeId, symmetric: edge.symmetric });
+        }
+        const kinds = Object.keys(byKind).sort();
+        if (kinds.length === 0) {
+          panel.innerHTML = '<p class="relations-card__empty">No relations detected for this node.</p>';
+          return;
+        }
+        let html = '<h4 class="relations-card__title">Relations</h4>';
+        for (const kind of kinds) {
+          html += '<div class="relations-card__group"><div class="relations-card__kind" data-graph-kind="' + kind + '"><span class="relations-card__chip relations-card__chip--' + kind.toLowerCase() + '">' + kind + '</span><span class="relations-card__count">' + byKind[kind].length + '</span></div><ul class="relations-card__list">';
+          for (const entry of byKind[kind]) {
+            const evidenceFragments = [];
+            if (entry.evidence && typeof entry.evidence === 'object') {
+              for (const [k, v] of Object.entries(entry.evidence)) {
+                evidenceFragments.push(escapeHtml(k) + ': ' + escapeHtml(String(v)));
+              }
+            }
+            const arrow = entry.symmetric ? '↔' : (entry.directionOut ? '→' : '←');
+            const other = nodeById.get(entry.otherId);
+            const selectableEntityId = other?.source_entity_id || '';
+            html += '<li><button type="button" class="relations-card__entry" data-entity-id="' + escapeHtml(selectableEntityId) + '"><span class="relations-card__arrow">' + arrow + '</span><span class="relations-card__other">' + escapeHtml(entry.otherLabel) + '</span>' + (evidenceFragments.length ? '<span class="relations-card__evidence">' + evidenceFragments.join(' · ') + '</span>' : '') + '</button></li>';
+          }
+          html += '</ul></div>';
+        }
+        panel.innerHTML = html;
+      }
+
+      function findGraphNodeIdForEntity(graph, entityId) {
+        if (!graph || !entityId) return null;
+        for (const node of graph.nodes) {
+          if (node.source_entity_id === entityId) return node.node_id;
+        }
+        return null;
+      }
+
+      function renderConstraintsCard() {
+        let panel = document.getElementById('constraints-card');
+        if (!panel) {
+          const parent = chatSelection?.parentElement;
+          if (!parent) return;
+          panel = document.createElement('div');
+          panel.id = 'constraints-card';
+          panel.className = 'relations-card constraints-card';
+          parent.appendChild(panel);
+        }
+        const report = state.constraints;
+        if (!report || !Array.isArray(report.evaluations)) {
+          panel.innerHTML = '';
+          return;
+        }
+        const summary = report.summary || { total: 0, hard_fail: 0, soft_warn: 0, ok: 0 };
+        const selectedNodeId = state.selectionId && state.graph
+          ? findGraphNodeIdForEntity(state.graph, state.selectionId)
+          : null;
+        // If a selection exists, scope to evaluations that reference it.
+        const allEvals = report.evaluations;
+        const scoped = selectedNodeId
+          ? allEvals.filter((ev) => (ev.node_ids || []).includes(selectedNodeId))
+          : allEvals;
+        if (scoped.length === 0) {
+          panel.innerHTML =
+            '<h4 class="relations-card__title">Constraints</h4>' +
+            '<p class="relations-card__empty">' +
+              (selectedNodeId
+                ? 'No constraint touches this node — layout-clean for the current rules.'
+                : 'All ' + summary.total + ' checks passed.') +
+            '</p>';
+          return;
+        }
+        let html = '<h4 class="relations-card__title">Constraints' + (selectedNodeId ? ' · selection' : '') +
+          '<span class="constraints-card__summary">' +
+            summary.hard_fail + ' hard · ' + summary.soft_warn + ' soft · ' + summary.ok + ' ok' +
+          '</span></h4>';
+        // Group by status severity: hard_fail > soft_warn > ok.
+        const order = { hard_fail: 0, soft_warn: 1, ok: 2 };
+        const sorted = scoped.slice().sort((a, b) => (order[a.status] || 9) - (order[b.status] || 9));
+        html += '<ul class="constraints-card__list">';
+        for (const ev of sorted) {
+          const chipCls = 'constraints-card__chip constraints-card__chip--' + ev.status;
+          const entity = (ev.node_ids && ev.node_ids[0]) || '';
+          const sourceEntity = state.graph?.nodes?.find((n) => n.node_id === entity)?.source_entity_id || '';
+          html += '<li><button type="button" class="constraints-card__entry" data-entity-id="' + escapeHtml(sourceEntity) + '">' +
+            '<span class="' + chipCls + '">' + ev.status.replace('_', ' ') + '</span>' +
+            '<span class="constraints-card__message">' + escapeHtml(ev.message || ev.kind) + '</span>' +
+            '<span class="constraints-card__kind">' + escapeHtml(ev.kind) + '</span>' +
+            '</button></li>';
+        }
+        html += '</ul>';
+        panel.innerHTML = html;
+      }
+
+      function refreshConstraintsAfterLocalChange() {
+        // Local edits (drag, agent apply) don't persist server-side, so
+        // we POST the current in-memory scene to /dev/graph to get a
+        // fresh graph + constraint report that reflects the mutation.
+        if (!state.scene) return;
+        fetch('/dev/graph', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scene: state.scene }),
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((body) => {
+            if (!body) return;
+            state.graph = body.graph;
+            state.constraints = body.constraints;
+            if (state.layoutView && typeof state.layoutView.setGraph === 'function') {
+              state.layoutView.setGraph(state.graph);
+            }
+            renderChatPanel();
+          })
+          .catch((err) => console.error('refreshConstraintsAfterLocalChange', err));
       }
 
       function describeSelectionLabel(scene, selectionId) {
@@ -2149,22 +3610,35 @@ function renderEditorShellHtml(input: {
           const depthUrl = resolveGalleryImageUrl(frame.depth?.uri || null);
           const confidenceUrl = resolveGalleryImageUrl(frame.confidence?.uri || null);
           const imageHtml = rgbUrl
-            ? '<img src="' + escapeHtml(rgbUrl) + '" alt="Captured frame ' + escapeHtml(frame.frame_id) + '" style="width:100%;border-radius:10px;margin:0 0 8px 0;display:block;background:#0b1020;object-fit:cover" />'
-            : '<div class="muted" style="margin-bottom:8px">RGB unavailable</div>';
-          const links = [
-            depthUrl ? '<a href="' + escapeHtml(depthUrl) + '" target="_blank" rel="noopener" style="color:#93c5fd">depth</a>' : null,
-            confidenceUrl ? '<a href="' + escapeHtml(confidenceUrl) + '" target="_blank" rel="noopener" style="color:#93c5fd">confidence</a>' : null,
-          ].filter(Boolean).join(' · ') || '<span class="muted">no sidecars</span>';
-          const bookmark = frame.bookmark_id ? 'bookmark ' + escapeHtml(frame.bookmark_id) : '<span class="muted">no bookmark</span>';
-          return '<div class="gallery-item">' + imageHtml
+            ? '<img src="' + escapeHtml(rgbUrl) + '" alt="Captured frame ' + escapeHtml(frame.frame_id) + '" />'
+            : '<div class="muted viewpoint-card__placeholder">RGB unavailable</div>';
+          const linkHtmlParts = [];
+          if (depthUrl) linkHtmlParts.push('<a href="' + escapeHtml(depthUrl) + '" target="_blank" rel="noopener">depth</a>');
+          if (confidenceUrl) linkHtmlParts.push('<a href="' + escapeHtml(confidenceUrl) + '" target="_blank" rel="noopener">confidence</a>');
+          const links = linkHtmlParts.length ? linkHtmlParts.join(' · ') : '<span class="muted">no sidecars</span>';
+          const poseJson = escapeHtml(JSON.stringify(frame.camera_pose || null));
+          const fovAttr = typeof frame.intrinsics?.fy === 'number' && typeof frame.intrinsics?.height === 'number'
+            ? String(2 * Math.atan(frame.intrinsics.height / (2 * frame.intrinsics.fy)) * 180 / Math.PI)
+            : '';
+          return '<button type="button" class="viewpoint-card"'
+            + ' data-viewpoint-pose="' + poseJson + '"'
+            + (fovAttr ? ' data-viewpoint-fov="' + escapeHtml(fovAttr) + '"' : '')
+            + ' data-viewpoint-id="' + escapeHtml(frame.frame_id) + '"'
+            + ' aria-label="Fly scan camera to ' + escapeHtml(frame.frame_id) + '">'
+            + '<div class="viewpoint-card__media">' + imageHtml + '<span class="viewpoint-card__hint">Fly here</span></div>'
             + '<strong>' + escapeHtml(frame.frame_id) + '</strong>'
-            + '<p class="muted" style="margin:4px 0 6px 0">' + escapeHtml(frame.captured_at || '') + '</p>'
-            + '<p style="font-size:12px;margin:0">' + links + '</p>'
-            + '<p style="font-size:12px;margin:4px 0 0 0">' + bookmark + '</p>'
-            + '</div>';
+            + '<p class="muted viewpoint-card__timestamp">' + escapeHtml(frame.captured_at || '') + '</p>'
+            + '<p class="viewpoint-card__links">' + links + '</p>'
+            + '</button>';
         }).join('');
-        return '<div class="badge" style="margin-top:12px">Captured views · ' + capturedFrames.length + '</div>'
-          + '<div class="gallery-grid">' + items + '</div>';
+        const flyThroughDisabled = capturedFrames.length < 2 ? ' disabled' : '';
+        return '<div class="captured-views-toolbar">'
+          + '<div class="badge">Captured views · ' + capturedFrames.length + '</div>'
+          + '<button type="button" class="secondary viewpoint-flythrough-button" id="scan-flythrough"' + flyThroughDisabled + '>'
+          + 'Fly through ' + capturedFrames.length + ' views'
+          + '</button>'
+          + '</div>'
+          + '<div class="viewpoint-grid">' + items + '</div>';
       }
 
       function renderLayoutPaneInfo(scene, selectionId, hasLiveSession) {
@@ -2288,17 +3762,7 @@ function renderEditorShellHtml(input: {
             }).join('') + '</div>';
         const gallery = scene.photoreal_gallery.length === 0
           ? '<p class="muted">No photoreal outputs yet. Use the buttons below to generate one from the active bookmark, or request a grid of style variants.</p>'
-          : '<div class="gallery-grid">' + [...scene.photoreal_gallery].reverse().map((entry) => {
-              const providerUri = entry.provider_metadata?.uri || '<none>';
-              const imageUrl = resolveGalleryImageUrl(entry.provider_metadata?.uri || null);
-              const providerStatus = entry.provider_metadata?.status || 'ready';
-              const styleTag = Array.isArray(entry.prompt_modifiers) && entry.prompt_modifiers.length > 0 ? entry.prompt_modifiers.join(', ') : null;
-              const styleBadge = styleTag ? '<div class="badge" style="background:rgba(251,191,36,0.15);color:#fcd34d;margin-bottom:6px">' + escapeHtml(styleTag) + '</div>' : '';
-              const imageHtml = imageUrl
-                ? '<img src="' + escapeHtml(imageUrl) + '" alt="Photoreal render ' + escapeHtml(entry.entry_id) + '" style="width:100%;border-radius:12px;margin:0 0 10px 0;display:block;background:#0b1020;object-fit:cover" />'
-                : '';
-              return '<div class="gallery-item">' + styleBadge + '<div class="badge" style="margin-bottom:6px">' + escapeHtml(String(providerStatus)) + '</div>' + imageHtml + '<strong>' + escapeHtml(entry.entry_id) + '</strong><pre>' + escapeHtml(JSON.stringify({ scene_version: entry.scene_version, scene_snapshot_id: entry.scene_snapshot_id, bookmark_id: entry.bookmark_id, asset_id: entry.asset_id, provider_uri: providerUri, created_at: entry.created_at }, null, 2)) + '</pre></div>';
-            }).join('') + '</div>';
+          : renderPhotorealGallery(scene);
         const details = {
           loaded_from: loadedFrom,
           layout_scene_version: scene.head.current_scene_version,
@@ -2326,10 +3790,100 @@ function renderEditorShellHtml(input: {
           '</dl>',
           '<section class="render-section"><div class="badge">Bookmarks</div>' + bookmarkList + '</section>',
           '<section class="render-section"><div class="actions"><button type="button" data-render-action="save-bookmark">Save current camera as bookmark</button><button type="button" class="secondary" data-render-action="generate-photoreal">Generate photoreal</button><button type="button" class="secondary" data-render-action="generate-style-grid">Generate 4 styles</button></div><p class="muted" style="margin-top:10px">Buttons are live only after redeeming an authenticated scene handoff. Photoreal generation now uses the current render-camera position when available, not just the last saved bookmark. “Generate 4 styles” fires parallel /photoreal requests with different prompt modifiers ([stretch.md Track 2 v1.3] Photoreal style exploration).</p></section>',
+          '<section class="render-section">' + renderMaterialLibrary() + '</section>',
           '<section class="render-section"><div class="badge">Photoreal gallery</div>' + gallery + '</section>',
           '<section class="render-section">' + renderBomStrip(scene) + '</section>',
           '<div style="margin-top:12px"><pre>' + escapeHtml(JSON.stringify(details, null, 2)) + '</pre></div>'
         ].join('');
+      }
+
+      // Showcase Track C — BOM catalog browser.
+      // Renders CURATED_ASSET_MANIFEST as a grid of swatch cards grouped by
+      // object class. Each card shows the material color as a swatch dot,
+      // the class + style tags, and clicks populate the chat prompt so the
+      // planner can act on it ("replace the chair with modern walnut").
+      const MATERIAL_SWATCH_COLORS = {
+        oatmeal: "#e6ddc8",
+        walnut: "#5a3924",
+        oak: "#b58a5e",
+        ash: "#d5c4a1",
+        charcoal: "#3a3d42",
+        sage: "#93a480",
+        terracotta: "#c97b56",
+        cream: "#f2ead6",
+        navy: "#2a3858",
+        black: "#1f2024",
+        white: "#f6f6f2",
+        linen: "#eadfce",
+        slate: "#626a75",
+        brass: "#b08947",
+        "warm-gray": "#8a8680",
+      };
+      function swatchColorFor(material) {
+        if (!material) return "var(--color-surface-raised-high)";
+        const key = String(material.color || "").toLowerCase().trim();
+        if (MATERIAL_SWATCH_COLORS[key]) return MATERIAL_SWATCH_COLORS[key];
+        // Fallback: hash the color name to a stable pastel so unknown tags still
+        // render something distinct rather than collapsing to one generic swatch.
+        let hash = 0;
+        for (let i = 0; i < key.length; i += 1) {
+          hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+        }
+        const hue = Math.abs(hash) % 360;
+        return "hsl(" + hue + " 30% 55%)";
+      }
+
+      function renderMaterialLibrary() {
+        const manifest = bootstrap.curatedAssetManifest || null;
+        const entries = manifest && Array.isArray(manifest.assets) ? manifest.assets : [];
+        if (entries.length === 0) {
+          return '<div class="badge">Material library</div>'
+            + '<p class="muted">Curated asset manifest unavailable.</p>';
+        }
+        // Group by object_class so the catalog reads like a product directory
+        // (beds with beds, chairs with chairs), not a flat dump.
+        const groups = new Map();
+        for (const entry of entries) {
+          const key = entry.object_class || "other";
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(entry);
+        }
+        const groupOrder = [...groups.keys()].sort();
+        const groupedHtml = groupOrder.map((cls) => {
+          const items = groups.get(cls).map((entry) => {
+            const swatch = swatchColorFor(entry.material_state);
+            const materialLabel = entry.material_state
+              ? [entry.material_state.color, entry.material_state.finish].filter(Boolean).join(" · ")
+              : "";
+            const tags = Array.isArray(entry.style_tags) && entry.style_tags.length > 0
+              ? entry.style_tags.slice(0, 3).map((t) => '<span class="material-card__tag">' + escapeHtml(t) + '</span>').join('')
+              : '';
+            const promptHint = 'Replace with ' + (entry.style_tags?.[0] || 'modern') + ' ' + cls.replace(/_/g, ' ');
+            return '<button type="button" class="material-card"'
+              + ' data-material-asset="' + escapeHtml(entry.asset_id) + '"'
+              + ' data-material-class="' + escapeHtml(cls) + '"'
+              + ' data-material-prompt="' + escapeHtml(promptHint) + '"'
+              + ' aria-label="Use ' + escapeHtml(entry.asset_id) + ' in chat prompt">'
+              + '<div class="material-card__swatch" style="background:' + swatch + '"></div>'
+              + '<div class="material-card__body">'
+              + '<strong>' + escapeHtml(cls.replace(/_/g, ' ')) + '</strong>'
+              + (materialLabel ? '<span class="material-card__material muted">' + escapeHtml(materialLabel) + '</span>' : '')
+              + (tags ? '<div class="material-card__tags">' + tags + '</div>' : '')
+              + '</div>'
+              + '</button>';
+          }).join('');
+          return '<div class="material-group">'
+            + '<div class="material-group__heading">' + escapeHtml(cls.replace(/_/g, ' ')) + '</div>'
+            + '<div class="material-card-grid">' + items + '</div>'
+            + '</div>';
+        }).join('');
+        const manifestVersion = manifest.manifest_version || 'unknown';
+        return '<div class="material-library__heading">'
+          + '<div class="badge">Material library</div>'
+          + '<span class="muted material-library__version">v' + escapeHtml(manifestVersion) + ' · ' + entries.length + ' assets</span>'
+          + '</div>'
+          + '<p class="muted">Click any material to stage a replace prompt. The planner resolves the asset and emits a validated edit.</p>'
+          + groupedHtml;
       }
 
       function findSelectedEntity(scene, selectionId) {
@@ -2347,11 +3901,113 @@ function renderEditorShellHtml(input: {
         return '<p class="muted">' + escapeHtml(message) + '</p>';
       }
 
+      // Showcase Track C — photoreal gallery rendering.
+      // Groups entries by render_group_id so multi-view renders of the same
+      // edit show up as a small cluster (3 viewpoints of "paint north wall
+      // sage") instead of three disconnected tiles. Entries without a group
+      // id render as standalone tiles. Newest first for both groups and
+      // standalones.
+      function renderPhotorealGallery(scene) {
+        const entries = [...scene.photoreal_gallery].reverse();
+        const groups = new Map();
+        const standalones = [];
+        const ordered = [];
+        for (const entry of entries) {
+          const key = entry.render_group_id || null;
+          if (key) {
+            if (!groups.has(key)) {
+              const bucket = { key, entries: [] };
+              groups.set(key, bucket);
+              ordered.push({ kind: "group", bucket });
+            }
+            groups.get(key).entries.push(entry);
+          } else {
+            const item = { kind: "solo", entry };
+            standalones.push(item);
+            ordered.push(item);
+          }
+        }
+        const blocks = ordered.map((item) => {
+          if (item.kind === "group") {
+            const { key, entries } = item.bucket;
+            const cards = entries.map((entry) => renderGalleryEntry(entry, scene)).join("");
+            return '<div class="render-group">'
+              + '<div class="render-group__heading">'
+              + '<div class="badge warm">Multi-view · ' + entries.length + '</div>'
+              + '<span class="muted render-group__key">' + escapeHtml(key) + '</span>'
+              + '</div>'
+              + '<div class="gallery-grid gallery-grid--compact">' + cards + '</div>'
+              + '</div>';
+          }
+          return '<div class="gallery-grid">' + renderGalleryEntry(item.entry, scene) + '</div>';
+        });
+        return blocks.join('');
+      }
+
+      // Showcase Track C toast system.
+      // Replaces the persistent #status bar with a stacked, auto-dismissing
+      // queue anchored to the viewport. Success / info / error levels render
+      // with the same accent tokens as the badges so the visual language stays
+      // consistent across the app.
+      const TOAST_DEFAULT_DURATION_MS = 4200;
+      const TOAST_ERROR_DURATION_MS = 6500;
+
       function setStatus(message, isError = false) {
-        statusNode.textContent = message;
-        statusNode.style.borderColor = isError ? '#7f1d1d' : '#1f2937';
-        statusNode.style.color = isError ? '#fecaca' : '#cbd5e1';
-        statusNode.style.background = isError ? 'rgba(127, 29, 29, 0.35)' : '#0f172a';
+        showToast({ message, level: isError ? "error" : "info" });
+      }
+
+      function showToast(options) {
+        if (!toastRegion) return;
+        const level = options?.level === "error" ? "error"
+          : options?.level === "success" ? "success"
+          : "info";
+        const message = String(options?.message ?? "");
+        if (!message) return;
+        const durationMs = typeof options?.duration_ms === "number" && options.duration_ms > 0
+          ? options.duration_ms
+          : level === "error" ? TOAST_ERROR_DURATION_MS : TOAST_DEFAULT_DURATION_MS;
+        const toast = document.createElement("div");
+        toast.className = "toast toast--" + level;
+        toast.setAttribute("role", level === "error" ? "alert" : "status");
+        const dot = document.createElement("span");
+        dot.className = "toast__dot";
+        const body = document.createElement("div");
+        body.className = "toast__body";
+        body.textContent = message;
+        const close = document.createElement("button");
+        close.type = "button";
+        close.className = "toast__close";
+        close.setAttribute("aria-label", "Dismiss notification");
+        close.textContent = "×";
+        toast.appendChild(dot);
+        toast.appendChild(body);
+        if (options?.action && typeof options.action.onClick === "function") {
+          const actionBtn = document.createElement("button");
+          actionBtn.type = "button";
+          actionBtn.className = "toast__action";
+          actionBtn.textContent = String(options.action.label || "Open");
+          actionBtn.addEventListener("click", () => {
+            try { options.action.onClick(); } catch (err) { console.error("toast action failed", err); }
+            dismiss();
+          });
+          toast.appendChild(actionBtn);
+        }
+        toast.appendChild(close);
+        toastRegion.appendChild(toast);
+        requestAnimationFrame(() => toast.classList.add("toast--visible"));
+        const dismiss = () => {
+          if (toast.classList.contains("toast--dismissing")) return;
+          toast.classList.add("toast--dismissing");
+          toast.addEventListener("transitionend", () => {
+            if (toast.parentNode) toast.parentNode.removeChild(toast);
+          }, { once: true });
+          // Safety net in case transitionend doesn't fire (reduced-motion, display:none).
+          setTimeout(() => {
+            if (toast.parentNode) toast.parentNode.removeChild(toast);
+          }, 600);
+        };
+        close.addEventListener("click", dismiss);
+        setTimeout(dismiss, durationMs);
       }
 
       function escapeHtml(value) {
@@ -2362,6 +4018,334 @@ function renderEditorShellHtml(input: {
           .replaceAll('"', '&quot;')
           .replaceAll("'", '&#39;');
       }
+
+      // =================================================================
+      // New splat-first shell — chrome wiring.
+      //
+      // The old 3-column layout rendered every pane side-by-side. The new
+      // shell puts the scan canvas front-and-center with collapsible
+      // drawers for objects/captured-views (left) and selection/chat
+      // (right). The layout pane and render pane move into on-demand
+      // overlays opened from top-bar buttons.
+      //
+      // This block:
+      //   1. Mirrors scene state into the new shell chrome (topbar label,
+      //      drawer contents, status bar) after every renderScene() call.
+      //   2. Wires up sheet/overlay open + close handlers.
+      //   3. Hooks the view-mode pill and empty-state CTA.
+      //
+      // All original pane rendering stays — the layout/render panes are
+      // now inside overlays, so ensureLayoutPaneSkeleton / ensureRender-
+      // PaneSkeleton still work unchanged.
+      // =================================================================
+
+      (function initAppShell() {
+        const shellOnly = document.body.classList.contains("app-shell");
+        if (!shellOnly) return;
+
+        const sceneLabelEl = document.getElementById("topbar-scene-label");
+        const drawerObjectsEl = document.getElementById("drawer-objects");
+        const drawerViewsEl = document.getElementById("drawer-views");
+        const statusSceneIdEl = document.getElementById("statusbar-sceneid");
+        const statusCountsEl = document.getElementById("statusbar-counts");
+        const statusVersionEl = document.getElementById("statusbar-version");
+        const stageEmptyEl = document.getElementById("stage-empty");
+        const settingsSheet = document.getElementById("settings-sheet");
+        const layoutOverlay = document.getElementById("layout-overlay");
+        const renderOverlay = document.getElementById("render-overlay");
+        const viewmodePill = document.getElementById("viewmode-pill");
+        const toggleLayoutBtn = document.getElementById("topbar-toggle-layout");
+        const toggleRenderBtn = document.getElementById("topbar-toggle-render");
+        const toggleSettingsBtn = document.getElementById("topbar-toggle-settings");
+        const stageEmptyLoadBtn = document.getElementById("stage-empty-load");
+
+        function setOverlay(el, open) {
+          if (!el) return;
+          el.setAttribute("aria-hidden", open ? "false" : "true");
+        }
+        function toggleOverlay(el) {
+          if (!el) return;
+          const isOpen = el.getAttribute("aria-hidden") === "false";
+          setOverlay(el, !isOpen);
+        }
+
+        toggleSettingsBtn?.addEventListener("click", () => toggleOverlay(settingsSheet));
+        toggleLayoutBtn?.addEventListener("click", () => {
+          toggleOverlay(layoutOverlay);
+          toggleLayoutBtn.classList.toggle("is-active", layoutOverlay.getAttribute("aria-hidden") === "false");
+        });
+        toggleRenderBtn?.addEventListener("click", () => {
+          toggleOverlay(renderOverlay);
+          toggleRenderBtn.classList.toggle("is-active", renderOverlay.getAttribute("aria-hidden") === "false");
+        });
+
+        const graphToggleBtn = document.getElementById("graph-toggle");
+        graphToggleBtn?.addEventListener("click", () => {
+          if (typeof window.toggleGraphOverlay === 'function') {
+            window.toggleGraphOverlay();
+          }
+        });
+
+        document.addEventListener("click", (event) => {
+          const target = event.target;
+          if (!(target instanceof Element)) return;
+          if (target.closest("[data-sheet-dismiss]")) {
+            setOverlay(settingsSheet, false);
+          }
+          if (target.closest("[data-overlay-dismiss]")) {
+            const overlay = target.closest(".overlay");
+            setOverlay(overlay, false);
+            if (overlay === layoutOverlay) toggleLayoutBtn?.classList.remove("is-active");
+            if (overlay === renderOverlay) toggleRenderBtn?.classList.remove("is-active");
+          }
+        });
+
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") {
+            setOverlay(settingsSheet, false);
+            setOverlay(layoutOverlay, false);
+            setOverlay(renderOverlay, false);
+            toggleLayoutBtn?.classList.remove("is-active");
+            toggleRenderBtn?.classList.remove("is-active");
+          } else if ((event.key === "l" || event.key === "L") && !isTypingTarget(event.target)) {
+            event.preventDefault();
+            toggleLayoutBtn?.click();
+          } else if ((event.key === "r" || event.key === "R") && !isTypingTarget(event.target)) {
+            event.preventDefault();
+            toggleRenderBtn?.click();
+          } else if ((event.key === "g" || event.key === "G") && !isTypingTarget(event.target)) {
+            event.preventDefault();
+            if (typeof window.toggleGraphOverlay === 'function') window.toggleGraphOverlay();
+          }
+        });
+
+        function isTypingTarget(node) {
+          if (!(node instanceof Element)) return false;
+          const tag = node.tagName;
+          return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || node.isContentEditable;
+        }
+
+        // Drawer-object clicks need to route through the existing selection
+        // pipeline. The layout pane has a delegated click listener on
+        // button[data-entity-id] that calls setSelection() (itself scoped
+        // inside the earlier IIFE and not directly reachable from here).
+        // Cloning buttons into the drawer loses the listener, so we forward
+        // each drawer click to the live layout-info-mount button with the
+        // matching data-entity-id — that button IS inside layout-pane and
+        // triggers the real handler.
+        const drawerObjectsEl2 = document.getElementById("drawer-objects");
+        drawerObjectsEl2?.addEventListener("click", (event) => {
+          const target = event.target;
+          if (!(target instanceof Element)) return;
+          const button = target.closest("button[data-entity-id]");
+          if (!button) return;
+          const entityId = button.getAttribute("data-entity-id");
+          if (!entityId) return;
+          event.preventDefault();
+          const liveButton = document.querySelector(
+            "#layout-info-mount button[data-entity-id='" + entityId.replace(/'/g, "\\'") + "']",
+          );
+          if (liveButton instanceof HTMLElement) {
+            liveButton.click();
+          }
+        });
+
+        // Empty-state CTA → auto-select ARKitScenes fixture and load it.
+        stageEmptyLoadBtn?.addEventListener("click", () => {
+          const select = document.getElementById("fixture-select");
+          if (select) {
+            const option = Array.from(select.options).find((o) => o.value.includes("arkitscenes"));
+            if (option) select.value = option.value;
+          }
+          document.getElementById("fixture-button")?.click();
+        });
+
+        // View-mode pill: active-state feedback + per-mode visibility on the scan scene.
+        if (viewmodePill) {
+          viewmodePill.addEventListener("click", (event) => {
+            const btn = event.target?.closest?.(".viewmode-pill__btn");
+            if (!btn) return;
+            viewmodePill.querySelectorAll(".viewmode-pill__btn").forEach((b) => {
+              b.classList.remove("is-active");
+              b.setAttribute("aria-selected", "false");
+            });
+            btn.classList.add("is-active");
+            btn.setAttribute("aria-selected", "true");
+            applyViewmode(btn.dataset.viewmode);
+          });
+        }
+
+        function applyViewmode(mode) {
+          const scan = window.__roomviewDebug?.scan;
+          if (!scan) return;
+          let splatGroup = null;
+          let meshesRoot = null;
+          let shellRoot = null;
+          scan.scene.traverse((obj) => {
+            if (obj.constructor?.name === "DropInViewer") splatGroup = obj;
+            if (obj.userData?.scan_mesh) meshesRoot = meshesRoot || obj.parent;
+          });
+          for (const child of scan.scene.children) {
+            if (child.type === "Group" && child.children.length === 1 && child.children[0]?.type === "Group") {
+              shellRoot = child; // room shell group (walls/floor) — one-child wrapper
+            }
+          }
+          const showSplat = mode === "splat" || mode === "combined";
+          const showMeshes = mode === "meshes" || mode === "combined";
+          const showShell = true; // room shell always visible for spatial context
+          if (splatGroup) splatGroup.visible = showSplat;
+          if (meshesRoot) meshesRoot.visible = showMeshes;
+          if (shellRoot) shellRoot.visible = showShell;
+          // Hide the shell floor whenever the splat is visible — otherwise
+          // the opaque floor mesh renders on top of the thin splat-floor
+          // layer and washes out its color where object meshes sit on top.
+          // Walls and ceiling stay for spatial context; the splat on them
+          // overlays naturally since walls don't double-bake with object
+          // meshes the way the floor does.
+          if (shellRoot) {
+            shellRoot.traverse((node) => {
+              if (node.userData?.kind === "floor") node.visible = showShell && !showSplat;
+            });
+          }
+          // Wireframe mode: hide both splat and meshes; shell stays.
+          if (mode === "wireframe") {
+            if (splatGroup) splatGroup.visible = false;
+            if (meshesRoot) meshesRoot.visible = false;
+          }
+        }
+
+        // Renderers below mirror canonical scene state into shell chrome.
+        // Wrap the existing renderScene / renderEmptyState so every update
+        // path refreshes the shell too.
+
+        const originalRenderScene = window.renderScene || null;
+        const originalRenderEmpty = window.renderEmptyState || null;
+        // Because renderScene / renderEmptyState are lexically scoped inside
+        // the earlier IIFE they are not on window; instead we observe state
+        // changes via a MutationObserver on the panes' innerHTML, which is
+        // already how pane skeletons get rebuilt on every renderScene.
+        const panes = [
+          document.getElementById("scan-pane"),
+          document.getElementById("layout-pane"),
+          document.getElementById("render-pane"),
+        ].filter(Boolean);
+
+        const observer = new MutationObserver(() => syncShellChrome());
+        for (const pane of panes) {
+          observer.observe(pane, { childList: true, subtree: true });
+        }
+
+        function syncShellChrome() {
+          const sceneInfoMount = document.getElementById("scan-info-mount");
+          const layoutInfoMount = document.getElementById("layout-info-mount");
+
+          // Topbar scene label — walk the <dl> inside scan-info-mount looking for
+          // the "Scene" term and pull its <dd>. The scene_id is the most stable
+          // identifier to surface here.
+          let sceneIdText = "";
+          const dl = sceneInfoMount?.querySelector("dl");
+          if (dl) {
+            for (const row of dl.querySelectorAll("div")) {
+              const dt = row.querySelector("dt");
+              const dd = row.querySelector("dd");
+              if (dt && dd && dt.textContent?.trim() === "Scene") {
+                sceneIdText = dd.textContent?.trim() || "";
+                break;
+              }
+            }
+          }
+          if (sceneLabelEl) {
+            sceneLabelEl.textContent = sceneIdText || "No scene loaded";
+          }
+          if (statusSceneIdEl) {
+            statusSceneIdEl.textContent = sceneIdText || "—";
+          }
+
+          // Mirror "Captured views" into the left drawer. The real structure is
+          // a .captured-views-toolbar + .viewpoint-grid emitted by
+          // renderCapturedViewsStrip — clone both.
+          if (drawerViewsEl) {
+            const toolbar = sceneInfoMount?.querySelector(".captured-views-toolbar");
+            const grid = sceneInfoMount?.querySelector(".viewpoint-grid");
+            if (grid) {
+              drawerViewsEl.innerHTML = "";
+              if (toolbar) drawerViewsEl.appendChild(toolbar.cloneNode(true));
+              drawerViewsEl.appendChild(grid.cloneNode(true));
+            } else {
+              drawerViewsEl.innerHTML = '<p class="drawer__empty">No captured frames on this scene.</p>';
+            }
+          }
+
+          // Mirror the Objects list. renderLayoutPaneInfo emits a section
+          // headed by a badge reading "Objects" followed by a .list of
+          // buttons (each a selectable object).
+          if (drawerObjectsEl) {
+            let objectsSection = null;
+            for (const section of layoutInfoMount?.querySelectorAll("section") ?? []) {
+              const badge = section.querySelector(".badge");
+              if (badge && badge.textContent?.trim() === "Objects") {
+                objectsSection = section.querySelector(".list");
+                break;
+              }
+            }
+            if (objectsSection) {
+              drawerObjectsEl.innerHTML = "";
+              drawerObjectsEl.appendChild(objectsSection.cloneNode(true));
+            } else if (layoutInfoMount && layoutInfoMount.textContent.trim().length > 0) {
+              drawerObjectsEl.innerHTML = '<p class="drawer__empty">Open the 2D layout overlay for the full object list.</p>';
+            } else {
+              drawerObjectsEl.innerHTML = '<p class="drawer__empty">No scene loaded yet.</p>';
+            }
+          }
+
+          // Highlight the currently-selected object's card in the drawer.
+          // The selection id lives on the real layout-pane button that the
+          // existing delegated click handler manipulates (via data-entity-id
+          // + aria-pressed). Mirror that state onto our cloned buttons.
+          if (drawerObjectsEl && layoutInfoMount) {
+            const liveSelected = layoutInfoMount.querySelector("button[data-entity-id][aria-pressed='true']");
+            const selectedId = liveSelected?.getAttribute("data-entity-id") ?? null;
+            for (const btn of drawerObjectsEl.querySelectorAll("button[data-entity-id]")) {
+              const id = btn.getAttribute("data-entity-id");
+              btn.classList.toggle("is-selected", id === selectedId);
+            }
+          }
+
+          // Status bar counts — read gaussian count from the debug hook if
+          // a splat is live, plus mesh vertex counts.
+          const scan = window.__roomviewDebug?.scan;
+          if (statusCountsEl && scan) {
+            let meshCount = 0;
+            let splatGaussians = 0;
+            scan.scene.traverse((obj) => {
+              if (obj.userData?.scan_mesh) meshCount += 1;
+            });
+            const meta = typeof scan.api?.getSplatMeta === "function" ? scan.api.getSplatMeta() : null;
+            if (meta?.gaussian_count) splatGaussians = meta.gaussian_count;
+            const parts = [];
+            if (splatGaussians) parts.push((splatGaussians / 1000).toFixed(0) + "k gaussians");
+            if (meshCount) parts.push(meshCount + " meshes");
+            statusCountsEl.textContent = parts.join(" · ") || "—";
+          }
+
+          // Scene version — from scan info mount.
+          const versionField = sceneInfoMount?.textContent?.match(/v\d+/);
+          if (statusVersionEl) {
+            statusVersionEl.textContent = versionField ? versionField[0] : "—";
+          }
+
+          // Empty state: hide once the scan viewer has mounted. This stays
+          // hidden across pane re-renders because ensureScanPaneSkeleton
+          // keeps #scan-viewer-mount around for the lifetime of the scene.
+          if (stageEmptyEl) {
+            const hasScene = !!document.getElementById("scan-viewer-mount");
+            stageEmptyEl.classList.toggle("is-hidden", hasScene);
+          }
+        }
+
+        // Initial sync so the empty state is visible on first paint.
+        syncShellChrome();
+      })();
     </script>
   </body>
 </html>`;
@@ -2375,6 +4359,16 @@ function sendJson(response: ServerResponse, statusCode: number, payload: unknown
   response.statusCode = statusCode;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   response.end(JSON.stringify(payload));
+}
+
+async function readJsonRequestBody(request: Parameters<Parameters<typeof createServer>[0]>[0]): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
+  }
+  const raw = Buffer.concat(chunks).toString("utf8");
+  if (!raw) return {};
+  try { return JSON.parse(raw); } catch { return {}; }
 }
 
 function sendHtml(response: ServerResponse, html: string): void {
@@ -2404,7 +4398,36 @@ function isMainModule(): boolean {
   return process.argv[1] ? import.meta.url === pathToFileURL(process.argv[1]).href : false;
 }
 
+function loadDotEnv(): void {
+  // Lightweight .env loader so the GraphAgent can pick up
+  // OPENROUTER_API_KEY when the web server stands alone (no API server).
+  // Mirrors apps/api/src/server.ts's loader — same format, same precedence
+  // rules (existing env wins over file values).
+  const candidates = [
+    resolve(process.cwd(), ".env"),
+    resolve(repoRoot, ".env"),
+  ];
+  for (const path of candidates) {
+    try {
+      const raw = readFileSync(path, "utf8");
+      for (const line of raw.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const separatorIndex = trimmed.indexOf("=");
+        if (separatorIndex <= 0) continue;
+        const key = trimmed.slice(0, separatorIndex).trim();
+        const value = trimmed.slice(separatorIndex + 1).trim().replace(/^['"]|['"]$/g, "");
+        if (!(key in process.env)) process.env[key] = value;
+      }
+      return;
+    } catch {
+      // file missing — try next candidate
+    }
+  }
+}
+
 if (isMainModule()) {
+  loadDotEnv();
   const port = Number(process.env.PORT ?? DEFAULT_WEB_EDITOR_PORT);
   const server = createRoomViewEditorServer({
     default_api_base_url: process.env.ROOMVIEW_API_BASE_URL,

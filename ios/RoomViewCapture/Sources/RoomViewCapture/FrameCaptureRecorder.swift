@@ -34,7 +34,17 @@ public final class FrameCaptureRecorder {
     private let ciContext: CIContext
     private var lastSampledAt: Date?
     private var samples: [Sample] = []
+    /// Monotonically-increasing counter for frame IDs. Does NOT reset when
+    /// the ring buffer drops oldest samples — so every recorded frame gets
+    /// a unique frame_id even after the buffer wraps. Without this, all
+    /// post-cap frames would share the same ID (samples.count + 1), and
+    /// the server's duplicate-frame-id dedup would drop all but the first.
+    private var nextFrameIndex: Int = 0
     public private(set) var isActive: Bool = false
+
+    /// Current number of samples buffered — useful for UI progress counters.
+    /// Cheap to read; doesn't allocate like `finalize(targetFrameCount:)` does.
+    public var bufferedCount: Int { samples.count }
 
     public init(minimumInterval: TimeInterval = 0.5, maxSampleCount: Int = 32, jpegQuality: CGFloat = 0.85) {
         self.minimumInterval = minimumInterval
@@ -46,6 +56,7 @@ public final class FrameCaptureRecorder {
     public func start() {
         lastSampledAt = nil
         samples.removeAll(keepingCapacity: true)
+        nextFrameIndex = 0
         isActive = true
     }
 
@@ -68,8 +79,9 @@ public final class FrameCaptureRecorder {
         let depthExtract = Self.extractFloat32(pixelBuffer: depthData.depthMap)
         let confidenceExtract = depthData.confidenceMap.map { Self.extractUInt8(pixelBuffer: $0) }
 
+        nextFrameIndex += 1
         let sample = Sample(
-            frameId: String(format: "frame_%06d", samples.count + 1),
+            frameId: String(format: "frame_%06d", nextFrameIndex),
             capturedAt: now,
             cameraTransform: arFrame.camera.transform,
             intrinsics: arFrame.camera.intrinsics,

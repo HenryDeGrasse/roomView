@@ -10,6 +10,7 @@ apps/api/data/
 .claude/
 .pi/duet/runs/
 .pi/todos/
+.pi/feedback.jsonl
 experiments/phase0/.venv/
 experiments/phase0/results/*
 !experiments/phase0/results/README.md
@@ -20,3 +21,21 @@ ios/**/DerivedData/
 ios/**/*.xcworkspace/xcuserdata/
 ios/**/*.xcodeproj/xcuserdata/
 ios/**/.swiftpm/
+
+# Real iOS-capture fixtures produced by POST /captures/:id/finalize.
+# These are ~50-200MB each (frames + splat + textures) — too large for
+# normal git. Commit a specific one with `git add -f` if you want to
+# share a reference scan.
+fixtures/roomplan/capture-*/
+
+# Brush (Rust + WebGPU 3DGS trainer) binary — 150MB, installed per-dev
+# from https://github.com/ArthurBrussee/brush/releases. Path hard-coded
+# in scripts/brush-train.py as tools/brush/brush-app-aarch64-apple-darwin.
+tools/brush/
+
+# Dev-environment node lockfile — `npm install` regenerates it. Avoids
+# merge conflicts when teammates install on different Node versions.
+package-lock.json
+
+__pycache__/
+*.pyc

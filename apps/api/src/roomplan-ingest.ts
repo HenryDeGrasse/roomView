@@ -9,10 +9,14 @@ import type {
   CaptureFrameInput,
   CaptureFramesRequest,
   CaptureFramesResponse,
+  CapturePipelineStage,
   ConstraintSpec,
   CreateBookmarkRequest,
   CreateBookmarkResponse,
   DerivedState,
+  FinalizeCaptureRequest,
+  FinalizeCaptureResponse,
+  FinalizeCaptureResult,
   EditableObjectClass,
   FixedElement,
   GeneratePhotorealRequest,
@@ -79,6 +83,11 @@ import {
   SceneMutationError,
   simulateScenePreview,
 } from "./mutation-engine";
+import {
+  findHardObjectOverlaps,
+  footprintForObject,
+  pointInPolygon,
+} from "./overlap-policy";
 import { OpenRouterPlanner, type AiPlannerResult, type OpenRouterPlannerOptions } from "./ai-planner";
 import { planDeterministicTurn } from "./planner";
 import {
@@ -91,6 +100,8 @@ import { ObservabilityRecorder, type ObservabilitySnapshot } from "./observabili
 import {
   FileSystemRoomPlanCaptureRecordStore,
 } from "./roomplan-store";
+import { promoteSceneToFixture } from "./fixture-promotion";
+import { enqueueBrushTrainJob, enqueueMeshJob, runCapturePipeline, type CapturePipelineResult, type CapturePipelineInputs } from "./capture-pipeline";
 import type {
   PersistedPreviewRecord,
   PersistedRoomPlanCaptureRecord,
@@ -414,6 +425,15 @@ export interface RoomPlanCaptureServiceOptions {
   planner_site_url?: string;
   planner_app_name?: string;
   planner_timeout_ms?: number;
+  /** Absolute path to the repo root — used by the finalize flow to write fixtures/roomplan/<id>/. */
+  fixture_repo_root?: string;
+  /** Base URL of the editor web server, used to build fixture_url / scene_url in FinalizeCaptureResult. */
+  fixture_web_base_url?: string;
+  /**
+   * Runner for the Python capture pipeline. Defaults to {@link runCapturePipeline}
+   * (spawns `uv run scripts/*.py`). Tests can inject a stub.
+   */
+  capture_pipeline_runner?: (inputs: CapturePipelineInputs) => Promise<CapturePipelineResult>;
 }
 
 interface StoredSceneRecord {
@@ -430,6 +450,10 @@ interface StoredSceneRecord {
   handoff_token: string;
   video_upload_token_record: VideoUploadTokenRecord | null;
   video_upload_token: string | null;
+  /** Raw RoomPlan capture request — needed to write capture-request.json when finalizing to a fixture. */
+  original_capture_request: RoomPlanCaptureRequest;
+  /** Finalize results by job_id so /jobs/:job_id can return the fixture url. */
+  capture_pipeline_results: Map<string, FinalizeCaptureResult>;
 }
 
 interface ObjectBuildInput {
@@ -736,6 +760,9 @@ export class RoomPlanCaptureService {
   private readonly videoTokenHashToSceneId = new Map<string, string>();
   private readonly jobsById = new Map<string, JobRecord>();
   private readonly inflightPhotorealJobs = new Set<string>();
+  private readonly fixtureRepoRoot: string | null;
+  private readonly fixtureWebBaseUrl: string | null;
+  private readonly fixturePipelineRunner: ((inputs: CapturePipelineInputs) => Promise<CapturePipelineResult>) | null;
 
   public constructor(options: RoomPlanCaptureServiceOptions = {}) {
     this.handoffBaseUrl = options.handoff_base_url ?? "https://roomview.local/h";
@@ -752,6 +779,10 @@ export class RoomPlanCaptureService {
     this.openRouterPlanner = this.plannerMode === "openrouter" && options.openrouter_api_key
       ? new OpenRouterPlanner(buildOpenRouterPlannerOptions(options))
       : null;
+    this.fixtureRepoRoot = options.fixture_repo_root ?? null;
+    this.fixtureWebBaseUrl = options.fixture_web_base_url ?? null;
+    this.fixturePipelineRunner =
+      options.capture_pipeline_runner ?? (this.fixtureRepoRoot ? runCapturePipeline : null);
 
     for (const record of this.durableStore?.loadAll() ?? []) {
       this.hydrateStoredScene(record);
@@ -816,6 +847,8 @@ export class RoomPlanCaptureService {
           handoff_token: handoffToken,
           video_upload_token_record: persistedRecords.video_upload_token_record,
           video_upload_token: videoToken,
+          original_capture_request: structuredClone(request),
+          capture_pipeline_results: new Map(),
         };
 
         this.scenesById.set(ingested.scene_id, stored);
@@ -1644,6 +1677,254 @@ export class RoomPlanCaptureService {
     );
   }
 
+  /**
+   * Finalize a capture: promote frames + scene into a persistent fixture dir,
+   * spawn the Python pipeline (splat-generate → bake-wall-textures), and
+   * return a JobRecord the client can poll. The pipeline runs asynchronously;
+   * `GET /jobs/:job_id` reports progress and the final FinalizeCaptureResult.
+   */
+  public finalizeCapture(scene_id: string, request: FinalizeCaptureRequest): FinalizeCaptureResponse {
+    return this.observeSync(
+      "capture.finalize",
+      {
+        scene_id,
+        idempotency_key: request.idempotency_key,
+        room_label: request.room_label ?? null,
+      },
+      () => {
+        if (!this.fixtureRepoRoot || !this.fixturePipelineRunner) {
+          throw new RoomPlanCaptureError(
+            "INVALID_CAPTURE",
+            "Finalize is not configured on this server: missing fixture repo root or pipeline runner."
+          );
+        }
+        const stored = this.mustGetStoredScene(scene_id);
+        if (!this.durableStore) {
+          throw new RoomPlanCaptureError(
+            "INVALID_CAPTURE",
+            "Finalize requires a durable storage directory to read captured-frame artifacts."
+          );
+        }
+        if (stored.scene.captured_frames.length === 0) {
+          throw new RoomPlanCaptureError(
+            "CAPTURE_NO_FRAMES",
+            "Upload at least one captured frame before finalizing."
+          );
+        }
+
+        const tokenHash = hashOpaqueToken(this.tokenSecret, request.video_upload_token);
+        const tokenSceneId = this.videoTokenHashToSceneId.get(tokenHash);
+        if (!tokenSceneId || tokenSceneId !== scene_id || !stored.video_upload_token_record) {
+          throw new RoomPlanCaptureError("VIDEO_UPLOAD_TOKEN_INVALID", "The capture upload token is invalid.");
+        }
+        if (stored.video_upload_token_record.token_hash !== tokenHash) {
+          throw new RoomPlanCaptureError("VIDEO_UPLOAD_TOKEN_INVALID", "The capture upload token is no longer valid.");
+        }
+        const now = this.nowIso();
+        if (isExpired(stored.video_upload_token_record.expires_at, now)) {
+          stored.video_upload_token_record.status = "expired";
+          throw new RoomPlanCaptureError("VIDEO_UPLOAD_TOKEN_EXPIRED", "The capture upload token has expired.");
+        }
+
+        const idempotentRequest = normalizeFinalizeIdempotencyRequest(request);
+        const existing = this.getIdempotentResponse<FinalizeCaptureResponse>(
+          stored,
+          `finalize:${scene_id}`,
+          request.idempotency_key,
+          idempotentRequest
+        );
+        if (existing) {
+          return existing;
+        }
+
+        // Short-circuit: if the scene's shell already has surfaces with
+        // surface_frame populated (i.e. RoomPlan supplied them), skip the
+        // scan-to-shell fitter in the pipeline. This is almost always true
+        // for iOS captures and is the "trust Apple's walls" path.
+        const roomplanShell = sceneHasRoomPlanShell(stored.scene);
+
+        const promotion = promoteSceneToFixture({
+          scene: stored.scene,
+          capture_request: stored.original_capture_request,
+          read_artifact_bytes: (sceneId, assetId) => {
+            const artifact = this.durableStore?.readPhotorealArtifact(sceneId, assetId);
+            return artifact ? artifact.bytes : null;
+          },
+          room_label: request.room_label ?? null,
+          repo_root: this.fixtureRepoRoot,
+          now: new Date(now),
+        });
+
+        const job_id = makeStableId("job", `${scene_id}:finalize:${request.idempotency_key}:${now}`);
+        const job: JobRecord = {
+          job_id,
+          scene_id,
+          job_kind: "capture_pipeline",
+          status: "queued",
+          source_scene_version: stored.scene.head.current_scene_version,
+          scene_snapshot_id: stored.scene.snapshot.snapshot_id,
+          created_at: now,
+          updated_at: now,
+          output_asset_id: null,
+          error_code: null,
+          stage: "promoting",
+          progress_message: "Copying frames into the fixture store…",
+        };
+        this.jobsById.set(job_id, job);
+
+        const webBaseUrl = this.fixtureWebBaseUrl ?? "http://127.0.0.1:4288";
+        const result: FinalizeCaptureResult = {
+          fixture_id: promotion.fixture_id,
+          // Editor reads `fixture_id` (not `fixture`) from URL params per
+          // apps/web/src/server.ts bootstrap code.
+          fixture_url: `${webBaseUrl}/?fixture_id=${encodeURIComponent(promotion.fixture_id)}`,
+          scene_url: `${webBaseUrl}/?handoff_token=${encodeURIComponent(stored.handoff_token)}`,
+        };
+        stored.capture_pipeline_results.set(job_id, result);
+
+        const response: FinalizeCaptureResponse = {
+          job: structuredClone(job),
+          result: structuredClone(result),
+        };
+        this.recordIdempotentResponse(
+          stored,
+          `finalize:${scene_id}`,
+          request.idempotency_key,
+          idempotentRequest,
+          200,
+          response as unknown as Record<string, unknown>,
+          now
+        );
+        this.persistStoredScene(stored);
+
+        // Fire-and-forget the pipeline. Errors are surfaced via JobRecord.
+        // Intentionally not awaited — the endpoint returns immediately so
+        // the iOS app can open the editor with a "baking…" state.
+        void this.runCapturePipelineAsync({
+          job_id,
+          scene_id,
+          fixture_id: promotion.fixture_id,
+          has_roomplan_shell: roomplanShell,
+        });
+
+        return response;
+      }
+    );
+  }
+
+  /** Returns any FinalizeCaptureResult captured for this job, for /jobs/:id responses. */
+  public getCapturePipelineResult(job_id: string): FinalizeCaptureResult | null {
+    const job = this.jobsById.get(job_id);
+    if (!job) return null;
+    const stored = this.scenesById.get(job.scene_id);
+    if (!stored) return null;
+    const result = stored.capture_pipeline_results.get(job_id);
+    return result ? structuredClone(result) : null;
+  }
+
+  private async runCapturePipelineAsync(args: {
+    job_id: string;
+    scene_id: string;
+    fixture_id: string;
+    has_roomplan_shell: boolean;
+  }): Promise<void> {
+    const runner = this.fixturePipelineRunner;
+    const repoRoot = this.fixtureRepoRoot;
+    if (!runner || !repoRoot) {
+      this.failCapturePipelineJob(args.job_id, "Pipeline runner unavailable.");
+      return;
+    }
+
+    try {
+      const pipelineResult = await runner({
+        fixture_id: args.fixture_id,
+        repo_root: repoRoot,
+        has_roomplan_shell: args.has_roomplan_shell,
+        on_stage_change: ({ stage, message }) => {
+          this.updateCapturePipelineJob(args.job_id, { stage, message, status: "processing" });
+        },
+        on_log: ({ stream, line }) => {
+          // eslint-disable-next-line no-console
+          console[stream === "stderr" ? "warn" : "log"](`[capture-pipeline ${args.fixture_id}] ${line}`);
+        },
+      });
+
+      if (!pipelineResult.success) {
+        this.failCapturePipelineJob(
+          args.job_id,
+          pipelineResult.error_tail ?? `Stage ${pipelineResult.failed_stage ?? "unknown"} failed.`,
+          pipelineResult.failed_stage ?? "splat"
+        );
+        return;
+      }
+
+      const now = this.nowIso();
+      const job = this.jobsById.get(args.job_id);
+      if (!job) return;
+      job.status = "ready";
+      job.stage = "complete";
+      job.progress_message = "Room is ready.";
+      job.updated_at = now;
+      const stored = this.scenesById.get(args.scene_id);
+      if (stored) this.persistStoredScene(stored);
+      // Fire-and-forget Tier 2 mesh generation. Runs ~5-10 minutes; the
+      // room is already viewable (splat + textures + shell) when the main
+      // job reports "ready". When the mesh manifest appears on disk the
+      // editor's poll surfaces a "load meshes" toast.
+      if (repoRoot) {
+        try {
+          enqueueMeshJob({ fixture_id: args.fixture_id, repo_root: repoRoot });
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn(`[capture-pipeline] enqueueMeshJob failed for ${args.fixture_id}:`, err);
+        }
+        // Fire-and-forget HQ splat training via Brush. Runs 15-30 min on
+        // Apple Silicon. Writes a trained PLY + descriptor which the
+        // editor's poll picks up; falls back silently (no scene.splat
+        // modification) if Brush isn't installed or training errors.
+        try {
+          enqueueBrushTrainJob({ fixture_id: args.fixture_id, repo_root: repoRoot });
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn(`[capture-pipeline] enqueueBrushTrainJob failed for ${args.fixture_id}:`, err);
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown pipeline error.";
+      this.failCapturePipelineJob(args.job_id, message);
+    }
+  }
+
+  private updateCapturePipelineJob(
+    jobId: string,
+    update: { stage: CapturePipelineStage; message: string; status: "queued" | "processing" | "ready" | "failed" }
+  ): void {
+    const job = this.jobsById.get(jobId);
+    if (!job) return;
+    job.stage = update.stage;
+    job.progress_message = update.message;
+    job.status = update.status;
+    job.updated_at = this.nowIso();
+    const stored = this.scenesById.get(job.scene_id);
+    if (stored) this.persistStoredScene(stored);
+  }
+
+  private failCapturePipelineJob(
+    jobId: string,
+    message: string,
+    stage: CapturePipelineStage = "splat"
+  ): void {
+    const job = this.jobsById.get(jobId);
+    if (!job) return;
+    job.status = "failed";
+    job.stage = stage;
+    job.progress_message = message;
+    job.error_code = "CAPTURE_PIPELINE_FAILED";
+    job.updated_at = this.nowIso();
+    const stored = this.scenesById.get(job.scene_id);
+    if (stored) this.persistStoredScene(stored);
+  }
+
   public getJob(job_id: string): JobRecord | null {
     const job = this.jobsById.get(job_id);
     return job ? structuredClone(job) : null;
@@ -1660,6 +1941,8 @@ export class RoomPlanCaptureService {
         if (!existing) {
           return null;
         }
+        // capture_pipeline jobs are driven by the async Python runner — just
+        // report the current JobRecord, no state mutation here.
         if (existing.job_kind !== "splat") {
           return structuredClone(existing);
         }
@@ -2121,6 +2404,12 @@ export class RoomPlanCaptureService {
       handoff_token: extractTokenFromQrPayload(persistedRecords.handoff_grant.qr_payload),
       video_upload_token_record: persistedRecords.video_upload_token_record,
       video_upload_token: null,
+      original_capture_request: record.original_capture_request
+        ? structuredClone(record.original_capture_request)
+        : this.reconstructCaptureRequestFromScene(scene, record),
+      capture_pipeline_results: new Map(
+        (record.capture_pipeline_results ?? []).map(({ job_id, result }) => [job_id, structuredClone(result)])
+      ),
     };
 
     this.scenesById.set(scene.head.scene_id, stored);
@@ -2132,6 +2421,46 @@ export class RoomPlanCaptureService {
     for (const job of record.job_records ?? []) {
       this.jobsById.set(job.job_id, structuredClone(job));
     }
+  }
+
+  /**
+   * Best-effort fallback for durable records written before the
+   * `original_capture_request` field existed. We only need this to be
+   * structurally valid — actual capture-request.json content isn't round-tripped
+   * for pre-migration records. New ingests persist the real request.
+   */
+  private reconstructCaptureRequestFromScene(
+    scene: Scene,
+    record: PersistedRoomPlanCaptureRecord
+  ): RoomPlanCaptureRequest {
+    const now = new Date().toISOString();
+    return {
+      request_id: record.request_id,
+      client_capture_id: record.client_capture_id,
+      roomplan_payload: {
+        schema_version: "legacy-reconstruction",
+        room_type: scene.snapshot.state.room.room_type,
+        coordinate_frame: structuredClone(scene.snapshot.state.room.coordinate_frame),
+        dimensions: {
+          width_m: 0,
+          length_m: 0,
+          ceiling_height_m: scene.snapshot.state.room.shell.ceiling_height,
+        },
+        surfaces: [],
+        openings: [],
+        objects: [],
+        fixed_elements: null,
+        room_count: null,
+      },
+      capture_metadata: {
+        room_type_hint: scene.snapshot.state.room.room_type,
+        units: "m",
+        device_model: "unknown",
+        captured_at: now,
+        video_expected: false,
+      },
+      supplementary_detections: null,
+    };
   }
 
   private persistStoredScene(stored: StoredSceneRecord): void {
@@ -2148,6 +2477,11 @@ export class RoomPlanCaptureService {
       preview_records: Array.from(stored.preview_records.values()).map((preview) => structuredClone(preview)),
       idempotency_records: Array.from(stored.idempotency_records.values()).map((record) => structuredClone(record)),
       job_records,
+      original_capture_request: structuredClone(stored.original_capture_request),
+      capture_pipeline_results: Array.from(stored.capture_pipeline_results.entries()).map(([job_id, result]) => ({
+        job_id,
+        result: structuredClone(result),
+      })),
     });
   }
 
@@ -2848,14 +3182,25 @@ function deriveInitialStateCache(
         zone_id: makeStableId("zone", `${object.object_id}:obstacle-buffer`),
         kind: "obstacle_buffer",
         entity_id: object.object_id,
-        polygon: expandPolygon(footprintFromObb(object.obb), 0.15),
+        polygon: expandPolygon(footprintForObject(object), 0.15),
       });
     }
   }
 
   const hardViolations: Array<Record<string, unknown>> = [];
+  // OUT_OF_BOUNDS: object footprint majority-outside the floor polygon.
+  // Mild TSDF bleed past walls (1-2 cm voxel fuzz, or through a doorway
+  // into an unmapped region) is not a violation — we flag only when the
+  // object is genuinely misplaced.
   for (const object of objects) {
-    if (!boundsContainBounds(floorBounds, polygonBounds(footprintFromObb(object.obb)))) {
+    const footprint = footprintForObject(object);
+    const verts = footprint.vertices;
+    if (!verts.length) continue;
+    let outsideCount = 0;
+    for (const v of verts) {
+      if (!pointInPolygon(v.x, v.y, room.shell.floor_polygon)) outsideCount += 1;
+    }
+    if (outsideCount / verts.length > 0.5) {
       hardViolations.push({
         entity_id: object.object_id,
         reason_code: "OUT_OF_BOUNDS",
@@ -2864,58 +3209,21 @@ function deriveInitialStateCache(
     }
   }
 
-  for (let index = 0; index < objects.length; index += 1) {
-    const left = objects[index];
-    const leftBounds = polygonBounds(footprintFromObb(left.obb));
-    for (let inner = index + 1; inner < objects.length; inner += 1) {
-      const right = objects[inner];
-      if (canObjectsLegallyOverlap(left, right)) {
-        continue;
-      }
-      const rightBounds = polygonBounds(footprintFromObb(right.obb));
-      if (intersectsBounds(leftBounds, rightBounds)) {
-        hardViolations.push({
-          entity_ids: [left.object_id, right.object_id],
-          reason_code: "OBJECT_OVERLAP",
-          message: `${left.class} overlaps ${right.class}.`,
-        });
-      }
-    }
+  // OBJECT_OVERLAP: true mesh-derived polygon intersection above the
+  // hard threshold. Every flag corresponds to real geometric collision.
+  for (const overlap of findHardObjectOverlaps(objects)) {
+    hardViolations.push({
+      entity_ids: [overlap.left.object_id, overlap.right.object_id],
+      reason_code: "OBJECT_OVERLAP",
+      message: `${overlap.left.class} overlaps ${overlap.right.class}.`,
+    });
   }
 
-  for (const opening of openings) {
-    const keepout = opening.keepout_zone ? polygonBounds(opening.keepout_zone) : null;
-    if (!keepout) {
-      continue;
-    }
-    const blockedBy = objects
-      .filter((object) => blocksFloorZones(object) && intersectsBounds(keepout, polygonBounds(footprintFromObb(object.obb))))
-      .map((object) => object.object_id);
-    if (blockedBy.length > 0) {
-      hardViolations.push({
-        entity_id: opening.opening_id,
-        reason_code: "OPENING_BLOCKED",
-        blocked_by: blockedBy,
-      });
-    }
-  }
-
-  for (const fixedElement of fixedElements) {
-    if (fixedElement.keepout_zone) {
-      const keepout = polygonBounds(fixedElement.keepout_zone);
-      const blockedBy = objects
-        .filter((object) => blocksFloorZones(object) && intersectsBounds(keepout, polygonBounds(footprintFromObb(object.obb))))
-        .map((object) => object.object_id);
-      if (blockedBy.length > 0) {
-        hardViolations.push({
-          entity_id: fixedElement.fixed_element_id,
-          reason_code: "OBJECT_OVERLAP",
-          blocked_by: blockedBy,
-        });
-      }
-    }
-  }
-
+  // OPENING_BLOCKED and CLEARANCE_VIOLATION used to live here; they
+  // relied on keepout zones and a straight-line walkway heuristic that
+  // produced too many false positives. Clearance paths are still
+  // computed for the layout-pane overlay (informational, not a hard
+  // violation). Re-flagging belongs in a future soft-score layer.
   const door = openings.find((opening) => opening.type === "door" || opening.type === "closet_door") ?? null;
   const clearance_paths: Array<Record<string, unknown>> = [];
   if (door) {
@@ -2929,13 +3237,6 @@ function deriveInitialStateCache(
         width_m,
         waypoints: [start, midPoint, targetPoint],
       });
-      if (width_m < DEFAULT_CLEARANCE_WIDTH_M) {
-        hardViolations.push({
-          entity_id: target.object_id,
-          reason_code: "CLEARANCE_VIOLATION",
-          message: `Insufficient walkway width (${width_m}m) from door to ${target.class}.`,
-        });
-      }
     }
   }
 
@@ -3225,7 +3526,7 @@ function footprintFromObb(obb: SceneObject["obb"]): Polygon2D {
 }
 
 function accessZoneForObject(object: SceneObject, depth: number): Polygon2D {
-  const footprint = footprintFromObb(object.obb);
+  const footprint = footprintForObject(object);
   const bounds = polygonBounds(footprint);
   const hostNormal = object.host ? hostSurfaceNormalToAccessDirection(object.host.host_surface_id, object) : null;
   if (hostNormal) {
@@ -3236,7 +3537,7 @@ function accessZoneForObject(object: SceneObject, depth: number): Polygon2D {
 
 function frontAccessZoneForObject(object: SceneObject, depth: number): Polygon2D {
   const front = yawVector(object.pose.yaw_degrees);
-  return expandTowardDirection(footprintFromObb(object.obb), front, depth);
+  return expandTowardDirection(footprintForObject(object), front, depth);
 }
 
 function hostSurfaceNormalToAccessDirection(_hostSurfaceId: string, object: SceneObject): Point2D | null {
@@ -3259,7 +3560,7 @@ function estimatePathWidth(
     if (!blocksFloorZones(object) || object.object_id === targetObjectId) {
       continue;
     }
-    const bounds = polygonBounds(footprintFromObb(object.obb));
+    const bounds = polygonBounds(footprintForObject(object));
     if (pointInBounds(start, bounds) || pointInBounds(end, bounds)) {
       continue;
     }
@@ -3332,19 +3633,6 @@ function blocksFloorZones(object: SceneObject): boolean {
     return false;
   }
   return object.support.support_kind === "floor";
-}
-
-function canObjectsLegallyOverlap(left: SceneObject, right: SceneObject): boolean {
-  if (left.support.support_kind !== "floor" || right.support.support_kind !== "floor") {
-    return true;
-  }
-  if (left.class === "rug" || right.class === "rug") {
-    return true;
-  }
-  if (left.parent_id === right.object_id || right.parent_id === left.object_id) {
-    return true;
-  }
-  return false;
 }
 
 function createSelectionSummary(objects: SceneObject[], openings: Opening[]): string {
@@ -3469,6 +3757,23 @@ function normalizeCaptureFramesIdempotencyRequest(request: CaptureFramesRequest)
   };
 }
 
+function normalizeFinalizeIdempotencyRequest(request: FinalizeCaptureRequest): Record<string, unknown> {
+  return {
+    room_label: request.room_label ?? null,
+  };
+}
+
+/**
+ * True when at least one wall surface carries a surface_frame populated by
+ * RoomPlan ingestion (origin + axes + normal). Controls whether the pipeline
+ * should short-circuit the RANSAC wall-fitter and opening detector in favor
+ * of trusting Apple's structured output.
+ */
+function sceneHasRoomPlanShell(scene: Scene): boolean {
+  const surfaces = scene.snapshot.state.room.shell.surfaces;
+  return surfaces.some((surface) => surface.type === "wall" && surface.surface_frame !== null);
+}
+
 function cardinalWallNameFromNormal(normal: Point3D): string {
   if (Math.abs(normal.x) >= Math.abs(normal.y)) {
     return normal.x >= 0 ? "west wall" : "east wall";
@@ -3584,6 +3889,15 @@ function boundsToPolygon(bounds: { min_x: number; max_x: number; min_y: number; 
 
 function pointInBounds(point: Point2D, bounds: { min_x: number; max_x: number; min_y: number; max_y: number }): boolean {
   return point.x >= bounds.min_x && point.x <= bounds.max_x && point.y >= bounds.min_y && point.y <= bounds.max_y;
+}
+
+function intersectionArea(
+  left: { min_x: number; max_x: number; min_y: number; max_y: number },
+  right: { min_x: number; max_x: number; min_y: number; max_y: number }
+): number {
+  const overlapX = Math.max(0, Math.min(left.max_x, right.max_x) - Math.max(left.min_x, right.min_x));
+  const overlapY = Math.max(0, Math.min(left.max_y, right.max_y) - Math.max(left.min_y, right.min_y));
+  return roundNumber(overlapX * overlapY);
 }
 
 function intersectsBounds(

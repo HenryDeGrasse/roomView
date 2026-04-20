@@ -492,6 +492,48 @@ public enum RoomViewCaptureCompanionError: Error, Equatable, Sendable {
     case unsuccessfulStatusCode(Int, String?)
 }
 
+extension RoomViewCaptureCompanionError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .invalidResponse:
+            return "The Mac returned an invalid response."
+        case let .unsuccessfulStatusCode(code, payload):
+            let trimmedPayload = payload?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let details = parseCompanionErrorPayload(trimmedPayload) {
+                switch (details.reasonCode, details.message) {
+                case let (.some(reasonCode), .some(message)):
+                    return "The Mac returned HTTP \(code) (\(reasonCode)): \(message)"
+                case let (.some(reasonCode), .none):
+                    return "The Mac returned HTTP \(code) (\(reasonCode))."
+                case let (.none, .some(message)):
+                    return "The Mac returned HTTP \(code): \(message)"
+                case (.none, .none):
+                    break
+                }
+            }
+            if let trimmedPayload, !trimmedPayload.isEmpty {
+                return "The Mac returned HTTP \(code): \(trimmedPayload)"
+            }
+            return "The Mac returned HTTP \(code)."
+        }
+    }
+}
+
+private func parseCompanionErrorPayload(_ payload: String?) -> (reasonCode: String?, message: String?)? {
+    guard let payload, let data = payload.data(using: .utf8) else {
+        return nil
+    }
+    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        return nil
+    }
+    let reasonCode = json["reason_code"] as? String
+    let message = json["message"] as? String
+    if reasonCode == nil && message == nil {
+        return nil
+    }
+    return (reasonCode, message)
+}
+
 @available(macOS 12.0, iOS 15.0, *)
 public final class RoomPlanCaptureUploader: @unchecked Sendable {
     internal let baseURL: URL

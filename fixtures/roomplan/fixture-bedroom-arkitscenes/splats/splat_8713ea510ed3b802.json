@@ -1,0 +1,9 @@
+{
+  "splat_id": "splat:8713ea510ed3b802",
+  "capture_id": "fixture-bedroom-arkitscenes",
+  "generator_kind": "cohesive",
+  "ply_uri": "/dev/fixtures/fixture-bedroom-arkitscenes/splats/splat_8713ea510ed3b802.splat",
+  "ply_bytes_sha256": "8713ea510ed3b802e4c7be41e5fe74a9c81986842a1de2e723c1a5769e4cc019",
+  "gaussian_count": 358935,
+  "generated_at": "2026-04-19T20:40:36.372570Z"
+}

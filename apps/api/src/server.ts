@@ -7,6 +7,7 @@ import type {
   ApplyPlanRequest,
   CaptureFramesRequest,
   CreateBookmarkRequest,
+  FinalizeCaptureRequest,
   GeneratePhotorealRequest,
   HandoffRedeemRequest,
   JobReadResponse,
@@ -22,12 +23,19 @@ import {
   createAssetManifestResponse,
   createQuickRenderResponse,
 } from "./quick-render";
+import { buildSceneGraph } from "./scene-graph";
+import { createDefaultConstraintEngine } from "./constraint-engine";
+import { GraphAgent, type GraphAgentRequest } from "./graph-agent";
+
+const constraintEngine = createDefaultConstraintEngine();
+const graphAgent = new GraphAgent();
 import { createConsoleObservabilitySink, ObservabilityRecorder } from "./observability";
 import {
   RoomPlanCaptureError,
   RoomPlanCaptureService,
   type RoomPlanCaptureServiceOptions,
 } from "./roomplan-ingest";
+import { checkPipelinePrerequisites } from "./capture-pipeline";
 
 const serverDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(serverDir, "..", "..", "..");
@@ -65,12 +73,26 @@ export function createRoomPlanApiServer(options: RoomPlanApiServerOptions = {}):
     ...options,
     observability,
     storage_directory: options.storage_directory ?? DEFAULT_ROOMPLAN_CAPTURE_STORAGE_DIRECTORY,
+    fixture_repo_root: options.fixture_repo_root ?? repoRoot,
+    // Defaults to port 4288 to match `npm run dev:web`. If you point the
+    // iPhone at a LAN IP, override via ROOMVIEW_WEB_BASE_URL so the returned
+    // fixture_url works from the phone too.
+    fixture_web_base_url: options.fixture_web_base_url ?? process.env.ROOMVIEW_WEB_BASE_URL ?? "http://127.0.0.1:4288",
   });
   const context: RoomPlanApiRequestContext = {
     service,
     session_ttl_ms: options.session_ttl_ms ?? DEFAULT_SESSION_TTL_MS,
     sceneSessionsById: new Map(),
   };
+
+  // Pre-flight check: warn early if `uv` is missing. Doesn't prevent the
+  // server from starting — the editor and all non-finalize endpoints still
+  // work — but finalize will fail until it's installed.
+  const uvWarning = checkPipelinePrerequisites();
+  if (uvWarning) {
+    // eslint-disable-next-line no-console
+    console.warn(`[roomview-api] capture pipeline preflight: ${uvWarning}`);
+  }
 
   return createServer((request, response) => {
     void handleRequest(request, response, context);
@@ -92,6 +114,19 @@ async function handleRequest(
     }
 
     const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
+
+    // Unauthenticated health probe — the iPhone pings this pre-upload to
+    // confirm LAN reachability and capture-pipeline readiness.
+    if (request.method === "GET" && requestUrl.pathname === "/health") {
+      const uvIssue = checkPipelinePrerequisites();
+      sendJson(response, 200, {
+        status: "ok",
+        capture_pipeline_ready: uvIssue === null,
+        capture_pipeline_error: uvIssue,
+        now: new Date().toISOString(),
+      });
+      return;
+    }
 
     const photorealArtifactPath = extractPhotorealArtifactPath(requestUrl.pathname);
     if (request.method === "GET" && photorealArtifactPath) {
@@ -128,6 +163,14 @@ async function handleRequest(
       const framesRequest = await readJsonBody<CaptureFramesRequest>(request);
       const framesResponse = context.service.postCaptureFrames(captureFramesSceneId, framesRequest);
       sendJson(response, 200, framesResponse);
+      return;
+    }
+
+    const captureFinalizeSceneId = extractCaptureFinalizeSceneId(requestUrl.pathname);
+    if (request.method === "POST" && captureFinalizeSceneId) {
+      const finalizeRequest = await readJsonBody<FinalizeCaptureRequest>(request);
+      const finalizeResponse = context.service.finalizeCapture(captureFinalizeSceneId, finalizeRequest);
+      sendJson(response, 200, finalizeResponse);
       return;
     }
 
@@ -189,6 +232,18 @@ async function handleRequest(
       return;
     }
 
+    if (request.method === "POST" && mutationSceneId && requestUrl.pathname.endsWith("/graph-agent")) {
+      requireAuthenticatedSceneSession(request, mutationSceneId, context);
+      const agentRequest = await readJsonBody<GraphAgentRequest>(request);
+      const scene = context.service.getScene(mutationSceneId);
+      if (!scene) {
+        throw new RoomPlanCaptureError("TARGET_NOT_FOUND", `Scene ${mutationSceneId} was not found.`);
+      }
+      const agentResponse = await graphAgent.run(scene, agentRequest);
+      sendJson(response, 200, { agent: agentResponse });
+      return;
+    }
+
     if (request.method === "POST" && mutationSceneId && requestUrl.pathname.endsWith("/photoreal")) {
       requireAuthenticatedSceneSession(request, mutationSceneId, context);
       const photorealRequest = await readJsonBody<GeneratePhotorealRequest>(request);
@@ -203,14 +258,18 @@ async function handleRequest(
       if (!knownJob) {
         throw new RoomPlanCaptureError("TARGET_NOT_FOUND", `Job ${jobId} was not found.`);
       }
-      requireAuthenticatedSceneSession(request, knownJob.scene_id, context);
+      requireJobReadAccess(request, knownJob.scene_id, context);
       const job = context.service.pollJob(jobId) ?? knownJob;
       const scene = context.service.getScene(knownJob.scene_id);
       const photorealEntry = scene?.photoreal_gallery.find((entry) => entry.asset_id === job.output_asset_id) ?? null;
+      const capturePipelineResult = job.job_kind === "capture_pipeline"
+        ? context.service.getCapturePipelineResult(job.job_id)
+        : null;
       const jobResponse: JobReadResponse = {
         job,
         photoreal_entry: photorealEntry,
         splat_asset_record: scene?.splat ?? null,
+        capture_pipeline_result: capturePipelineResult,
       };
       sendJson(response, 200, jobResponse);
       return;
@@ -225,6 +284,18 @@ async function handleRequest(
       }
       if (requestUrl.pathname.endsWith("/quick-render")) {
         sendJson(response, 200, createQuickRenderResponse(scene));
+        return;
+      }
+      if (requestUrl.pathname.endsWith("/graph")) {
+        const graph = buildSceneGraph(scene);
+        const constraints = constraintEngine.evaluate(graph);
+        sendJson(response, 200, { graph, constraints });
+        return;
+      }
+      if (requestUrl.pathname.endsWith("/constraints")) {
+        const graph = buildSceneGraph(scene);
+        const constraints = constraintEngine.evaluate(graph);
+        sendJson(response, 200, { constraints });
         return;
       }
       const readResponse: SceneReadResponse = { scene };
@@ -300,6 +371,48 @@ function requireAuthenticatedSceneSession(
   return hydratedSession;
 }
 
+function requireJobReadAccess(
+  request: IncomingMessage,
+  scene_id: string,
+  context: RoomPlanApiRequestContext
+): void {
+  try {
+    requireAuthenticatedSceneSession(request, scene_id, context);
+    return;
+  } catch (error) {
+    if (!(error instanceof RoomPlanCaptureError)) {
+      throw error;
+    }
+    if (error.reason_code !== "AUTH_REQUIRED" && error.reason_code !== "SCENE_ACCESS_DENIED") {
+      throw error;
+    }
+
+    const token = readSessionId(request);
+    if (token && hasValidHandoffTokenForScene(token, scene_id, context)) {
+      return;
+    }
+    throw error;
+  }
+}
+
+function hasValidHandoffTokenForScene(
+  token: string,
+  scene_id: string,
+  context: RoomPlanApiRequestContext
+): boolean {
+  const persisted = context.service.getPersistedInitialSceneRecords(scene_id);
+  if (!persisted) {
+    return false;
+  }
+
+  const handoffToken = extractHandoffTokenFromQrPayload(persisted.handoff_grant.qr_payload);
+  if (!handoffToken || handoffToken !== token) {
+    return false;
+  }
+
+  return !isExpired(persisted.handoff_grant.expires_at, new Date().toISOString());
+}
+
 function extractCaptureVideoSceneId(pathname: string): string | null {
   const match = pathname.match(/^\/captures\/([^/]+)\/video$/);
   return match ? decodeURIComponent(match[1]) : null;
@@ -310,10 +423,17 @@ function extractCaptureFramesSceneId(pathname: string): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function extractCaptureFinalizeSceneId(pathname: string): string | null {
+  const match = pathname.match(/^\/captures\/([^/]+)\/finalize$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 function extractReadableSceneId(pathname: string): string | null {
   const patterns = [
     /^\/scenes\/([^/]+)$/,
     /^\/scenes\/([^/]+)\/quick-render$/,
+    /^\/scenes\/([^/]+)\/graph$/,
+    /^\/scenes\/([^/]+)\/constraints$/,
   ];
   for (const pattern of patterns) {
     const match = pathname.match(pattern);
@@ -332,6 +452,7 @@ function extractMutationSceneId(pathname: string): string | null {
     /^\/scenes\/([^/]+)\/apply$/,
     /^\/scenes\/([^/]+)\/undo$/,
     /^\/scenes\/([^/]+)\/photoreal$/,
+    /^\/scenes\/([^/]+)\/graph-agent$/,
   ];
   for (const pattern of patterns) {
     const match = pathname.match(pattern);
@@ -375,6 +496,17 @@ function readSessionId(request: IncomingMessage): string | null {
   return null;
 }
 
+function extractHandoffTokenFromQrPayload(qrPayload: string): string | null {
+  try {
+    const parsed = JSON.parse(qrPayload) as { handoff_token?: string };
+    return typeof parsed.handoff_token === "string" && parsed.handoff_token.length > 0
+      ? parsed.handoff_token
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 async function readJsonBody<T>(request: IncomingMessage): Promise<T> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
@@ -409,6 +541,7 @@ function statusCodeForCaptureError(error: RoomPlanCaptureError): number {
     case "INVALID_CAPTURE":
     case "ROOM_TYPE_NOT_SUPPORTED":
     case "MULTI_ROOM_NOT_SUPPORTED":
+    case "CAPTURE_NO_FRAMES":
       return 400;
     case "SCENE_ACCESS_DENIED":
       return 403;

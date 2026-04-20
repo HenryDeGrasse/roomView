@@ -132,3 +132,20 @@ func companionURLTemplatesAreSceneScoped() {
             == "https://roomview.local/captures/scene-123/video"
     )
 }
+
+@Test("Companion errors surface readable localized descriptions")
+func companionErrorsAreHumanReadable() {
+    let error = RoomViewCaptureCompanionError.unsuccessfulStatusCode(
+        401,
+        #"{"reason_code":"AUTH_REQUIRED","message":"Scene read requires an authenticated scene session."}"#
+    )
+
+    #expect(
+        error.localizedDescription
+            == "The Mac returned HTTP 401 (AUTH_REQUIRED): Scene read requires an authenticated scene session."
+    )
+    #expect(
+        RoomViewCaptureCompanionError.invalidResponse.localizedDescription
+            == "The Mac returned an invalid response."
+    )
+}

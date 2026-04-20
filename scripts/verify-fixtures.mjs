@@ -50,6 +50,17 @@ for (const fixture of manifest.fixtures) {
   assert(typeof fixture.request_path === "string" && fixture.request_path.length > 0, `${fixture.fixture_id}: request_path is required`);
   assert(typeof fixture.scene_path === "string" && fixture.scene_path.length > 0, `${fixture.fixture_id}: scene_path is required`);
 
+  // iOS-sourced captures are dynamic user data (any room shape, any coverage).
+  // Skip the strict reference-fixture invariants — they'd reject a real-world
+  // scan of an office with only 1 wall detected. We still parse the scene.json
+  // to confirm it's valid JSON and keeps the top-level shape.
+  if (fixture.fixture_id.startsWith("capture-")) {
+    const scene = readJson(fixture.scene_path);
+    assert(typeof scene.head?.scene_id === "string", `${fixture.fixture_id}: scene.head.scene_id missing`);
+    assert(Array.isArray(scene.snapshot?.state?.room?.shell?.surfaces), `${fixture.fixture_id}: surfaces array missing`);
+    continue;
+  }
+
   const request = readJson(fixture.request_path);
   const scene = readJson(fixture.scene_path);
 
@@ -140,18 +151,40 @@ for (const fixture of manifest.fixtures) {
     }
   }
 
-  assert(
-    constraints.some((constraint) => constraint.kind === "opening_preserved"),
-    `${fixture.fixture_id}: initial ingest must include opening_preserved constraint`
-  );
+  // opening_preserved is a per-opening constraint (one-per-door/window). When
+  // the shell has no openings (e.g. the ARKitScenes adapter synthesizes a
+  // bounding-box shell with no doors/windows until mesh-based opening
+  // inference lands — roadmap open question #5), there's nothing to preserve
+  // and the constraint is legitimately absent. Require it only when openings
+  // exist.
+  if (openings.length > 0) {
+    assert(
+      constraints.some((constraint) => constraint.kind === "opening_preserved"),
+      `${fixture.fixture_id}: initial ingest with openings must include opening_preserved constraint`
+    );
+  }
   assert(
     constraints.some((constraint) => constraint.kind === "no_overlap_in_bounds"),
     `${fixture.fixture_id}: initial ingest must include no_overlap_in_bounds constraint`
   );
 
   if (request.capture_metadata.video_expected) {
-    assert(scene.splat !== null, `${fixture.fixture_id}: expected a queued splat record when video_expected is true`);
-    assert(scene.splat.status === "queued", `${fixture.fixture_id}: initial splat sidecar must start queued`);
+    assert(scene.splat !== null, `${fixture.fixture_id}: expected a splat record when video_expected is true`);
+    // Track B: fixtures with a committed RGBD-init .splat sidecar are shipped
+    // with status 'ready' so the viewer loads them directly. Older fixtures
+    // (no committed asset) still start 'queued' and transition as the backend
+    // processes them.
+    const allowedStatuses = ["queued", "processing", "ready"];
+    assert(
+      allowedStatuses.includes(scene.splat.status),
+      `${fixture.fixture_id}: splat sidecar status must be one of ${allowedStatuses.join("|")} (got ${scene.splat.status})`,
+    );
+    if (scene.splat.status === "ready") {
+      assert(typeof scene.splat.uri === "string" && scene.splat.uri.length > 0,
+        `${fixture.fixture_id}: ready splat must carry a uri`);
+      assert(scene.splat.asset_id !== null && scene.splat.asset_id !== undefined,
+        `${fixture.fixture_id}: ready splat must carry an asset_id`);
+    }
     assert(scene.splat.scene_id === scene.head.scene_id, `${fixture.fixture_id}: splat scene_id must match scene`);
     assert(scene.splat.source_scene_version === scene.head.current_scene_version, `${fixture.fixture_id}: splat source_scene_version must match head version`);
   } else {

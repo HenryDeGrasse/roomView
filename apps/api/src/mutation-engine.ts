@@ -40,6 +40,8 @@ import {
   selectCuratedAssetForFootprint,
 } from "../../../packages/contracts/src/index.ts";
 
+import { findHardObjectOverlaps } from "./overlap-policy";
+
 const DEFAULT_CLEARANCE_WIDTH_M = 0.76;
 const MAX_OPS_PER_PREVIEW = 5;
 const RESIZABLE_OBJECT_CLASSES = new Set<EditableObjectClass>([
@@ -798,30 +800,12 @@ function deriveDerivedStateCache(
     }
   }
 
-  for (let index = 0; index < objects.length; index += 1) {
-    const left = objects[index];
-    const leftBounds = polygonBounds(footprintFromObb(left.obb));
-    for (let inner = index + 1; inner < objects.length; inner += 1) {
-      const right = objects[inner];
-      if (canObjectsLegallyOverlap(left, right)) {
-        continue;
-      }
-      const rightBounds = polygonBounds(footprintFromObb(right.obb));
-      const overlapArea = intersectionArea(leftBounds, rightBounds);
-      const smallerArea = Math.min(boundsArea(leftBounds), boundsArea(rightBounds));
-      const allowWallClusterOverlap =
-        ((left.host?.host_surface_id && left.host.host_surface_id === right.host?.host_surface_id) ||
-          [left.class, right.class].includes("nightstand") ||
-          [left.class, right.class].includes("lamp")) &&
-        smallerArea <= 0.35;
-      if (intersectsBounds(leftBounds, rightBounds) && overlapArea > 0.18 && !allowWallClusterOverlap) {
-        hardViolations.push({
-          entity_ids: [left.object_id, right.object_id],
-          reason_code: "OBJECT_OVERLAP",
-          message: `${left.class} overlaps ${right.class}.`,
-        });
-      }
-    }
+  for (const overlap of findHardObjectOverlaps(objects)) {
+    hardViolations.push({
+      entity_ids: [overlap.left.object_id, overlap.right.object_id],
+      reason_code: "OBJECT_OVERLAP",
+      message: `${overlap.left.class} overlaps ${overlap.right.class}.`,
+    });
   }
 
   for (const opening of openings) {
@@ -993,19 +977,6 @@ function estimatePathWidth(
 
 function blocksFloorZones(object: SceneObject): boolean {
   return object.class !== "rug" && object.support.support_kind === "floor";
-}
-
-function canObjectsLegallyOverlap(left: SceneObject, right: SceneObject): boolean {
-  if (left.support.support_kind !== "floor" || right.support.support_kind !== "floor") {
-    return true;
-  }
-  if (left.class === "rug" || right.class === "rug") {
-    return true;
-  }
-  if (left.parent_id === right.object_id || right.parent_id === left.object_id) {
-    return true;
-  }
-  return false;
 }
 
 function createSelectionSummary(objects: SceneObject[], openings: Opening[]): string {

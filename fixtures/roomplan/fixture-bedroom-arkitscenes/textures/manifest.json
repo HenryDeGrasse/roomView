@@ -1,0 +1,66 @@
+{
+  "fixture_id": "fixture-bedroom-arkitscenes",
+  "texel_m": 0.015,
+  "textures": {
+    "surface-scene-fixture-fixture-bedroom-arkitscene-f69c7829": {
+      "path": "textures/surface-scene-fixture-fixture-bedroom-arkitscene-f69c7829.png",
+      "width": 292,
+      "height": 235,
+      "u_min": 0.13797796389313335,
+      "u_max": 4.513215652782567,
+      "v_min": 0.4114998127056816,
+      "v_max": 3.929646678368575,
+      "type": "floor"
+    },
+    "surface-scene-fixture-fixture-bedroom-arkitscene-4241292c": {
+      "path": "textures/surface-scene-fixture-fixture-bedroom-arkitscene-4241292c.png",
+      "width": 292,
+      "height": 235,
+      "u_min": 0.13797796389313335,
+      "u_max": 4.513215652782567,
+      "v_min": 0.4114998127056816,
+      "v_max": 3.929646678368575,
+      "type": "ceiling"
+    },
+    "surface-scene-fixture-fixture-bedroom-arkitscene-4a606097": {
+      "path": "textures/surface-scene-fixture-fixture-bedroom-arkitscene-4a606097.png",
+      "width": 276,
+      "height": 181,
+      "u_min": 0.0,
+      "u_max": 4.135962418810483,
+      "v_min": 0.0,
+      "v_max": 2.7126642274647947,
+      "type": "wall"
+    },
+    "surface-scene-fixture-fixture-bedroom-arkitscene-869b2b5d": {
+      "path": "textures/surface-scene-fixture-fixture-bedroom-arkitscene-869b2b5d.png",
+      "width": 214,
+      "height": 181,
+      "u_min": 0.0,
+      "u_max": 3.2007402407900027,
+      "v_min": 0.0,
+      "v_max": 2.7126642274647947,
+      "type": "wall"
+    },
+    "surface-scene-fixture-fixture-bedroom-arkitscene-bcded795": {
+      "path": "textures/surface-scene-fixture-fixture-bedroom-arkitscene-bcded795.png",
+      "width": 276,
+      "height": 181,
+      "u_min": 0.0,
+      "u_max": 4.135962418810482,
+      "v_min": 0.0,
+      "v_max": 2.7126642274647947,
+      "type": "wall"
+    },
+    "surface-scene-fixture-fixture-bedroom-arkitscene-860f783b": {
+      "path": "textures/surface-scene-fixture-fixture-bedroom-arkitscene-860f783b.png",
+      "width": 214,
+      "height": 181,
+      "u_min": 0.0,
+      "u_max": 3.2007402407900027,
+      "v_min": 0.0,
+      "v_max": 2.7126642274647947,
+      "type": "wall"
+    }
+  }
+}
