@@ -2,16 +2,16 @@
 
 Author: 2026-04-20 (pre-sleep work chunk follow-up)
 Owner: Henry
-Status: Phases 1–3 implemented; Phase 4 partially implemented (event log + endpoints shipped; preference consumption by the agent not wired).
+Status: All 4 phases shipped. Design-intent reference — for current / forward state see [roadmap.md](roadmap.md) and [plans/graph-agent-next.md](plans/graph-agent-next.md).
 
 **Current shipped state (2026-04-20 update):**
 
 | Phase | Planned | Shipped | Evidence |
 |------|------|------|------|
-| 1 — Read-only graph | ✅ | ✅ | [scene-graph.ts](../apps/api/src/scene-graph.ts) (1216 LOC), `GET /scenes/:id/graph`, `GET /dev/fixtures/:id/graph`, SVG overlay + `setGraph`/`setGraphVisible` in [layout-view.js:1064](../apps/web/src/layout-view.js:1064), `#graph-toggle` button. |
-| 2 — Constraint engine | ✅ | ✅ | [constraint-engine.ts](../apps/api/src/constraint-engine.ts) (485 LOC) with 7 registered constraints, `GET /scenes/:id/constraints`, constraints card at [server.ts:3452](../apps/web/src/server.ts:3452). |
-| 3 — LLM agent | ✅ | ✅ | [graph-agent.ts](../apps/api/src/graph-agent.ts) (806 LOC), `POST /scenes/:id/graph-agent` + fixture variant, `#graph-agent-button` "Ask agent" and `submitGraphAgent()` at [server.ts:2131](../apps/web/src/server.ts:2131), plan cards with Apply at [server.ts:3332](../apps/web/src/server.ts:3332). |
-| 4 — Feedback loop | ✅ sketched | ⚠ partial | [feedback-log.ts](../apps/api/src/feedback-log.ts) (166 LOC) + `POST/GET` event routes at [server.ts:121](../apps/web/src/server.ts:121), writing to `.pi/feedback.jsonl`. **Not yet wired:** `derivePreferences()` output is not prepended to `buildSystemPrompt()` in graph-agent.ts, so the loop does not yet close. |
+| 1 — Read-only graph | ✅ | ✅ | [scene-graph.ts](../apps/api/src/scene-graph.ts) (1268 LOC), `GET /scenes/:id/graph`, `GET /dev/fixtures/:id/graph`, SVG overlay + `setGraph`/`setGraphVisible` in [layout-view.js](../apps/web/src/layout-view.js), `#graph-toggle` button. |
+| 2 — Constraint engine | ✅ | ✅ | [constraint-engine.ts](../apps/api/src/constraint-engine.ts) (487 LOC) with 7 registered constraints, `GET /scenes/:id/constraints`, constraints card wired in [server.ts](../apps/web/src/server.ts). |
+| 3 — LLM agent | ✅ | ✅ | [graph-agent.ts](../apps/api/src/graph-agent.ts) (~820 LOC), `POST /scenes/:id/graph-agent` + fixture variant, `#graph-agent-button` "Ask agent" and `submitGraphAgent()` in [server.ts](../apps/web/src/server.ts), plan cards with Apply. |
+| 4 — Feedback loop | ✅ | ✅ | [feedback-log.ts](../apps/api/src/feedback-log.ts) (166 LOC) + `POST/GET /dev/feedback` routes in [web/server.ts](../apps/web/src/server.ts), writing to `.pi/feedback.jsonl` (gitignored). `derivePreferences()` output is prepended to `buildSystemPrompt()` on every agent run via an injectable `preferencesProvider` — loop closes end-to-end. |
 
 The section bodies below are the original design — kept for design-intent provenance. Known deltas from what shipped:
 

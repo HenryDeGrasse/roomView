@@ -16,6 +16,15 @@ Swift Package (`ios/RoomViewCapture`) ships the pieces an app target needs: `Fra
 
 **ARKitScenes adapter.** `scripts/arkitscenes-to-bundle.py` converts one ARKitScenes 3DOD scene into a Milestone 1 bundle. Unblocks Phase 2 scaffolding on real iPhone-Pro LiDAR data without needing a device. Output is a bundle the API ingests and the web editor renders with zero hard violations.
 
+**Just landed — Scene graph + constraint engine + LLM agent (graph-agent-plan Phases 1–4).** Originally planned as a post-MVP research spike; landed as a contiguous four-phase feature. Design intent is captured in [graph-agent-plan.md](graph-agent-plan.md); status below reflects the current codebase, not the plan.
+
+- **Phase 1 — Scene graph** (`apps/api/src/scene-graph.ts`). Pure derivation from `Scene`: object/wall/opening/floor/ceiling nodes; edges (`HOSTED_ON`, `ADJACENT_TO`, `COLLIDES`, `FACES`, `FLANKS`, `OVERLAPS_OPENING`, `INSIDE_ROOM`) each carry the evidence (distance, yaw delta, overlap area) that triggered them. Surfaced on `GET /scenes/:id/graph` and as a toggleable overlay in the Layout pane.
+- **Phase 2 — Constraint engine** (`apps/api/src/constraint-engine.ts`). Seven registered constraints (`no_object_overlap`, `opening_unobstructed`, `opening_has_walkway`, `bed_anchored_to_wall`, `seating_faces_focal_element`, `nightstands_flank_bed`, object-inside-room). Each evaluation cites the exact `edge_id`s that triggered it. Surfaced on `GET /scenes/:id/constraints`.
+- **Phase 3 — Graph agent** (`apps/api/src/graph-agent.ts`). OpenRouter tool-calling loop with `query_graph`, `describe_node`, `evaluate_constraints`, `list_constraints`, `propose_move`, `find_free_spots`, `finalize`. **Explicitly dry-run** — `propose_move` clones the scene, returns before/after constraint deltas, and never hits `/apply`. Commits still flow through the existing planner/apply pipeline after user approval. Surfaced on `POST /scenes/:id/graph-agent` and via the "Ask agent" button in the chat pane.
+- **Phase 4 — Feedback loop** (`apps/api/src/feedback-log.ts`). Local JSONL store at `.pi/feedback.jsonl` (gitignored). Drag / apply / propose_accepted / propose_rejected / rating events are posted fire-and-forget from the UI. `derivePreferences()` heuristically summarises recent events once they cross `MIN_EVENTS_FOR_PREFERENCE`, and the graph agent prepends those summaries to its system prompt on every run. Events and preferences are also exposed via `GET /dev/feedback` for inspection.
+
+Agent runs cost real OpenRouter tokens but default to a deterministic offline fallback when no API key is present — the endpoint stays usable in CI and offline dev.
+
 ```bash
 uv run scripts/arkitscenes-to-bundle.py \
   --scene-dir /path/to/unzipped/47333463 \
@@ -65,7 +74,7 @@ The shape of the product three years out.
 **Three tracks** from `stretch.md` that this project advances along:
 
 - **Scene acquisition.** Today: iPhone RoomPlan. Next: improved splat editing, floorplan ingest, Android capture via ARCore, multi-room graphs. The canonical `Scene` schema is already designed to absorb floorplan and synthetic input without migration.
-- **Design intelligence.** Today: single-operation planner (move/rotate/replace/repaint/swap_flooring). Next: multi-step edits, regenerative room design ("redesign this bedroom as a nursery"), constraint-aware layout generation.
+- **Design intelligence.** Today: single-operation planner (move/rotate/replace/repaint/swap_flooring) plus a dry-run graph agent that reads the scene graph, cites constraint violations, and proposes individual moves. Next: multi-step edits committed as a single preview, regenerative room design ("redesign this bedroom as a nursery"), constraint-aware layout generation, and agent-initiated propose→apply flows once dry-run output is trusted end-to-end.
 - **Professional outputs.** Today: photoreal gallery + BOM-adjacent asset metadata. Next: USD/DXF export, contractor-ready specs, material ordering integration.
 
 The killer feature lands when all three tracks mature enough: multi-room scanning, regenerative design across rooms, coherent whole-home photoreal output with a materials list.
@@ -81,3 +90,5 @@ A running list of things that need a decision but don't block current milestones
 3. **Captured-frame retention.** Scenes can accumulate captured frames across re-scans. No GC strategy yet. Not urgent.
 4. **Artifact-store namespacing.** `CapturedFrame` reuses the `_artifacts/photoreal/` path. Semantically fine today (it's a generic binary store), but when we want real lifecycle rules per asset kind (retention, access control, pre-signed URLs), we'll split.
 5. **Mesh-based shell + opening inference.** The ARKitScenes adapter synthesizes a bounding-box shell from object annotations — good enough for Milestone 1 UX but misses the real walls/doors/windows encoded in the scan's `.ply` mesh. Proper wall-plane fitting (RANSAC) plus opening detection is genuinely multi-day work; flagged so we don't underestimate it when Milestone 3 starts leaning on room geometry.
+6. **Graph + constraints computed per-request.** `POST /scenes/:id/graph-agent` rebuilds the graph and evaluates constraints on every call. Cheap at current fixture sizes (N ≤ 25 objects), but a ~50-object room with a chatty agent session could rebuild the graph 10+ times in one conversation. Candidate fix: cache graph + constraint report on `DerivedState` at ingest/apply, invalidate on any mutation. See [plans/graph-agent-next.md](plans/graph-agent-next.md).
+7. **Agent → apply trust boundary.** Today the graph agent is strictly dry-run — `propose_move` returns constraint deltas, the UI surfaces the plan, the user clicks to commit through the existing planner/apply path. Lifting this to agent-initiated apply requires: (a) confidence scoring on proposed moves, (b) undo-friendly batching, (c) a "budget" concept so the agent can't chain arbitrary commits. Not urgent — dry-run covers the MVP use case.
